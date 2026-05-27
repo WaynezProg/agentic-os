@@ -12,6 +12,7 @@ class RenderedRun:
     agent: AgentDefinition
     cwd: str
     argv: list[str]
+    env: dict[str, str]
 
 
 class Registry:
@@ -41,7 +42,12 @@ class Registry:
                 raise ValueError(f"cwd does not exist: {run_cwd}")
             if not cwd_path.is_dir():
                 raise ValueError(f"cwd is not a directory: {run_cwd}")
-        return RenderedRun(agent=agent, cwd=run_cwd, argv=render_command(agent.command, message))
+        return RenderedRun(
+            agent=agent,
+            cwd=run_cwd,
+            argv=render_command(agent.command, message),
+            env=dict(agent.env),
+        )
 
     def _load(self) -> dict[str, AgentDefinition]:
         if not self.path.exists():

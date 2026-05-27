@@ -34,6 +34,7 @@ class SessionCreate(BaseModel):
     agent_id: str
     cwd: str
     argv: list[str]
+    env: dict[str, str] = Field(default_factory=dict, exclude=True)
     artifact_dir: str
     stdout_log: str
     stderr_log: str

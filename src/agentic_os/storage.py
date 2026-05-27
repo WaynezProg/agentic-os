@@ -41,6 +41,7 @@ CREATE TABLE sessions (
   agent_id TEXT NOT NULL,
   cwd TEXT NOT NULL,
   argv_json TEXT NOT NULL,
+  env_json TEXT NOT NULL DEFAULT '{{}}',
   status TEXT NOT NULL CHECK (status IN ({SESSION_STATUS_SQL})),
   pid INTEGER,
   pgid INTEGER,
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   agent_id TEXT NOT NULL,
   cwd TEXT NOT NULL,
   argv_json TEXT NOT NULL,
+  env_json TEXT NOT NULL DEFAULT '{{}}',
   status TEXT NOT NULL CHECK (status IN ({SESSION_STATUS_SQL})),
   pid INTEGER,
   pgid INTEGER,
@@ -121,6 +123,7 @@ class Store:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
             self._migrate_sessions_status_check(conn)
+            self._migrate_sessions_env_json(conn)
             self._migrate_events_foreign_key(conn)
 
     def connect(self) -> sqlite3.Connection:
@@ -135,16 +138,17 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO sessions (
-                  id, agent_id, cwd, argv_json, status, artifact_dir,
+                  id, agent_id, cwd, argv_json, env_json, status, artifact_dir,
                   stdout_log, stderr_log, summary_one_liner, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     session_id,
                     request.agent_id,
                     request.cwd,
                     json.dumps(request.argv),
+                    json.dumps(request.env),
                     SessionStatus.QUEUED.value,
                     request.artifact_dir,
                     request.stdout_log,
@@ -165,6 +169,29 @@ class Store:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC, id DESC").fetchall()
         return [_session_from_row(row) for row in rows]
+
+    def update_session_paths(
+        self,
+        session_id: str,
+        *,
+        artifact_dir: str,
+        stdout_log: str,
+        stderr_log: str,
+    ) -> SessionRecord:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE sessions
+                SET artifact_dir = ?, stdout_log = ?, stderr_log = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (artifact_dir, stdout_log, stderr_log, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(session_id)
+        session = self.get_session(session_id)
+        self.write_session_metadata(session.id)
+        return session
 
     def mark_running(self, session_id: str, pid: int, pgid: int) -> SessionRecord:
         return self._transition_session(
@@ -213,7 +240,9 @@ class Store:
             )
             if cursor.rowcount != 1:
                 _raise_transition_error(conn, session_id, SessionStatus.RUNNING)
-        return self.get_session(session_id)
+        session = self.get_session(session_id)
+        self.write_session_metadata(session.id)
+        return session
 
     def repair_running(self, session_id: str) -> SessionRecord:
         repairable_statuses = (
@@ -237,7 +266,9 @@ class Store:
             )
             if cursor.rowcount != 1:
                 _raise_transition_error(conn, session_id, SessionStatus.RUNNING)
-        return self.get_session(session_id)
+        session = self.get_session(session_id)
+        self.write_session_metadata(session.id)
+        return session
 
     def record_event(
         self,
@@ -272,6 +303,20 @@ class Store:
             )
             for row in rows
         ]
+
+    def write_session_metadata(self, session_id: str) -> None:
+        session = self.get_session(session_id)
+        path = _session_metadata_path(session)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = session.model_dump(mode="json")
+        payload["session_dir"] = str(path.parent)
+        payload.pop("env", None)
+        tmp_path = path.with_name(".session.json.tmp")
+        tmp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.replace(path)
 
     def _set_status(self, session_id: str, status: SessionStatus) -> SessionRecord:
         return self._transition_session(session_id, status)
@@ -310,7 +355,9 @@ class Store:
             )
             if cursor.rowcount != 1:
                 _raise_transition_error(conn, session_id, status)
-        return self.get_session(session_id)
+        session = self.get_session(session_id)
+        self.write_session_metadata(session.id)
+        return session
 
     def _migrate_sessions_status_check(self, conn: sqlite3.Connection) -> None:
         if _sessions_has_status_check(conn):
@@ -321,16 +368,21 @@ class Store:
         conn.execute(SESSIONS_SCHEMA)
 
         valid_status_placeholders = ", ".join("?" for _ in VALID_STATUS_VALUES)
+        env_json_projection = (
+            "env_json"
+            if _table_has_column(conn, "sessions_without_status_check", "env_json")
+            else "'{}'"
+        )
         # Legacy rows with invalid statuses cannot satisfy the rebuilt CHECK constraint.
         conn.execute(
             f"""
             INSERT INTO sessions (
-              id, agent_id, cwd, argv_json, status, pid, pgid, exit_code,
+              id, agent_id, cwd, argv_json, env_json, status, pid, pgid, exit_code,
               artifact_dir, stdout_log, stderr_log, summary_one_liner,
               started_at, ended_at, updated_at
             )
             SELECT
-              id, agent_id, cwd, argv_json, status, pid, pgid, exit_code,
+              id, agent_id, cwd, argv_json, {env_json_projection}, status, pid, pgid, exit_code,
               artifact_dir, stdout_log, stderr_log, summary_one_liner,
               started_at, ended_at, updated_at
             FROM sessions_without_status_check
@@ -360,6 +412,11 @@ class Store:
         )
         conn.execute("DROP TABLE events_before_sessions_status_migration")
         conn.execute("DROP TABLE sessions_without_status_check")
+
+    def _migrate_sessions_env_json(self, conn: sqlite3.Connection) -> None:
+        if _table_has_column(conn, "sessions", "env_json"):
+            return
+        conn.execute("ALTER TABLE sessions ADD COLUMN env_json TEXT NOT NULL DEFAULT '{}'")
 
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
@@ -394,6 +451,7 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         agent_id=row["agent_id"],
         cwd=row["cwd"],
         argv=json.loads(row["argv_json"]),
+        env=json.loads(row["env_json"]),
         status=SessionStatus(row["status"]),
         pid=row["pid"],
         pgid=row["pgid"],
@@ -406,6 +464,14 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         ended_at=row["ended_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _session_metadata_path(session: SessionRecord) -> Path:
+    return Path(session.stdout_log).parent / "session.json"
+
+
+def _table_has_column(conn: sqlite3.Connection, table_name: str, column_name: str) -> bool:
+    return any(row[1] == column_name for row in conn.execute(f"PRAGMA table_info({table_name})"))
 
 
 def _events_has_session_foreign_key(conn: sqlite3.Connection) -> bool:

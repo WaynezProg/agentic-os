@@ -7,7 +7,7 @@ from agentic_os.models import SessionCreate, SessionStatus
 from agentic_os.storage import Store
 
 
-def _session_create(tmp_path: Path) -> SessionCreate:
+def _session_create(tmp_path: Path, env: dict[str, str] | None = None) -> SessionCreate:
     return SessionCreate(
         agent_id="shell",
         cwd=str(tmp_path),
@@ -15,6 +15,7 @@ def _session_create(tmp_path: Path) -> SessionCreate:
         artifact_dir=str(tmp_path / "sessions" / "s_1"),
         stdout_log=str(tmp_path / "sessions" / "s_1" / "stdout.jsonl"),
         stderr_log=str(tmp_path / "sessions" / "s_1" / "stderr.jsonl"),
+        env=env or {},
     )
 
 
@@ -69,6 +70,56 @@ def _create_old_sessions_db_without_status_check(db_path: Path) -> None:
         )
 
 
+def _create_current_sessions_db_without_env_json(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE sessions (
+              id TEXT PRIMARY KEY,
+              agent_id TEXT NOT NULL,
+              cwd TEXT NOT NULL,
+              argv_json TEXT NOT NULL,
+              status TEXT NOT NULL CHECK (
+                status IN ('queued', 'running', 'stopping', 'succeeded', 'failed', 'stopped')
+              ),
+              pid INTEGER,
+              pgid INTEGER,
+              exit_code INTEGER,
+              artifact_dir TEXT NOT NULL,
+              stdout_log TEXT NOT NULL,
+              stderr_log TEXT NOT NULL,
+              summary_one_liner TEXT NOT NULL DEFAULT '',
+              started_at TEXT,
+              ended_at TEXT,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              session_id TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              message TEXT NOT NULL,
+              metadata_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sessions (
+              id, agent_id, cwd, argv_json, status, artifact_dir,
+              stdout_log, stderr_log, updated_at
+            )
+            VALUES (
+              's_envless', 'shell', '/tmp', '["/bin/echo", "OK"]', 'queued',
+              '/tmp/sessions/s_envless', '/tmp/sessions/s_envless/stdout.jsonl',
+              '/tmp/sessions/s_envless/stderr.jsonl', CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+
 def test_store_creates_and_updates_session(tmp_path: Path) -> None:
     store = Store(tmp_path / "agentic-os.db")
     store.init()
@@ -86,6 +137,18 @@ def test_store_creates_and_updates_session(tmp_path: Path) -> None:
     finished = store.mark_finished(session.id, exit_code=0)
     assert finished.status == SessionStatus.SUCCEEDED
     assert finished.exit_code == 0
+
+
+def test_store_persists_session_env(tmp_path: Path) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+
+    session = store.create_session(
+        _session_create(tmp_path, env={"AGENTIC_OS_ENV_PROBE": "stored"})
+    )
+
+    assert session.env == {"AGENTIC_OS_ENV_PROBE": "stored"}
+    assert store.get_session(session.id).env == {"AGENTIC_OS_ENV_PROBE": "stored"}
 
 
 def test_store_records_events(tmp_path: Path) -> None:
@@ -243,6 +306,21 @@ def test_init_preserves_valid_old_sessions(tmp_path: Path) -> None:
 
     assert session.status == SessionStatus.QUEUED
     assert session.argv == ["/bin/echo", "OK"]
+    assert session.env == {}
+
+
+def test_init_adds_env_json_to_existing_sessions_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    _create_current_sessions_db_without_env_json(db_path)
+    store = Store(db_path)
+    store.init()
+
+    session = store.get_session("s_envless")
+
+    assert session.env == {}
+    with sqlite3.connect(db_path) as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()]
+    assert "env_json" in columns
 
 
 def test_init_drops_invalid_old_sessions(tmp_path: Path) -> None:

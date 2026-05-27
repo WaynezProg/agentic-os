@@ -20,6 +20,10 @@ TERMINAL_STATUSES = {
 }
 
 
+class LaunchFailure(ValueError):
+    pass
+
+
 class ProcessSupervisor:
     def __init__(self, store: Store, logs: JsonlLogStore, state_dir: Path) -> None:
         self.store = store
@@ -29,13 +33,21 @@ class ProcessSupervisor:
         self._reader_threads: dict[str, list[threading.Thread]] = {}
         self._lock = threading.Lock()
 
-    def start(self, agent_id: str, cwd: str, argv: list[str]) -> SessionRecord:
+    def start(
+        self,
+        agent_id: str,
+        cwd: str,
+        argv: list[str],
+        env: dict[str, str] | None = None,
+    ) -> SessionRecord:
+        session_env = env or {}
         session_dir = self.state_dir / "sessions" / "pending"
         session = self.store.create_session(
             SessionCreate(
                 agent_id=agent_id,
                 cwd=cwd,
                 argv=argv,
+                env=session_env,
                 artifact_dir=str(session_dir / "artifacts"),
                 stdout_log=str(session_dir / "stdout.jsonl"),
                 stderr_log=str(session_dir / "stderr.jsonl"),
@@ -50,16 +62,18 @@ class ProcessSupervisor:
         Path(session.stderr_log).touch()
 
         try:
+            _validate_argv(argv)
             process = subprocess.Popen(
                 argv,
                 cwd=cwd,
+                env=_child_env(session.env),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
                 start_new_session=True,
             )
-        except OSError as exc:
+        except (OSError, LaunchFailure) as exc:
             self.store.record_event(session.id, "launch_failed", str(exc), {"argv": argv})
             self.logs.append(Path(session.stderr_log), session.id, "stderr", str(exc))
             return self.store.mark_failed(session.id)
@@ -128,7 +142,7 @@ class ProcessSupervisor:
             raise ValueError(
                 f"Cannot retry active session {session_id} with status {previous.status.value}"
             )
-        return self.start(previous.agent_id, previous.cwd, previous.argv)
+        return self.start(previous.agent_id, previous.cwd, previous.argv, env=previous.env)
 
     def reconcile(self) -> None:
         for session in self.store.list_sessions():
@@ -304,20 +318,25 @@ class ProcessSupervisor:
         return not _process_group_exists(pgid)
 
     def _move_session_paths(self, session_id: str, session_dir: Path) -> None:
-        with self.store.connect() as conn:
-            conn.execute(
-                """
-                UPDATE sessions
-                SET artifact_dir = ?, stdout_log = ?, stderr_log = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (
-                    str(session_dir / "artifacts"),
-                    str(session_dir / "stdout.jsonl"),
-                    str(session_dir / "stderr.jsonl"),
-                    session_id,
-                ),
-            )
+        self.store.update_session_paths(
+            session_id,
+            artifact_dir=str(session_dir / "artifacts"),
+            stdout_log=str(session_dir / "stdout.jsonl"),
+            stderr_log=str(session_dir / "stderr.jsonl"),
+        )
+
+
+def _validate_argv(argv: list[str]) -> None:
+    if not argv:
+        raise LaunchFailure("empty argv cannot be launched")
+    if argv[0] == "":
+        raise LaunchFailure("empty executable path in argv[0]")
+
+
+def _child_env(env: dict[str, str]) -> dict[str, str] | None:
+    if not env:
+        return None
+    return {**os.environ, **env}
 
 
 def _pid_exists(pid: int) -> bool:

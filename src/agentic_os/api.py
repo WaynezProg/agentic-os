@@ -64,7 +64,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        session = supervisor.start(rendered.agent.id, rendered.cwd, rendered.argv)
+        session = supervisor.start(rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env)
         _wait_for_short_command(supervisor, session.id)
         return supervisor.store.get_session(session.id).model_dump()
 

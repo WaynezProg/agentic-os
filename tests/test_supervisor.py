@@ -1,3 +1,4 @@
+import json
 import os
 import signal
 import subprocess
@@ -286,6 +287,47 @@ def test_supervisor_marks_failed_command(tmp_path: Path) -> None:
     assert finished.status == SessionStatus.FAILED
     assert finished.exit_code == 7
     assert supervisor.logs.read(Path(finished.stderr_log))[0].line == "nope"
+
+
+def test_supervisor_records_launch_failure_for_empty_argv(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+
+    session = supervisor.start(agent_id="shell", cwd=str(tmp_path), argv=[])
+
+    finished = supervisor.store.get_session(session.id)
+    events = supervisor.store.list_events(session.id)
+    stderr = supervisor.logs.read(Path(finished.stderr_log))
+    sessions = supervisor.store.list_sessions()
+
+    assert finished.status == SessionStatus.FAILED
+    assert all(stored.status != SessionStatus.QUEUED for stored in sessions)
+    assert events[-1].event_type == "launch_failed"
+    assert "empty argv" in events[-1].message
+    assert "empty argv" in stderr[-1].line
+
+
+def test_supervisor_writes_session_json_after_terminal_state(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+
+    session = supervisor.start(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=["/bin/sh", "-lc", "printf metadata"],
+        env={"AGENTIC_OS_SECRETISH": "not-written"},
+    )
+    wait_until_done(supervisor, session.id)
+
+    finished = supervisor.store.get_session(session.id)
+    session_json = Path(finished.stdout_log).parent / "session.json"
+    payload = json.loads(session_json.read_text(encoding="utf-8"))
+
+    assert payload["id"] == finished.id
+    assert payload["status"] == "succeeded"
+    assert payload["artifact_dir"] == finished.artifact_dir
+    assert payload["stdout_log"] == finished.stdout_log
+    assert payload["stderr_log"] == finished.stderr_log
+    assert payload["session_dir"] == str(session_json.parent)
+    assert "env" not in payload
 
 
 def test_supervisor_retries_session_with_same_command(tmp_path: Path) -> None:
