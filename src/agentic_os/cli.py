@@ -38,6 +38,9 @@ def _run_api_call(call: Callable[[], T]) -> T:
     except httpx.RequestError as exc:
         typer.echo(f"Request failed: {exc}", err=True)
         raise typer.Exit(1) from None
+    except ValueError as exc:
+        typer.echo(f"Invalid request: {exc}", err=True)
+        raise typer.Exit(1) from None
 
 
 def _http_error_detail(response: httpx.Response) -> str:

@@ -237,23 +237,44 @@ def test_client_get_logs_builds_after_and_stream_query(monkeypatch: Any) -> None
     ]
 
 
-def test_client_quotes_unsafe_path_segments(monkeypatch: Any) -> None:
+@pytest.mark.parametrize(
+    "unsafe_id",
+    ["", "id/with/slash", "id?query=1", "id#fragment", "id%2Flogs"],
+)
+def test_client_rejects_unsafe_path_ids_before_http_request(
+    monkeypatch: Any,
+    unsafe_id: str,
+) -> None:
+    def fail_if_http_client_is_created(*args: object, **kwargs: object) -> RecordingHttpxClient:
+        raise AssertionError("httpx.Client should not be called for unsafe IDs")
+
+    monkeypatch.setattr("agentic_os.client.httpx.Client", fail_if_http_client_is_created)
+    client = AgenticClient("http://api.example/")
+
+    calls = [
+        lambda: client.show_agent(unsafe_id),
+        lambda: client.show_session(unsafe_id),
+        lambda: client.get_logs(unsafe_id),
+        lambda: client.stop_session(unsafe_id),
+        lambda: client.retry_session(unsafe_id),
+    ]
+
+    for call in calls:
+        with pytest.raises(ValueError, match="unsafe path id"):
+            call()
+
+
+def test_client_allows_current_path_id_characters(monkeypatch: Any) -> None:
     RecordingHttpxClient.requests = []
     monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
 
     client = AgenticClient("http://api.example/")
-    client.show_agent("agent/one?x=1#frag")
-    client.show_session("session/one?x=1#frag")
-    client.get_logs("session/one?x=1#frag")
-    client.stop_session("session/one?x=1#frag")
-    client.retry_session("session/one?x=1#frag")
+    client.show_agent("agent.v1:local-run_1")
+    client.show_session("s_123")
 
     assert [request["path"] for request in RecordingHttpxClient.requests] == [
-        "/agents/agent%2Fone%3Fx%3D1%23frag",
-        "/sessions/session%2Fone%3Fx%3D1%23frag",
-        "/sessions/session%2Fone%3Fx%3D1%23frag/logs",
-        "/sessions/session%2Fone%3Fx%3D1%23frag/stop",
-        "/sessions/session%2Fone%3Fx%3D1%23frag/retry",
+        "/agents/agent.v1:local-run_1",
+        "/sessions/s_123",
     ]
 
 
@@ -320,6 +341,19 @@ def test_cli_request_errors_exit_nonzero_without_traceback(monkeypatch: Any) -> 
     assert result.exit_code != 0
     assert "Request failed" in result.output
     assert "connection refused" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_cli_local_validation_errors_exit_nonzero_without_traceback(monkeypatch: Any) -> None:
+    def fail_if_http_client_is_created(*args: object, **kwargs: object) -> RecordingHttpxClient:
+        raise AssertionError("httpx.Client should not be called for unsafe IDs")
+
+    monkeypatch.setattr("agentic_os.client.httpx.Client", fail_if_http_client_is_created)
+
+    result = CliRunner().invoke(cli.app, ["sessions", "show", "s_1%2Flogs"])
+
+    assert result.exit_code != 0
+    assert "unsafe path id" in result.output
     assert "Traceback" not in result.output
 
 
