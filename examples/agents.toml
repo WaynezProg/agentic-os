@@ -1,0 +1,23 @@
+[[agents]]
+id = "shell"
+label = "Shell Smoke"
+command = ["/bin/sh", "-lc", "printf '%s\n' '{{message}}'"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = ["/bin/sh", "-lc", "printf OK"]
+
+[[agents]]
+id = "openclaw"
+label = "OpenClaw"
+command = ["openclaw", "agent", "--message", "{{message}}", "--json"]
+cwd_mode = "required"
+stop_policy = "process_group"
+health_command = ["openclaw", "status", "--json"]
+
+[[agents]]
+id = "hermes"
+label = "Hermes"
+command = ["hermes", "chat", "--query", "{{message}}", "--quiet", "--source", "agentic-os"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = ["hermes", "status"]
