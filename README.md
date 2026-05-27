@@ -33,6 +33,10 @@ uv run agentctl run openclaw --cwd "$PWD" --message "只輸出 OK"
 uv run agentctl run hermes --cwd "$PWD" --message "只輸出 OK"
 ```
 
+Required local smoke is `shell`. Run real agent smoke when OpenClaw or Hermes CLIs are available; if a real agent fails due to its own gateway, auth, model, or CLI state, keep the session id and `agentctl logs <session_id>` output as proof that agentic-os launched it and captured the upstream failure.
+
+2026-05-27 machine verification: `rtk uv run agentctl run openclaw --api http://127.0.0.1:8777 --cwd "$PWD" --message "只輸出 OK"` launched `s_17195fb7386642eca681504d67d92554` and captured OpenClaw's upstream "No target session selected" error; `rtk uv run agentctl run hermes --api http://127.0.0.1:8777 --cwd "$PWD" --message "只輸出 OK"` succeeded as `s_a36fbb159d754b01b069fd8018083b35` with `stdout OK`.
+
 `stop` is only for sessions that are still `running`; the `shell` smoke exits immediately.
 For a safe local stop demo, start a daemon with a temporary long-running agent:
 
