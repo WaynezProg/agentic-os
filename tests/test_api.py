@@ -110,3 +110,17 @@ def test_api_returns_400_for_invalid_cwd_on_run(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 400
+
+
+def test_api_returns_400_for_file_cwd_and_creates_no_session(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    cwd_file = tmp_path / "cwd.txt"
+    cwd_file.write_text("not a directory", encoding="utf-8")
+
+    response = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(cwd_file), "message": "OK"},
+    )
+
+    assert response.status_code == 400
+    assert client.get("/sessions").json()["sessions"] == []

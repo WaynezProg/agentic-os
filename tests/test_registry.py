@@ -91,6 +91,28 @@ stop_policy = "process_group"
         registry.build_run("shell", cwd=str(tmp_path / "missing"), message="OK")
 
 
+def test_registry_rejects_file_cwd(tmp_path: Path) -> None:
+    config = tmp_path / "agents.toml"
+    config.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/bin/echo", "{{message}}"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+""",
+        encoding="utf-8",
+    )
+    cwd_file = tmp_path / "cwd.txt"
+    cwd_file.write_text("not a directory", encoding="utf-8")
+
+    registry = Registry(config)
+
+    with pytest.raises(ValueError, match="cwd is not a directory"):
+        registry.build_run("shell", cwd=str(cwd_file), message="OK")
+
+
 def test_registry_rejects_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         Registry(tmp_path / "missing.toml")

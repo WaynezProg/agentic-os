@@ -36,8 +36,11 @@ class Registry:
             if agent.cwd_mode == "required" and not cwd:
                 raise ValueError("cwd is required")
             run_cwd = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd().resolve())
-            if not Path(run_cwd).exists():
+            cwd_path = Path(run_cwd)
+            if not cwd_path.exists():
                 raise ValueError(f"cwd does not exist: {run_cwd}")
+            if not cwd_path.is_dir():
+                raise ValueError(f"cwd is not a directory: {run_cwd}")
         return RenderedRun(agent=agent, cwd=run_cwd, argv=render_command(agent.command, message))
 
     def _load(self) -> dict[str, AgentDefinition]:
