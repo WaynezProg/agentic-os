@@ -13,6 +13,13 @@ from agentic_os.models import SessionCreate, SessionRecord, SessionStatus
 from agentic_os.storage import Store
 
 
+TERMINAL_STATUSES = {
+    SessionStatus.SUCCEEDED,
+    SessionStatus.FAILED,
+    SessionStatus.STOPPED,
+}
+
+
 class ProcessSupervisor:
     def __init__(self, store: Store, logs: JsonlLogStore, state_dir: Path) -> None:
         self.store = store
@@ -82,6 +89,7 @@ class ProcessSupervisor:
 
     def stop(self, session_id: str, timeout_seconds: float = 5.0) -> SessionRecord:
         current = self.store.get_session(session_id)
+        current = self._repair_terminal_live_process_group(current)
         if current.status == SessionStatus.STOPPED:
             return current
         if current.status == SessionStatus.STOPPING:
@@ -114,7 +122,8 @@ class ProcessSupervisor:
 
     def reconcile(self) -> None:
         for session in self.store.list_sessions():
-            if session.status != SessionStatus.RUNNING:
+            session = self._repair_terminal_live_process_group(session)
+            if session.status not in {SessionStatus.RUNNING, SessionStatus.STOPPING}:
                 continue
             if _session_process_exists(session):
                 continue
@@ -147,7 +156,15 @@ class ProcessSupervisor:
 
         current = self.store.get_session(session_id)
         if current.status == SessionStatus.RUNNING:
-            self.store.mark_finished(session_id, exit_code)
+            if current.pgid is not None and _process_group_exists(current.pgid):
+                self.store.record_event(
+                    session_id,
+                    "root_exited_but_group_alive",
+                    "root process exited while process group is still alive",
+                    {"pid": process.pid, "pgid": current.pgid, "exit_code": exit_code},
+                )
+            else:
+                self.store.mark_finished(session_id, exit_code)
 
         with self._lock:
             self._processes.pop(session_id, None)
@@ -170,6 +187,22 @@ class ProcessSupervisor:
     ) -> SessionRecord:
         self.store.record_event(session_id, "stop_failed", message, metadata)
         return self.store.mark_failed(session_id)
+
+    def _repair_terminal_live_process_group(self, session: SessionRecord) -> SessionRecord:
+        if (
+            session.status not in TERMINAL_STATUSES
+            or session.pgid is None
+            or not _process_group_exists(session.pgid)
+        ):
+            return session
+
+        self.store.record_event(
+            session.id,
+            "terminal_state_repaired_live_process_group",
+            "terminal session still has a live process group",
+            {"pid": session.pid, "pgid": session.pgid, "status": session.status.value},
+        )
+        return self.store.repair_running(session.id)
 
     def _terminate_process_group(
         self,

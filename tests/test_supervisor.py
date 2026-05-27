@@ -73,6 +73,28 @@ def wait_until_session_status(
     raise AssertionError(f"session status is {current.status}, not {status}")
 
 
+def wait_until_event_or_terminal(
+    supervisor: ProcessSupervisor,
+    session_id: str,
+    event_type: str,
+    timeout_seconds: float = 2.0,
+) -> None:
+    terminal_statuses = {
+        SessionStatus.SUCCEEDED,
+        SessionStatus.FAILED,
+        SessionStatus.STOPPED,
+    }
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        events = supervisor.store.list_events(session_id)
+        if any(event.event_type == event_type for event in events):
+            return
+        if supervisor.store.get_session(session_id).status in terminal_statuses:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"event {event_type} was not recorded")
+
+
 def pid_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -150,6 +172,21 @@ def orphaned_child_process_group(ready_path: Path) -> tuple[int, int]:
     wait_until_file_exists(ready_path)
     process.wait(timeout=2.0)
     return process.pid, pgid
+
+
+def parent_exits_child_stays_argv(ready_path: Path) -> list[str]:
+    child_code = (
+        "import pathlib, signal, sys, time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
+        "time.sleep(10)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}, sys.argv[1]], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
+    )
+    return [sys.executable, "-c", parent_code, str(ready_path)]
 
 
 def missing_process_id() -> int:
@@ -301,6 +338,44 @@ def test_stop_does_not_mark_stopped_before_process_group_is_gone(tmp_path: Path)
         stop_thread.join(timeout=3.0)
 
 
+def test_waiter_keeps_session_running_when_root_exits_but_group_is_alive(
+    tmp_path: Path,
+) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
+
+    session = supervisor.start(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=parent_exits_child_stays_argv(ready_path),
+    )
+    wait_until_file_exists(ready_path)
+    running = supervisor.store.get_session(session.id)
+    assert running.pid is not None
+    assert running.pgid is not None
+
+    try:
+        wait_until_pid_gone(running.pid)
+        wait_until_event_or_terminal(
+            supervisor,
+            session.id,
+            "root_exited_but_group_alive",
+        )
+
+        observed = supervisor.store.get_session(session.id)
+        events = supervisor.store.list_events(session.id)
+        assert observed.status == SessionStatus.RUNNING
+        assert process_group_exists(running.pgid)
+        assert events[-1].event_type == "root_exited_but_group_alive"
+
+        stopped = supervisor.stop(session.id, timeout_seconds=0.1)
+
+        assert stopped.status == SessionStatus.STOPPED
+        wait_until_process_group_gone(running.pgid)
+    finally:
+        cleanup_process_group(running.pgid, running.pid)
+
+
 def test_reconcile_marks_missing_running_session_failed(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
     missing = missing_process_id()
@@ -334,6 +409,30 @@ def test_reconcile_keeps_running_session_when_pgid_is_alive(tmp_path: Path) -> N
             state_dir=tmp_path,
         )
         stopped = restarted.stop(session.id, timeout_seconds=0.1)
+
+        assert stopped.status == SessionStatus.STOPPED
+        wait_until_process_group_gone(pgid)
+    finally:
+        cleanup_process_group(pgid, pid)
+
+
+def test_reconcile_repairs_terminal_session_with_live_process_group(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "orphan-ready"
+    pid, pgid = orphaned_child_process_group(ready_path)
+    session = create_running_session(supervisor.store, tmp_path, pid=pid, pgid=pgid)
+    supervisor.store.mark_finished(session.id, exit_code=0)
+
+    try:
+        supervisor.reconcile()
+
+        repaired = supervisor.store.get_session(session.id)
+        events = supervisor.store.list_events(session.id)
+        assert repaired.status == SessionStatus.RUNNING
+        assert process_group_exists(pgid)
+        assert events[-1].event_type == "terminal_state_repaired_live_process_group"
+
+        stopped = supervisor.stop(session.id, timeout_seconds=0.1)
 
         assert stopped.status == SessionStatus.STOPPED
         wait_until_process_group_gone(pgid)
