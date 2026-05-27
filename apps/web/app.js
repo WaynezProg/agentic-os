@@ -7,6 +7,7 @@ const ENDPOINTS = Object.freeze({
   health: "/health",
   agents: "/agents",
   sessions: "/sessions",
+  sessionDetail: "/sessions/{session_id}",
   sessionLogs: "/sessions/{session_id}/logs",
   sessionStop: "/sessions/{session_id}/stop",
   sessionRetry: "/sessions/{session_id}/retry",
@@ -167,6 +168,14 @@ async function postEmpty(path) {
   return apiFetch(path, { method: "POST", body: JSON.stringify({}) });
 }
 
+async function loadSessionDetail(sessionId) {
+  return apiFetch(buildEndpoint("sessionDetail", { session_id: sessionId }), { method: "GET" });
+}
+
+async function loadSessionSummary(sessionId) {
+  return apiFetch(buildEndpoint("sessionSummary", { session_id: sessionId }), { method: "GET" });
+}
+
 async function loadHealth() {
   const status = byId("api-status");
   status.className = "status is-unknown";
@@ -273,6 +282,7 @@ async function loadLogs() {
 
   if (!sessionId) {
     byId("log-output").textContent = "";
+    renderSessionDetail(null);
     setMessage("logs-message", "Enter a session id.");
     return;
   }
@@ -288,6 +298,9 @@ async function loadLogs() {
   state.logStream = stream;
 
   try {
+    const session = await loadSessionDetail(sessionId);
+    renderSessionDetail(session);
+
     const query = new URLSearchParams({ after: String(requestedAfter) });
     if (stream) {
       query.set("stream", stream);
@@ -313,6 +326,21 @@ async function loadLogs() {
 
 function trimLogEntries(entries) {
   return entries.slice(-MAX_LOG_ENTRIES);
+}
+
+function renderSessionDetail(session) {
+  const target = byId("log-session-detail");
+  const detail = session || {};
+  target.innerHTML = `
+    <dt>Session</dt>
+    <dd class="cell-id">${escapeHtml(detail.id)}</dd>
+    <dt>Agent</dt>
+    <dd>${escapeHtml(detail.agent_id)}</dd>
+    <dt>Status</dt>
+    <dd>${escapeHtml(detail.status)}</dd>
+    <dt>Updated</dt>
+    <dd>${escapeHtml(detail.updated_at)}</dd>
+  `;
 }
 
 function renderLogs() {
@@ -343,13 +371,13 @@ async function loadMemoryReview() {
     const data = await apiFetch(buildEndpoint("memoryReview"));
     const items = asArray(data.items);
     if (items.length === 0) {
-      renderEmptyRow(body, 5, "No review items returned.");
+      renderEmptyRow(body, 6, "No review items returned.");
       return;
     }
     body.innerHTML = items.map(renderReviewRow).join("");
     setMessage("memory-message", "");
   } catch (error) {
-    renderErrorRow(body, 5, error.message);
+    renderErrorRow(body, 6, error.message);
   }
 }
 
@@ -359,11 +387,15 @@ function renderReviewRow(item) {
   return `
     <tr>
       <td class="cell-id">${escapeHtml(item.id)}</td>
+      <td class="cell-id">${escapeHtml(item.session_id)}</td>
       <td><span class="${statusPillClass(status)}">${escapeHtml(status)}</span></td>
       <td>${escapeHtml(item.title)}</td>
       <td class="cell-code">${escapeHtml(item.source)}</td>
       <td>
         <div class="actions">
+          <button type="button" data-action="view-summary" data-session-id="${escapeHtml(item.session_id)}">
+            summary
+          </button>
           <button type="button" data-action="approve-memory" data-item-id="${escapeHtml(item.id)}" ${
             isPending ? "" : "disabled"
           }>
@@ -452,6 +484,20 @@ function renderRegistryRows(body, rows, emptyMessage) {
     .join("");
 }
 
+function renderSessionSummary(summary) {
+  const lines = [
+    `session_id: ${valueOrDash(summary.session_id)}`,
+    `agent_id: ${valueOrDash(summary.agent_id)}`,
+    `status: ${valueOrDash(summary.status)}`,
+    `one_liner: ${valueOrDash(summary.one_liner)}`,
+    `last_task: ${valueOrDash(summary.last_task)}`,
+    `stdout_lines: ${valueOrDash(summary.stdout_lines)}`,
+    `stderr_lines: ${valueOrDash(summary.stderr_lines)}`,
+    `error_lines: ${valueOrDash(summary.error_lines)}`,
+  ];
+  byId("memory-summary-output").textContent = lines.join("\n");
+}
+
 async function handleActionClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) {
@@ -471,9 +517,13 @@ async function handleActionClick(event) {
       await loadLogs();
     } else if (action === "summarize" && sessionId) {
       await postEmpty(buildEndpoint("sessionSummary", { session_id: sessionId }));
-      setMessage("sessions-message", `summary created for ${sessionId}`);
+      const summary = await loadSessionSummary(sessionId);
+      renderSessionSummary(summary);
+      setMessage("sessions-message", `summary created for ${sessionId}: ${summary.one_liner}`);
     } else if (action === "review-create" && sessionId) {
       await postEmpty(buildEndpoint("sessionReview", { session_id: sessionId }));
+      const summary = await loadSessionSummary(sessionId);
+      renderSessionSummary(summary);
       setMessage("sessions-message", `review item created for ${sessionId}`);
       await loadMemoryReview();
     } else if (action === "retry" && sessionId) {
@@ -492,9 +542,13 @@ async function handleActionClick(event) {
       await postEmpty(buildEndpoint("memoryReject", { item_id: itemId }));
       setMessage("memory-message", `rejected ${itemId}`);
       await loadMemory();
+    } else if (action === "view-summary" && sessionId) {
+      const summary = await loadSessionSummary(sessionId);
+      renderSessionSummary(summary);
+      setMessage("memory-message", `loaded summary for ${sessionId}`);
     }
   } catch (error) {
-    if (action === "approve-memory" || action === "reject-memory") {
+    if (["approve-memory", "reject-memory", "view-summary"].includes(action)) {
       setMessage("memory-message", error.message, true);
     } else {
       setMessage("sessions-message", error.message, true);

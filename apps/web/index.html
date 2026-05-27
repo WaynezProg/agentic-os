@@ -57,7 +57,7 @@
           <button id="refresh-agents" type="button">Refresh agents</button>
         </div>
         <div class="table-shell">
-          <table>
+          <table id="agents-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -84,7 +84,7 @@
         </div>
         <p id="sessions-message" class="message" aria-live="polite"></p>
         <div class="table-shell">
-          <table>
+          <table id="sessions-table">
             <thead>
               <tr>
                 <th>ID</th>
@@ -123,6 +123,16 @@
           <input id="log-after" type="number" min="0" step="1" value="0" />
         </div>
         <p id="logs-message" class="message" aria-live="polite"></p>
+        <dl id="log-session-detail" class="detail-grid" aria-live="polite">
+          <dt>Session</dt>
+          <dd>-</dd>
+          <dt>Agent</dt>
+          <dd>-</dd>
+          <dt>Status</dt>
+          <dd>-</dd>
+          <dt>Updated</dt>
+          <dd>-</dd>
+        </dl>
         <pre id="log-output" class="log-output" aria-live="polite"></pre>
       </section>
 
@@ -131,14 +141,16 @@
           <h2>Memory</h2>
           <button id="refresh-memory" type="button">Refresh memory</button>
         </div>
+        <pre id="memory-summary-output" class="summary-output" aria-live="polite"></pre>
         <div class="split">
           <section class="subpanel">
             <h3>Review queue</h3>
             <div class="table-shell">
-              <table>
+              <table id="memory-review-table">
                 <thead>
                   <tr>
                     <th>ID</th>
+                    <th>Session</th>
                     <th>Status</th>
                     <th>Title</th>
                     <th>Source</th>
@@ -147,7 +159,7 @@
                 </thead>
                 <tbody id="memory-review-body">
                   <tr>
-                    <td colspan="5">No data loaded.</td>
+                    <td colspan="6">No data loaded.</td>
                   </tr>
                 </tbody>
               </table>
@@ -162,7 +174,7 @@
               </div>
             </div>
             <div class="table-shell">
-              <table>
+              <table id="memories-table">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -192,7 +204,7 @@
           <section class="subpanel">
             <h3>Skills</h3>
             <div class="table-shell">
-              <table>
+              <table id="skills-table">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -211,7 +223,7 @@
           <section class="subpanel">
             <h3>MCP servers</h3>
             <div class="table-shell">
-              <table>
+              <table id="mcp-table">
                 <thead>
                   <tr>
                     <th>ID</th>

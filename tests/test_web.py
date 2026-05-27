@@ -32,6 +32,74 @@ def test_daemon_api_override_input_exists() -> None:
     assert 'value="http://127.0.0.1:8767"' in html
 
 
+def test_first_screen_is_control_panel_not_marketing_page() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8").lower()
+
+    assert '<main class="workspace">' in html
+    assert 'id="panel-agents"' in html
+    assert 'class="panel is-active"' in html
+    assert 'id="api-status"' in html
+    assert 'id="refresh-all"' in html
+    for forbidden in ["hero", "landing", "get started", "sign up", "pricing"]:
+        assert forbidden not in html
+
+
+def test_agents_table_contract_exists() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert 'id="agents-table"' in html
+    assert 'id="agents-body"' in html
+    for header in ["ID", "Label", "Enabled", "CWD mode", "Stop policy", "Command preview"]:
+        assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
+
+
+def test_sessions_actions_contract_exists() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert 'id="sessions-table"' in html
+    assert 'id="sessions-body"' in html
+    for action in ["logs", "summarize", "review-create", "retry", "stop"]:
+        assert f'data-action="{action}"' in js
+
+
+def test_logs_controls_contract_exists() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert 'id="log-session-id"' in html
+    assert 'id="log-stream"' in html
+    assert '<option value="">merged</option>' in html
+    assert '<option value="stdout">stdout</option>' in html
+    assert '<option value="stderr">stderr</option>' in html
+    assert 'id="log-after"' in html
+    assert 'id="log-output"' in html
+
+
+def test_memory_controls_contract_exists() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert 'id="memory-review-table"' in html
+    assert 'id="memory-review-body"' in html
+    assert 'id="memories-table"' in html
+    assert 'id="memories-body"' in html
+    assert 'id="memory-search"' in html
+    assert 'id="memory-summary-output"' in html
+    assert 'data-action="approve-memory"' in js
+    assert 'data-action="reject-memory"' in js
+    assert 'data-action="view-summary"' in js
+
+
+def test_skills_mcp_placeholder_panels_exist() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert 'id="panel-skills"' in html
+    assert 'id="skills-table"' in html
+    assert 'id="skills-body"' in html
+    assert 'id="mcp-table"' in html
+    assert 'id="mcp-body"' in html
+
+
 def test_javascript_references_required_daemon_endpoints() -> None:
     js = APP_JS.read_text(encoding="utf-8")
 
@@ -39,6 +107,7 @@ def test_javascript_references_required_daemon_endpoints() -> None:
         "/health",
         "/agents",
         "/sessions",
+        "/sessions/{session_id}",
         "/sessions/{session_id}/logs",
         "/sessions/{session_id}/stop",
         "/sessions/{session_id}/retry",
@@ -53,6 +122,17 @@ def test_javascript_references_required_daemon_endpoints() -> None:
         "/mcp",
     ]:
         assert endpoint in js
+
+
+def test_javascript_uses_session_detail_and_summary_read_paths() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert "sessionDetail" in js
+    assert "loadSessionDetail" in js
+    assert "renderSessionDetail" in js
+    assert "loadSessionSummary" in js
+    assert "renderSessionSummary" in js
+    assert 'method: "GET"' in js
 
 
 def test_javascript_does_not_spawn_processes() -> None:
