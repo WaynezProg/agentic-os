@@ -46,6 +46,8 @@ class ProcessSupervisor:
         (session_dir / "artifacts").mkdir(parents=True, exist_ok=True)
         self._move_session_paths(session.id, session_dir)
         session = self.store.get_session(session.id)
+        Path(session.stdout_log).touch()
+        Path(session.stderr_log).touch()
 
         try:
             process = subprocess.Popen(
@@ -62,7 +64,9 @@ class ProcessSupervisor:
             self.logs.append(Path(session.stderr_log), session.id, "stderr", str(exc))
             return self.store.mark_failed(session.id)
 
-        pgid = os.getpgid(process.pid)
+        # start_new_session=True makes the child the leader of its own process group.
+        # Using pid avoids a race where a very short command exits before os.getpgid().
+        pgid = process.pid
         with self._lock:
             self._processes[session.id] = process
         session = self.store.mark_running(session.id, pid=process.pid, pgid=pgid)
