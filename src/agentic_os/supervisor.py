@@ -114,16 +114,17 @@ class ProcessSupervisor:
 
     def reconcile(self) -> None:
         for session in self.store.list_sessions():
-            if session.status != SessionStatus.RUNNING or session.pid is None:
+            if session.status != SessionStatus.RUNNING:
                 continue
-            if not _pid_exists(session.pid):
-                self.store.record_event(
-                    session.id,
-                    "daemon_reconciled_missing_process",
-                    "recorded pid is gone",
-                    {"pid": session.pid},
-                )
-                self.store.mark_failed(session.id)
+            if _session_process_exists(session):
+                continue
+            self.store.record_event(
+                session.id,
+                "daemon_reconciled_missing_process",
+                "recorded process is gone",
+                {"pid": session.pid, "pgid": session.pgid},
+            )
+            self.store.mark_failed(session.id)
 
     def _pipe_reader(
         self,
@@ -268,6 +269,14 @@ def _pid_exists(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+
+
+def _session_process_exists(session: SessionRecord) -> bool:
+    if session.pgid is not None:
+        return _process_group_exists(session.pgid)
+    if session.pid is not None:
+        return _pid_exists(session.pid)
+    return False
 
 
 def _process_group_exists(pgid: int) -> bool:
