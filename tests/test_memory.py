@@ -13,6 +13,8 @@ def _session(
     *,
     session_id: str = "s_1",
     agent_id: str = "shell",
+    argv: list[str] | None = None,
+    env: dict[str, str] | None = None,
     status: SessionStatus = SessionStatus.SUCCEEDED,
     ended_at: str | None = None,
 ) -> SessionRecord:
@@ -20,8 +22,8 @@ def _session(
         id=session_id,
         agent_id=agent_id,
         cwd=str(tmp_path),
-        argv=["/bin/echo", "OK"],
-        env={},
+        argv=argv or ["/bin/echo", "OK"],
+        env=env or {},
         artifact_dir=str(tmp_path / "sessions" / session_id),
         stdout_log=str(tmp_path / "sessions" / session_id / "stdout.jsonl"),
         stderr_log=str(tmp_path / "sessions" / session_id / "stderr.jsonl"),
@@ -194,3 +196,67 @@ def test_search_returns_approved_memories_only(tmp_path: Path) -> None:
         "remember alpha release"
     ]
     assert store.search_memories("beta") == []
+
+
+def test_init_backfills_fts_for_memories_created_during_fallback_state(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    store = MemoryStore(db_path)
+    store.init()
+    with store.connect() as conn:
+        if not _table_exists(conn, "memories_fts"):
+            pytest.skip("SQLite FTS5 is unavailable")
+        conn.execute("DROP TABLE memories_fts")
+
+    summary = store.upsert_summary(
+        _session(tmp_path),
+        build_session_summary(_session(tmp_path), [_entry("stdout", "fallback searchable alpha")]),
+    )
+    store.approve_review_item(store.create_review_item(summary).id)
+
+    assert [memory.title for memory in store.search_memories("alpha")] == [
+        "fallback searchable alpha"
+    ]
+
+    store.init()
+
+    assert [memory.title for memory in store.search_memories("alpha")] == [
+        "fallback searchable alpha"
+    ]
+
+
+def test_memory_records_do_not_include_session_env_or_argv_secrets(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "agentic-os.db")
+    store.init()
+    session = _session(
+        tmp_path,
+        argv=["/bin/echo", "argv-secret-token"],
+        env={"API_TOKEN": "env-secret-token"},
+    )
+    summary = store.upsert_summary(
+        session,
+        build_session_summary(session, [_entry("stdout", "safe project note")]),
+    )
+
+    memory = store.approve_review_item(store.create_review_item(summary).id)
+
+    memory_text = f"{memory.title}\n{memory.body}\n{memory.source}"
+    assert "argv-secret-token" not in memory_text
+    assert "env-secret-token" not in memory_text
+    assert store.search_memories("argv-secret-token") == []
+    assert store.search_memories("env-secret-token") == []
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    return (
+        conn.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+        is not None
+    )

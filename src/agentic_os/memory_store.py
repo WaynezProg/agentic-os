@@ -117,6 +117,8 @@ class MemoryStore:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
             self._init_fts(conn)
+            if _has_fts(conn):
+                _rebuild_fts(conn)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -427,6 +429,18 @@ def _has_fts(conn: sqlite3.Connection) -> bool:
         """
     ).fetchone()
     return row is not None
+
+
+def _rebuild_fts(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM memories_fts")
+    conn.execute(
+        """
+        INSERT INTO memories_fts (memory_id, title, body, source)
+        SELECT id, title, body, source
+        FROM memories
+        ORDER BY created_at ASC, id ASC
+        """
+    )
 
 
 def _fts_query(query: str) -> str:
