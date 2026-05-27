@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>agentic-os control panel</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">AO</span>
+        <div>
+          <h1>agentic-os</h1>
+          <p>daemon control panel</p>
+        </div>
+      </div>
+      <div class="api-controls" aria-label="Daemon API controls">
+        <label for="api-url">Daemon API</label>
+        <input
+          id="api-url"
+          name="api-url"
+          type="url"
+          value="http://127.0.0.1:8767"
+          spellcheck="false"
+        />
+        <button id="refresh-all" type="button">Refresh</button>
+        <span id="api-status" class="status is-unknown" role="status" aria-live="polite">
+          not checked
+        </span>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Control panel sections">
+      <button id="tab-agents" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="agents">
+        Agents
+      </button>
+      <button id="tab-sessions" class="tab" type="button" role="tab" aria-selected="false" data-tab="sessions">
+        Sessions
+      </button>
+      <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
+        Logs
+      </button>
+      <button id="tab-memory" class="tab" type="button" role="tab" aria-selected="false" data-tab="memory">
+        Memory
+      </button>
+      <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
+        Skills / MCP
+      </button>
+    </nav>
+
+    <main class="workspace">
+      <section id="panel-agents" class="panel is-active" role="tabpanel" aria-labelledby="tab-agents">
+        <div class="panel-head">
+          <h2>Agents</h2>
+          <button id="refresh-agents" type="button">Refresh agents</button>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Label</th>
+                <th>Enabled</th>
+                <th>CWD mode</th>
+                <th>Stop policy</th>
+                <th>Command preview</th>
+              </tr>
+            </thead>
+            <tbody id="agents-body">
+              <tr>
+                <td colspan="6">No data loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-sessions" class="panel" role="tabpanel" aria-labelledby="tab-sessions" hidden>
+        <div class="panel-head">
+          <h2>Sessions</h2>
+          <button id="refresh-sessions" type="button">Refresh sessions</button>
+        </div>
+        <p id="sessions-message" class="message" aria-live="polite"></p>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Agent</th>
+                <th>CWD</th>
+                <th>Status</th>
+                <th>Exit</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-body">
+              <tr>
+                <td colspan="7">No data loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
+        <div class="panel-head">
+          <h2>Logs</h2>
+          <button id="load-logs" type="button">Load logs</button>
+        </div>
+        <div class="control-row">
+          <label for="log-session-id">Session ID</label>
+          <input id="log-session-id" type="text" spellcheck="false" />
+          <label for="log-stream">Stream</label>
+          <select id="log-stream">
+            <option value="">merged</option>
+            <option value="stdout">stdout</option>
+            <option value="stderr">stderr</option>
+          </select>
+          <label for="log-after">After cursor</label>
+          <input id="log-after" type="number" min="0" step="1" value="0" />
+        </div>
+        <p id="logs-message" class="message" aria-live="polite"></p>
+        <pre id="log-output" class="log-output" aria-live="polite"></pre>
+      </section>
+
+      <section id="panel-memory" class="panel" role="tabpanel" aria-labelledby="tab-memory" hidden>
+        <div class="panel-head">
+          <h2>Memory</h2>
+          <button id="refresh-memory" type="button">Refresh memory</button>
+        </div>
+        <div class="split">
+          <section class="subpanel">
+            <h3>Review queue</h3>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Status</th>
+                    <th>Title</th>
+                    <th>Source</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="memory-review-body">
+                  <tr>
+                    <td colspan="5">No data loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="subpanel">
+            <div class="subpanel-head">
+              <h3>Approved memory</h3>
+              <div class="search">
+                <input id="memory-search" type="search" placeholder="Search approved memory" />
+                <button id="search-memory" type="button">Search</button>
+              </div>
+            </div>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Kind</th>
+                    <th>Title</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="memories-body">
+                  <tr>
+                    <td colspan="4">No data loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+        <p id="memory-message" class="message" aria-live="polite"></p>
+      </section>
+
+      <section id="panel-skills" class="panel" role="tabpanel" aria-labelledby="tab-skills" hidden>
+        <div class="panel-head">
+          <h2>Skills / MCP</h2>
+          <button id="refresh-skills" type="button">Refresh registry</button>
+        </div>
+        <div class="split">
+          <section class="subpanel">
+            <h3>Skills</h3>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Label</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="skills-body">
+                  <tr>
+                    <td colspan="3">No data loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="subpanel">
+            <h3>MCP servers</h3>
+            <div class="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Label</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="mcp-body">
+                  <tr>
+                    <td colspan="3">No data loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
