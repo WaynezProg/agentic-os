@@ -48,7 +48,9 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def run_session(request: SessionRunRequest) -> dict[str, object]:
         try:
             rendered = registry.build_run(request.agent_id, request.cwd, request.message)
-        except (KeyError, ValueError) as exc:
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         session = supervisor.start(rendered.agent.id, rendered.cwd, rendered.argv)
         _wait_for_short_command(supervisor, session.id)
@@ -95,11 +97,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/sessions/{session_id}/retry")
     def retry_session(session_id: str) -> dict[str, object]:
         try:
-            return supervisor.retry(session_id).model_dump()
+            session = supervisor.retry(session_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _wait_for_short_command(supervisor, session.id)
+        return supervisor.store.get_session(session.id).model_dump()
 
     return app
 
