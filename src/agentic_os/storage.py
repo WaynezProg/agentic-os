@@ -24,6 +24,14 @@ ALLOWED_TRANSITIONS = {
     SessionStatus.FAILED: frozenset(),
     SessionStatus.STOPPED: frozenset(),
 }
+ALLOWED_PREVIOUS_STATUSES = {
+    status: tuple(
+        current_status
+        for current_status in SessionStatus
+        if status in ALLOWED_TRANSITIONS[current_status]
+    )
+    for status in SessionStatus
+}
 SESSION_STATUS_SQL = ", ".join(f"'{status.value}'" for status in SessionStatus)
 
 EVENTS_SCHEMA = """
@@ -137,63 +145,39 @@ class Store:
         return [_session_from_row(row) for row in rows]
 
     def mark_running(self, session_id: str, pid: int, pgid: int) -> SessionRecord:
-        self._ensure_transition_allowed(session_id, SessionStatus.RUNNING)
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE sessions
-                SET status = ?, pid = ?, pgid = ?, started_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (SessionStatus.RUNNING.value, pid, pgid, session_id),
-            )
-        return self.get_session(session_id)
+        return self._transition_session(
+            session_id,
+            SessionStatus.RUNNING,
+            "pid = ?, pgid = ?, started_at = CURRENT_TIMESTAMP",
+            (pid, pgid),
+        )
 
     def mark_stopping(self, session_id: str) -> SessionRecord:
         return self._set_status(session_id, SessionStatus.STOPPING)
 
     def mark_stopped(self, session_id: str) -> SessionRecord:
-        self._ensure_transition_allowed(session_id, SessionStatus.STOPPED)
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE sessions
-                SET status = ?, ended_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (SessionStatus.STOPPED.value, session_id),
-            )
-        return self.get_session(session_id)
+        return self._transition_session(
+            session_id,
+            SessionStatus.STOPPED,
+            "ended_at = CURRENT_TIMESTAMP",
+        )
 
     def mark_failed(self, session_id: str, exit_code: int | None = None) -> SessionRecord:
-        self._ensure_transition_allowed(session_id, SessionStatus.FAILED)
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE sessions
-                SET status = ?, exit_code = ?, ended_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (SessionStatus.FAILED.value, exit_code, session_id),
-            )
-        return self.get_session(session_id)
+        return self._transition_session(
+            session_id,
+            SessionStatus.FAILED,
+            "exit_code = ?, ended_at = CURRENT_TIMESTAMP",
+            (exit_code,),
+        )
 
     def mark_finished(self, session_id: str, exit_code: int) -> SessionRecord:
         status = SessionStatus.SUCCEEDED if exit_code == 0 else SessionStatus.FAILED
-        self._ensure_transition_allowed(session_id, status)
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE sessions
-                SET status = ?, exit_code = ?, ended_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (status.value, exit_code, session_id),
-            )
-        return self.get_session(session_id)
+        return self._transition_session(
+            session_id,
+            status,
+            "exit_code = ?, ended_at = CURRENT_TIMESTAMP",
+            (exit_code,),
+        )
 
     def record_event(
         self,
@@ -230,21 +214,43 @@ class Store:
         ]
 
     def _set_status(self, session_id: str, status: SessionStatus) -> SessionRecord:
-        self._ensure_transition_allowed(session_id, status)
-        with self.connect() as conn:
-            conn.execute(
-                "UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (status.value, session_id),
-            )
-        return self.get_session(session_id)
+        return self._transition_session(session_id, status)
 
-    def _ensure_transition_allowed(self, session_id: str, status: SessionStatus) -> None:
-        current = self.get_session(session_id)
-        if status not in ALLOWED_TRANSITIONS[current.status]:
-            raise ValueError(
-                f"Cannot transition session {session_id} "
-                f"from {current.status.value} to {status.value}"
+    def _transition_session(
+        self,
+        session_id: str,
+        status: SessionStatus,
+        assignments: str = "",
+        values: tuple[Any, ...] = (),
+    ) -> SessionRecord:
+        allowed_previous_statuses = ALLOWED_PREVIOUS_STATUSES[status]
+        if not allowed_previous_statuses:
+            with self.connect() as conn:
+                _raise_transition_error(conn, session_id, status)
+
+        placeholders = ", ".join("?" for _ in allowed_previous_statuses)
+        set_clause = "status = ?"
+        if assignments:
+            set_clause = f"{set_clause}, {assignments}"
+        set_clause = f"{set_clause}, updated_at = CURRENT_TIMESTAMP"
+
+        with self.connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE sessions
+                SET {set_clause}
+                WHERE id = ? AND status IN ({placeholders})
+                """,
+                (
+                    status.value,
+                    *values,
+                    session_id,
+                    *(previous_status.value for previous_status in allowed_previous_statuses),
+                ),
             )
+            if cursor.rowcount != 1:
+                _raise_transition_error(conn, session_id, status)
+        return self.get_session(session_id)
 
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
@@ -296,3 +302,17 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
 def _events_has_session_foreign_key(conn: sqlite3.Connection) -> bool:
     foreign_keys = conn.execute("PRAGMA foreign_key_list(events)").fetchall()
     return any(row[2] == "sessions" and row[3] == "session_id" for row in foreign_keys)
+
+
+def _raise_transition_error(
+    conn: sqlite3.Connection, session_id: str, status: SessionStatus
+) -> None:
+    row = conn.execute("SELECT status FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    if row is None:
+        raise KeyError(session_id)
+
+    current_status = SessionStatus(row["status"])
+    raise ValueError(
+        f"Cannot transition session {session_id} "
+        f"from {current_status.value} to {status.value}"
+    )

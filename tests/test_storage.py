@@ -191,3 +191,37 @@ def test_terminal_sessions_cannot_be_marked_running_again(
         store.mark_running(session.id, pid=456, pgid=456)
 
     assert store.get_session(session.id).status == terminal_status
+
+
+def test_mark_running_rejects_interleaved_terminal_update(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+    session = store.create_session(_session_create(tmp_path))
+    original_transition = getattr(store, "_transition_session", None)
+
+    def interleaving_transition(*args: object, **kwargs: object) -> object:
+        with store.connect() as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET status = ?, exit_code = ?, ended_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (SessionStatus.FAILED.value, 7, session.id),
+            )
+        if original_transition is None:
+            raise AssertionError("Store did not use an atomic transition update")
+        return original_transition(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_transition_session", interleaving_transition, raising=False)
+
+    with pytest.raises(ValueError):
+        store.mark_running(session.id, pid=456, pgid=456)
+
+    stored = store.get_session(session.id)
+    assert stored.status == SessionStatus.FAILED
+    assert stored.exit_code == 7
+    assert stored.pid is None
+    assert stored.pgid is None
