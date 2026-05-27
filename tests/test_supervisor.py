@@ -189,6 +189,21 @@ def parent_exits_child_stays_argv(ready_path: Path) -> list[str]:
     return [sys.executable, "-c", parent_code, str(ready_path)]
 
 
+def parent_exits_child_finishes_argv(ready_path: Path, exit_code: int) -> list[str]:
+    child_code = (
+        "import pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
+        "time.sleep(0.2)"
+    )
+    parent_code = (
+        "import subprocess, sys; "
+        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}, sys.argv[1]], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+        f"sys.exit({exit_code})"
+    )
+    return [sys.executable, "-c", parent_code, str(ready_path)]
+
+
 def missing_process_id() -> int:
     for candidate in range(900_000, 901_000):
         if not pid_exists(candidate) and not process_group_exists(candidate):
@@ -270,6 +285,25 @@ def test_supervisor_retries_session_with_same_command(tmp_path: Path) -> None:
     assert finished.argv == session.argv
     assert finished.status == SessionStatus.SUCCEEDED
     assert supervisor.logs.read(Path(finished.stdout_log))[0].line == "retry"
+
+
+def test_supervisor_rejects_retry_for_active_sessions(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    missing = missing_process_id()
+    running = create_running_session(supervisor.store, tmp_path, pid=missing, pgid=missing)
+
+    try:
+        supervisor.retry(running.id)
+        raise AssertionError("retry should reject running sessions")
+    except ValueError:
+        pass
+
+    stopping = supervisor.store.mark_stopping(running.id)
+    try:
+        supervisor.retry(stopping.id)
+        raise AssertionError("retry should reject stopping sessions")
+    except ValueError:
+        pass
 
 
 def test_supervisor_stops_process_group(tmp_path: Path) -> None:
@@ -376,6 +410,70 @@ def test_waiter_keeps_session_running_when_root_exits_but_group_is_alive(
         cleanup_process_group(running.pgid, running.pid)
 
 
+def test_waiter_settles_success_when_root_exits_and_child_later_exits(
+    tmp_path: Path,
+) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
+
+    session = supervisor.start(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=parent_exits_child_finishes_argv(ready_path, exit_code=0),
+    )
+    wait_until_file_exists(ready_path)
+    running = supervisor.store.get_session(session.id)
+    assert running.pgid is not None
+
+    try:
+        wait_until_done(supervisor, session.id)
+
+        finished = supervisor.store.get_session(session.id)
+        assert finished.status == SessionStatus.SUCCEEDED
+        assert finished.exit_code == 0
+        wait_until_process_group_gone(running.pgid)
+
+        supervisor.reconcile()
+
+        reconciled = supervisor.store.get_session(session.id)
+        assert reconciled.status == SessionStatus.SUCCEEDED
+        assert reconciled.exit_code == 0
+    finally:
+        cleanup_process_group(running.pgid, running.pid)
+
+
+def test_waiter_settles_failure_when_root_fails_and_child_later_exits(
+    tmp_path: Path,
+) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
+
+    session = supervisor.start(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=parent_exits_child_finishes_argv(ready_path, exit_code=7),
+    )
+    wait_until_file_exists(ready_path)
+    running = supervisor.store.get_session(session.id)
+    assert running.pgid is not None
+
+    try:
+        wait_until_done(supervisor, session.id)
+
+        finished = supervisor.store.get_session(session.id)
+        assert finished.status == SessionStatus.FAILED
+        assert finished.exit_code == 7
+        wait_until_process_group_gone(running.pgid)
+
+        supervisor.reconcile()
+
+        reconciled = supervisor.store.get_session(session.id)
+        assert reconciled.status == SessionStatus.FAILED
+        assert reconciled.exit_code == 7
+    finally:
+        cleanup_process_group(running.pgid, running.pid)
+
+
 def test_reconcile_marks_missing_running_session_failed(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
     missing = missing_process_id()
@@ -387,6 +485,23 @@ def test_reconcile_marks_missing_running_session_failed(tmp_path: Path) -> None:
     events = supervisor.store.list_events(session.id)
     assert reconciled.status == SessionStatus.FAILED
     assert events[-1].event_type == "daemon_reconciled_missing_process"
+
+
+def test_reconcile_settles_recorded_root_exit_when_process_group_is_gone(
+    tmp_path: Path,
+) -> None:
+    supervisor = make_supervisor(tmp_path)
+    missing = missing_process_id()
+    session = create_running_session(supervisor.store, tmp_path, pid=missing, pgid=missing)
+    supervisor.store.record_root_exit(session.id, exit_code=7)
+
+    supervisor.reconcile()
+
+    reconciled = supervisor.store.get_session(session.id)
+    events = supervisor.store.list_events(session.id)
+    assert reconciled.status == SessionStatus.FAILED
+    assert reconciled.exit_code == 7
+    assert not events
 
 
 def test_reconcile_keeps_running_session_when_pgid_is_alive(tmp_path: Path) -> None:

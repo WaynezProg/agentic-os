@@ -118,6 +118,10 @@ class ProcessSupervisor:
 
     def retry(self, session_id: str) -> SessionRecord:
         previous = self.store.get_session(session_id)
+        if previous.status not in TERMINAL_STATUSES:
+            raise ValueError(
+                f"Cannot retry active session {session_id} with status {previous.status.value}"
+            )
         return self.start(previous.agent_id, previous.cwd, previous.argv)
 
     def reconcile(self) -> None:
@@ -126,6 +130,9 @@ class ProcessSupervisor:
             if session.status not in {SessionStatus.RUNNING, SessionStatus.STOPPING}:
                 continue
             if _session_process_exists(session):
+                continue
+            if session.status == SessionStatus.RUNNING and session.exit_code is not None:
+                self.store.mark_finished(session.id, session.exit_code)
                 continue
             self.store.record_event(
                 session.id,
@@ -157,15 +164,30 @@ class ProcessSupervisor:
         current = self.store.get_session(session_id)
         if current.status == SessionStatus.RUNNING:
             if current.pgid is not None and _process_group_exists(current.pgid):
+                try:
+                    current = self.store.record_root_exit(session_id, exit_code)
+                except ValueError:
+                    current = self.store.get_session(session_id)
+                    if current.status != SessionStatus.RUNNING:
+                        self._cleanup_process_tracking(session_id)
+                        return
+                    raise
                 self.store.record_event(
                     session_id,
                     "root_exited_but_group_alive",
                     "root process exited while process group is still alive",
                     {"pid": process.pid, "pgid": current.pgid, "exit_code": exit_code},
                 )
+                self._wait_until_process_group_gone(current.pgid, timeout_seconds=None)
+                current = self.store.get_session(session_id)
+                if current.status == SessionStatus.RUNNING:
+                    self.store.mark_finished(session_id, exit_code)
             else:
                 self.store.mark_finished(session_id, exit_code)
 
+        self._cleanup_process_tracking(session_id)
+
+    def _cleanup_process_tracking(self, session_id: str) -> None:
         with self._lock:
             self._processes.pop(session_id, None)
             self._reader_threads.pop(session_id, None)
@@ -267,9 +289,9 @@ class ProcessSupervisor:
             )
             raise
 
-    def _wait_until_process_group_gone(self, pgid: int, timeout_seconds: float) -> bool:
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
+    def _wait_until_process_group_gone(self, pgid: int, timeout_seconds: float | None) -> bool:
+        deadline = None if timeout_seconds is None else time.time() + timeout_seconds
+        while deadline is None or time.time() < deadline:
             if not _process_group_exists(pgid):
                 return True
             time.sleep(0.05)

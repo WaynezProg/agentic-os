@@ -201,6 +201,20 @@ class Store:
             (exit_code,),
         )
 
+    def record_root_exit(self, session_id: str, exit_code: int) -> SessionRecord:
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE sessions
+                SET exit_code = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = ?
+                """,
+                (exit_code, session_id, SessionStatus.RUNNING.value),
+            )
+            if cursor.rowcount != 1:
+                _raise_transition_error(conn, session_id, SessionStatus.RUNNING)
+        return self.get_session(session_id)
+
     def repair_running(self, session_id: str) -> SessionRecord:
         repairable_statuses = (
             SessionStatus.SUCCEEDED,
