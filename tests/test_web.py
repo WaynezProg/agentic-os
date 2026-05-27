@@ -160,6 +160,24 @@ def test_log_rendering_is_bounded() -> None:
     assert ".slice(-MAX_LOG_ENTRIES)" in js
 
 
+def test_session_logs_action_loads_logs_once_while_manual_refresh_still_works() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+
+    match = re.search(
+        r'if \(action === "logs" && sessionId\) \{(?P<body>.*?)\n    \} else if',
+        js,
+        re.DOTALL,
+    )
+    assert match is not None
+    logs_action_body = match.group("body")
+
+    assert 'byId("load-logs").addEventListener("click", loadLogs)' in js
+    assert "function showTab(tabName, options = {})" in js
+    assert 'showTab("logs", { skipLoad: true });' in logs_action_body
+    assert logs_action_body.count("loadLogs(") == 1
+    assert re.search(r"if \(!options\.skipLoad\) \{\s*loadActiveTab\(\);\s*\}", js)
+
+
 def test_no_node_build_or_package_requirement_is_introduced() -> None:
     for path in [
         WEB_DIR / "package.json",

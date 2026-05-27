@@ -82,7 +82,7 @@ function bindControls() {
   document.body.addEventListener("click", handleActionClick);
 }
 
-function showTab(tabName) {
+function showTab(tabName, options = {}) {
   state.activeTab = tabName;
   document.querySelectorAll("[data-tab]").forEach((button) => {
     const isActive = button.dataset.tab === tabName;
@@ -94,7 +94,9 @@ function showTab(tabName) {
     panel.classList.toggle("is-active", isActive);
     panel.hidden = !isActive;
   });
-  loadActiveTab();
+  if (!options.skipLoad) {
+    loadActiveTab();
+  }
 }
 
 function loadActiveTab() {
@@ -513,7 +515,7 @@ async function handleActionClick(event) {
     if (action === "logs" && sessionId) {
       byId("log-session-id").value = sessionId;
       resetLogState();
-      showTab("logs");
+      showTab("logs", { skipLoad: true });
       await loadLogs();
     } else if (action === "summarize" && sessionId) {
       await postEmpty(buildEndpoint("sessionSummary", { session_id: sessionId }));
