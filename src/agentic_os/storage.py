@@ -9,7 +9,12 @@ from typing import Any
 from agentic_os.models import EventRecord, SessionCreate, SessionRecord, SessionStatus
 
 
-SCHEMA = """
+TERMINAL_STATUSES = frozenset(
+    {SessionStatus.SUCCEEDED, SessionStatus.FAILED, SessionStatus.STOPPED}
+)
+SESSION_STATUS_SQL = ", ".join(f"'{status.value}'" for status in SessionStatus)
+
+SCHEMA = f"""
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -18,7 +23,7 @@ CREATE TABLE IF NOT EXISTS agents (
   enabled INTEGER NOT NULL DEFAULT 1,
   command_json TEXT NOT NULL,
   cwd_mode TEXT NOT NULL,
-  env_json TEXT NOT NULL DEFAULT '{}',
+  env_json TEXT NOT NULL DEFAULT '{{}}',
   stop_policy TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -29,7 +34,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   agent_id TEXT NOT NULL,
   cwd TEXT NOT NULL,
   argv_json TEXT NOT NULL,
-  status TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ({SESSION_STATUS_SQL})),
   pid INTEGER,
   pgid INTEGER,
   exit_code INTEGER,
@@ -47,8 +52,9 @@ CREATE TABLE IF NOT EXISTS events (
   session_id TEXT NOT NULL,
   event_type TEXT NOT NULL,
   message TEXT NOT NULL,
-  metadata_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  metadata_json TEXT NOT NULL DEFAULT '{{}}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 """
 
@@ -64,6 +70,7 @@ class Store:
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -105,6 +112,7 @@ class Store:
         return [_session_from_row(row) for row in rows]
 
     def mark_running(self, session_id: str, pid: int, pgid: int) -> SessionRecord:
+        self._ensure_transition_allowed(session_id, SessionStatus.RUNNING)
         with self.connect() as conn:
             conn.execute(
                 """
@@ -121,6 +129,7 @@ class Store:
         return self._set_status(session_id, SessionStatus.STOPPING)
 
     def mark_stopped(self, session_id: str) -> SessionRecord:
+        self._ensure_transition_allowed(session_id, SessionStatus.STOPPED)
         with self.connect() as conn:
             conn.execute(
                 """
@@ -133,6 +142,7 @@ class Store:
         return self.get_session(session_id)
 
     def mark_failed(self, session_id: str, exit_code: int | None = None) -> SessionRecord:
+        self._ensure_transition_allowed(session_id, SessionStatus.FAILED)
         with self.connect() as conn:
             conn.execute(
                 """
@@ -147,6 +157,7 @@ class Store:
 
     def mark_finished(self, session_id: str, exit_code: int) -> SessionRecord:
         status = SessionStatus.SUCCEEDED if exit_code == 0 else SessionStatus.FAILED
+        self._ensure_transition_allowed(session_id, status)
         with self.connect() as conn:
             conn.execute(
                 """
@@ -194,12 +205,21 @@ class Store:
         ]
 
     def _set_status(self, session_id: str, status: SessionStatus) -> SessionRecord:
+        self._ensure_transition_allowed(session_id, status)
         with self.connect() as conn:
             conn.execute(
                 "UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (status.value, session_id),
             )
         return self.get_session(session_id)
+
+    def _ensure_transition_allowed(self, session_id: str, status: SessionStatus) -> None:
+        current = self.get_session(session_id)
+        if current.status in TERMINAL_STATUSES and current.status != status:
+            raise ValueError(
+                f"Cannot transition terminal session {session_id} "
+                f"from {current.status.value} to {status.value}"
+            )
 
 
 def _session_from_row(row: sqlite3.Row) -> SessionRecord:
