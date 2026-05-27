@@ -60,6 +60,65 @@ uv run agentctl run sleep --api http://127.0.0.1:8768 --cwd "$PWD" --message "ig
 uv run agentctl stop <running_session_id> --api http://127.0.0.1:8768
 ```
 
+## Run P1 Memory Pipeline
+
+P1 turns a completed session into reviewable local memory:
+
+```text
+session logs -> session summary -> review queue -> approved memory -> search
+```
+
+Start the daemon:
+
+```bash
+rtk uv run agentd serve --state-dir .agentic-os --registry examples/agents.toml
+```
+
+Run a shell session and promote its summary:
+
+```bash
+rtk uv run agentctl run shell --cwd "$PWD" --message "approved memory fact"
+rtk uv run agentctl memory summarize <session_id>
+rtk uv run agentctl memory review create <session_id>
+rtk uv run agentctl memory review list
+rtk uv run agentctl memory approve <review_item_id>
+rtk uv run agentctl memory search approved
+```
+
+Memory promotion is explicit. `review create` queues a deterministic summary;
+`approve` creates the durable memory record.
+
+## Run P2 Thin UI
+
+Start the daemon:
+
+```bash
+rtk uv run agentd serve --state-dir .agentic-os --registry examples/agents.toml
+```
+
+Start the no-build static UI:
+
+```bash
+cd apps/web
+python -m http.server 5173
+```
+
+Open `http://127.0.0.1:5173`. The UI defaults to
+`http://127.0.0.1:8767`; edit the API URL field if the daemon uses another
+port.
+
+P2 shows agents, sessions, bounded logs, memory review/approved memory, and
+placeholder Skills/MCP registries. The daemon remains the only process owner.
+
+## P1/P2 Limitations
+
+P1/P2 intentionally do not include:
+
+- LLM-generated summaries; summaries are deterministic from session metadata
+  and stdout/stderr logs.
+- Embeddings, vector DB, LanceDB, Redis, or remote sync.
+- P3 policy editing, tool approval editing, or model allowlist editing.
+
 ## Development
 
 ```bash

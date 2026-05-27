@@ -86,6 +86,12 @@ def session_id_from(output: str) -> str:
     return output.strip().split("\t")[0]
 
 
+def json_from(output: str) -> dict[str, object]:
+    data = json.loads(output)
+    assert isinstance(data, dict)
+    return data
+
+
 def test_agentctl_shell_run_logs_retry_quickstart_against_live_daemon(
     tmp_path: Path,
     free_tcp_port: int,
@@ -146,3 +152,50 @@ def test_agentctl_stop_running_session_against_live_daemon(
 
         session = httpx.get(f"{api}/sessions/{session_id}", timeout=1).json()
         assert session["status"] == "stopped"
+
+
+def test_agentctl_memory_pipeline_against_live_daemon(
+    tmp_path: Path,
+    free_tcp_port: int,
+) -> None:
+    runner = CliRunner()
+    memory_text = "approved memory fact"
+    with live_daemon(tmp_path, free_tcp_port) as api:
+        run = runner.invoke(
+            cli.app,
+            ["run", "shell", "--cwd", str(tmp_path), "--message", memory_text, "--api", api],
+        )
+        assert_cli_ok(run)
+        session_id = session_id_from(run.output)
+        assert run.output == f"{session_id}\tshell\tsucceeded\n"
+
+        summarize = runner.invoke(cli.app, ["memory", "summarize", session_id, "--api", api])
+        assert_cli_ok(summarize)
+        summary = json_from(summarize.output)
+        assert summary["session_id"] == session_id
+        assert summary["agent_id"] == "shell"
+        assert summary["one_liner"] == memory_text
+
+        review = runner.invoke(
+            cli.app,
+            ["memory", "review", "create", session_id, "--api", api],
+        )
+        assert_cli_ok(review)
+        review_item = json_from(review.output)
+        assert review_item["session_id"] == session_id
+        assert review_item["status"] == "pending"
+
+        approve = runner.invoke(
+            cli.app,
+            ["memory", "approve", str(review_item["id"]), "--api", api],
+        )
+        assert_cli_ok(approve)
+        memory = json_from(approve.output)
+        assert memory["session_id"] == session_id
+        assert memory["review_item_id"] == review_item["id"]
+        assert memory["title"] == memory_text
+
+        search = runner.invoke(cli.app, ["memory", "search", "approved", "--api", api])
+        assert_cli_ok(search)
+        assert session_id in search.output
+        assert memory_text in search.output
