@@ -226,7 +226,7 @@ class Store:
             cursor = conn.execute(
                 f"""
                 UPDATE sessions
-                SET status = ?, exit_code = NULL, ended_at = NULL, updated_at = CURRENT_TIMESTAMP
+                SET status = ?, ended_at = NULL, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND status IN ({placeholders})
                 """,
                 (

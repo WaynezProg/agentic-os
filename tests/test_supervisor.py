@@ -174,6 +174,27 @@ def orphaned_child_process_group(ready_path: Path) -> tuple[int, int]:
     return process.pid, pgid
 
 
+def orphaned_child_finishes_process_group(ready_path: Path) -> tuple[int, int]:
+    child_code = (
+        "import pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
+        "time.sleep(0.2)"
+    )
+    parent_code = (
+        "import pathlib, subprocess, sys; "
+        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}, sys.argv[1]], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", parent_code, str(ready_path)],
+        start_new_session=True,
+    )
+    pgid = os.getpgid(process.pid)
+    wait_until_file_exists(ready_path)
+    process.wait(timeout=2.0)
+    return process.pid, pgid
+
+
 def parent_exits_child_stays_argv(ready_path: Path) -> list[str]:
     child_code = (
         "import pathlib, signal, sys, time; "
@@ -551,6 +572,63 @@ def test_reconcile_repairs_terminal_session_with_live_process_group(tmp_path: Pa
 
         assert stopped.status == SessionStatus.STOPPED
         wait_until_process_group_gone(pgid)
+    finally:
+        cleanup_process_group(pgid, pid)
+
+
+def test_reconcile_preserves_exit_code_when_repaired_group_later_exits(
+    tmp_path: Path,
+) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "orphan-ready"
+    pid, pgid = orphaned_child_finishes_process_group(ready_path)
+    session = create_running_session(supervisor.store, tmp_path, pid=pid, pgid=pgid)
+    supervisor.store.mark_finished(session.id, exit_code=7)
+
+    try:
+        supervisor.reconcile()
+
+        repaired = supervisor.store.get_session(session.id)
+        assert repaired.status == SessionStatus.RUNNING
+        assert repaired.exit_code == 7
+        assert process_group_exists(pgid)
+
+        wait_until_process_group_gone(pgid)
+        supervisor.reconcile()
+
+        settled = supervisor.store.get_session(session.id)
+        assert settled.status == SessionStatus.FAILED
+        assert settled.exit_code == 7
+    finally:
+        cleanup_process_group(pgid, pid)
+
+
+def test_retry_rejects_stale_terminal_session_with_live_process_group(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "orphan-ready"
+    pid, pgid = orphaned_child_process_group(ready_path)
+    session = create_running_session(
+        supervisor.store,
+        tmp_path,
+        pid=pid,
+        pgid=pgid,
+        argv=["/bin/sh", "-lc", "printf stale"],
+    )
+    supervisor.store.mark_finished(session.id, exit_code=0)
+    session_ids_before = {stored.id for stored in supervisor.store.list_sessions()}
+
+    try:
+        try:
+            supervisor.retry(session.id)
+            raise AssertionError("retry should reject stale terminal live-pgid sessions")
+        except ValueError:
+            pass
+
+        repaired = supervisor.store.get_session(session.id)
+        session_ids_after = {stored.id for stored in supervisor.store.list_sessions()}
+        assert repaired.status == SessionStatus.RUNNING
+        assert session_ids_after == session_ids_before
+        assert process_group_exists(pgid)
     finally:
         cleanup_process_group(pgid, pid)
 
