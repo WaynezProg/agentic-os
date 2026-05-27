@@ -56,6 +56,91 @@ class FakeClient:
         self.calls.append(("retry_session", (session_id,), {}))
         return {"id": "s_2", "agent_id": "shell", "status": "queued"}
 
+    def summarize_session(self, session_id: str) -> dict[str, object]:
+        self.calls.append(("summarize_session", (session_id,), {}))
+        return {
+            "id": "sum_1",
+            "session_id": session_id,
+            "agent_id": "shell",
+            "status": "succeeded",
+            "one_liner": "Remember outcome",
+        }
+
+    def show_session_summary(self, session_id: str) -> dict[str, object]:
+        self.calls.append(("show_session_summary", (session_id,), {}))
+        return {
+            "id": "sum_1",
+            "session_id": session_id,
+            "one_liner": "Remember outcome",
+        }
+
+    def create_memory_review(self, session_id: str) -> dict[str, object]:
+        self.calls.append(("create_memory_review", (session_id,), {}))
+        return {
+            "id": "mri_1",
+            "session_id": session_id,
+            "status": "pending",
+            "title": "Remember outcome",
+        }
+
+    def list_memory_review(self) -> dict[str, object]:
+        self.calls.append(("list_memory_review", (), {}))
+        return {
+            "items": [
+                {
+                    "id": "mri_1",
+                    "session_id": "s_1",
+                    "status": "pending",
+                    "title": "Remember outcome",
+                }
+            ]
+        }
+
+    def approve_memory_review(self, item_id: str) -> dict[str, object]:
+        self.calls.append(("approve_memory_review", (item_id,), {}))
+        return {
+            "id": "mem_1",
+            "review_item_id": item_id,
+            "session_id": "s_1",
+            "kind": "project_memory",
+            "title": "Remember outcome",
+        }
+
+    def reject_memory_review(self, item_id: str) -> dict[str, object]:
+        self.calls.append(("reject_memory_review", (item_id,), {}))
+        return {
+            "id": item_id,
+            "session_id": "s_1",
+            "status": "rejected",
+            "title": "Remember outcome",
+        }
+
+    def list_memories(self) -> dict[str, object]:
+        self.calls.append(("list_memories", (), {}))
+        return {
+            "memories": [
+                {
+                    "id": "mem_1",
+                    "session_id": "s_1",
+                    "kind": "project_memory",
+                    "title": "Remember outcome",
+                }
+            ]
+        }
+
+    def search_memories(self, query: str) -> dict[str, object]:
+        self.calls.append(("search_memories", (query,), {}))
+        return {
+            "memories": [
+                {
+                    "id": "mem_2",
+                    "session_id": "s_2",
+                    "kind": "project_memory",
+                    "title": f"Match {query}",
+                }
+            ]
+        }
+
 
 def install_fake_client(monkeypatch: Any, fake: FakeClient) -> None:
     monkeypatch.setattr(cli, "make_client", lambda api: fake)
@@ -167,6 +252,87 @@ def test_retry_prints_tab_separated_row(monkeypatch: Any) -> None:
     assert fake.calls == [("retry_session", ("s_1",), {})]
 
 
+def test_memory_summarize_prints_summary_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "summarize", "s_1"])
+
+    assert result.exit_code == 0
+    assert '"session_id": "s_1"' in result.output
+    assert '"one_liner": "Remember outcome"' in result.output
+    assert fake.calls == [("summarize_session", ("s_1",), {})]
+
+
+def test_memory_review_create_prints_review_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "review", "create", "s_1"])
+
+    assert result.exit_code == 0
+    assert '"id": "mri_1"' in result.output
+    assert '"status": "pending"' in result.output
+    assert fake.calls == [("create_memory_review", ("s_1",), {})]
+
+
+def test_memory_review_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "review", "list"])
+
+    assert result.exit_code == 0
+    assert result.output == "mri_1\ts_1\tpending\tRemember outcome\n"
+    assert fake.calls == [("list_memory_review", (), {})]
+
+
+def test_memory_approve_prints_memory_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "approve", "mri_1"])
+
+    assert result.exit_code == 0
+    assert '"review_item_id": "mri_1"' in result.output
+    assert '"kind": "project_memory"' in result.output
+    assert fake.calls == [("approve_memory_review", ("mri_1",), {})]
+
+
+def test_memory_reject_prints_review_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "reject", "mri_1"])
+
+    assert result.exit_code == 0
+    assert '"id": "mri_1"' in result.output
+    assert '"status": "rejected"' in result.output
+    assert fake.calls == [("reject_memory_review", ("mri_1",), {})]
+
+
+def test_memory_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "list"])
+
+    assert result.exit_code == 0
+    assert result.output == "mem_1\ts_1\tproject_memory\tRemember outcome\n"
+    assert fake.calls == [("list_memories", (), {})]
+
+
+def test_memory_search_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["memory", "search", "branch fix"])
+
+    assert result.exit_code == 0
+    assert result.output == "mem_2\ts_2\tproject_memory\tMatch branch fix\n"
+    assert fake.calls == [("search_memories", ("branch fix",), {})]
+
+
 def test_make_client_uses_default_env_and_explicit_api(monkeypatch: Any) -> None:
     monkeypatch.delenv("AGENTIC_OS_API", raising=False)
     assert cli.make_client(None).base_url == "http://127.0.0.1:8767"
@@ -237,6 +403,86 @@ def test_client_get_logs_builds_after_and_stream_query(monkeypatch: Any) -> None
     ]
 
 
+def test_client_memory_methods_build_expected_requests(monkeypatch: Any) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    client.summarize_session("s_1")
+    client.show_session_summary("s_1")
+    client.create_memory_review("s_1")
+    client.list_memory_review()
+    client.approve_memory_review("mri_1")
+    client.reject_memory_review("mri_2")
+    client.list_memories()
+    client.search_memories("branch/fix? ok")
+    client.list_skills()
+    client.list_mcp_servers()
+
+    assert RecordingHttpxClient.requests == [
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/memory/summary",
+            "json": {},
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/memory/summary",
+            "params": None,
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/memory/review",
+            "json": {},
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/memory/review",
+            "params": None,
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/memory/review/mri_1/approve",
+            "json": {},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/memory/review/mri_2/reject",
+            "json": {},
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/memory",
+            "params": None,
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/memory/search",
+            "params": {"q": "branch/fix? ok"},
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/skills",
+            "params": None,
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/mcp",
+            "params": None,
+        },
+    ]
+
+
 @pytest.mark.parametrize(
     "unsafe_id",
     ["", "id/with/slash", "id?query=1", "id#fragment", "id%2Flogs"],
@@ -257,6 +503,11 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.get_logs(unsafe_id),
         lambda: client.stop_session(unsafe_id),
         lambda: client.retry_session(unsafe_id),
+        lambda: client.summarize_session(unsafe_id),
+        lambda: client.show_session_summary(unsafe_id),
+        lambda: client.create_memory_review(unsafe_id),
+        lambda: client.approve_memory_review(unsafe_id),
+        lambda: client.reject_memory_review(unsafe_id),
     ]
 
     for call in calls:
@@ -401,3 +652,4 @@ def test_help_commands_import_successfully() -> None:
     assert runner.invoke(cli.app, ["--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["agents", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["sessions", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["memory", "--help"]).exit_code == 0

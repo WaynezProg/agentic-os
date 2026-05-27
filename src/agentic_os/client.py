@@ -45,6 +45,36 @@ class AgenticClient:
     def retry_session(self, session_id: str) -> dict[str, Any]:
         return self._post(f"/sessions/{_validate_path_id(session_id)}/retry", {})
 
+    def summarize_session(self, session_id: str) -> dict[str, Any]:
+        return self._post(f"/sessions/{_validate_path_id(session_id)}/memory/summary", {})
+
+    def show_session_summary(self, session_id: str) -> dict[str, Any]:
+        return self._get(f"/sessions/{_validate_path_id(session_id)}/memory/summary")
+
+    def create_memory_review(self, session_id: str) -> dict[str, Any]:
+        return self._post(f"/sessions/{_validate_path_id(session_id)}/memory/review", {})
+
+    def list_memory_review(self) -> dict[str, Any]:
+        return self._get("/memory/review")
+
+    def approve_memory_review(self, item_id: str) -> dict[str, Any]:
+        return self._post(f"/memory/review/{_validate_path_id(item_id)}/approve", {})
+
+    def reject_memory_review(self, item_id: str) -> dict[str, Any]:
+        return self._post(f"/memory/review/{_validate_path_id(item_id)}/reject", {})
+
+    def list_memories(self) -> dict[str, Any]:
+        return self._get("/memory")
+
+    def search_memories(self, query: str) -> dict[str, Any]:
+        return self._get("/memory/search", params={"q": query})
+
+    def list_skills(self) -> dict[str, Any]:
+        return self._get("/skills")
+
+    def list_mcp_servers(self) -> dict[str, Any]:
+        return self._get("/mcp")
+
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
             response = client.get(path, params=params)

@@ -18,8 +18,12 @@ DEFAULT_API = "http://127.0.0.1:8767"
 app = typer.Typer(help="Control local agentic-os sessions.")
 agents = typer.Typer(help="Inspect configured agents.")
 sessions = typer.Typer(help="Inspect local sessions.")
+memory = typer.Typer(help="Inspect and promote session memory.")
+memory_review = typer.Typer(help="Inspect and manage memory review items.")
 app.add_typer(agents, name="agents")
 app.add_typer(sessions, name="sessions")
+app.add_typer(memory, name="memory")
+memory.add_typer(memory_review, name="review")
 
 T = TypeVar("T")
 
@@ -136,3 +140,54 @@ def stop(session_id: str, api: str | None = _api_option()) -> None:
 def retry(session_id: str, api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).retry_session(session_id))
     typer.echo(f"{data['id']}\t{data['agent_id']}\t{data['status']}")
+
+
+@memory.command("summarize")
+def memory_summarize(session_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).summarize_session(session_id))
+    _echo_json(data)
+
+
+@memory_review.command("create")
+def memory_review_create(session_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).create_memory_review(session_id))
+    _echo_json(data)
+
+
+@memory_review.command("list")
+def memory_review_list(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).list_memory_review())
+    for item in data["items"]:
+        typer.echo(
+            f"{item['id']}\t{item['session_id']}\t{item['status']}\t{item.get('title', '')}"
+        )
+
+
+@memory.command("approve")
+def memory_approve(item_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).approve_memory_review(item_id))
+    _echo_json(data)
+
+
+@memory.command("reject")
+def memory_reject(item_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).reject_memory_review(item_id))
+    _echo_json(data)
+
+
+@memory.command("list")
+def memory_list(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).list_memories())
+    for item in data["memories"]:
+        typer.echo(
+            f"{item['id']}\t{item['session_id']}\t{item.get('kind', '')}\t{item.get('title', '')}"
+        )
+
+
+@memory.command("search")
+def memory_search(query: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).search_memories(query))
+    for item in data["memories"]:
+        typer.echo(
+            f"{item['id']}\t{item['session_id']}\t{item.get('kind', '')}\t{item.get('title', '')}"
+        )
