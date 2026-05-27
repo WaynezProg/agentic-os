@@ -3,7 +3,10 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agentic_os.logs import JsonlLogStore, StreamName
@@ -28,6 +31,15 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     supervisor.reconcile()
 
     app = FastAPI(title="agentic-os")
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        if request.method == "POST" and request.url.path == "/sessions":
+            return JSONResponse(status_code=400, content={"detail": exc.errors()})
+        return await request_validation_exception_handler(request, exc)
 
     @app.get("/health")
     def health() -> dict[str, str]:

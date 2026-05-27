@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agentic_os.api import create_app
@@ -155,3 +156,32 @@ def test_api_returns_400_for_file_cwd_and_creates_no_session(tmp_path: Path) -> 
 
     assert response.status_code == 400
     assert client.get("/sessions").json()["sessions"] == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["missing_message", "missing_agent_id", "non_string_message"],
+)
+def test_api_returns_400_for_invalid_session_request_body(tmp_path: Path, case: str) -> None:
+    client = make_client(tmp_path)
+    payloads: dict[str, dict[str, object]] = {
+        "missing_message": {"agent_id": "shell", "cwd": str(tmp_path)},
+        "missing_agent_id": {"cwd": str(tmp_path), "message": "OK"},
+        "non_string_message": {
+            "agent_id": "shell",
+            "cwd": str(tmp_path),
+            "message": 123,
+        },
+    }
+
+    response = client.post("/sessions", json=payloads[case])
+
+    assert response.status_code == 400
+
+
+def test_api_keeps_unrelated_validation_errors_as_422(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/sessions/missing/logs", params={"after": -1})
+
+    assert response.status_code == 422
