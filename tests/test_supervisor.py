@@ -2,6 +2,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -57,6 +58,21 @@ def wait_until_file_exists(path: Path, timeout_seconds: float = 2.0) -> None:
     raise AssertionError(f"{path} was not created")
 
 
+def wait_until_session_status(
+    supervisor: ProcessSupervisor,
+    session_id: str,
+    status: SessionStatus,
+    timeout_seconds: float = 2.0,
+) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if supervisor.store.get_session(session_id).status == status:
+            return
+        time.sleep(0.02)
+    current = supervisor.store.get_session(session_id)
+    raise AssertionError(f"session status is {current.status}, not {status}")
+
+
 def pid_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -99,15 +115,16 @@ def cleanup_process_group(pgid: int | None, pid: int | None) -> None:
 
 def child_ignores_sigterm_argv(ready_path: Path) -> list[str]:
     child_code = (
-        "import signal, time; "
+        "import pathlib, signal, sys, time; "
         "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
         "time.sleep(10)"
     )
     parent_code = (
         "import pathlib, signal, subprocess, sys, time; "
         "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0)); "
-        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}]); "
-        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
+        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}, sys.argv[1]], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
         "time.sleep(10)"
     )
     return [sys.executable, "-c", parent_code, str(ready_path)]
@@ -115,14 +132,15 @@ def child_ignores_sigterm_argv(ready_path: Path) -> list[str]:
 
 def orphaned_child_process_group(ready_path: Path) -> tuple[int, int]:
     child_code = (
-        "import signal, time; "
+        "import pathlib, signal, sys, time; "
         "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
         "time.sleep(10)"
     )
     parent_code = (
         "import pathlib, subprocess, sys; "
-        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}]); "
-        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8')"
+        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}, sys.argv[1]], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
     )
     process = subprocess.Popen(
         [sys.executable, "-c", parent_code, str(ready_path)],
@@ -240,6 +258,49 @@ def test_supervisor_stops_process_group(tmp_path: Path) -> None:
         cleanup_process_group(running.pgid, running.pid)
 
 
+def test_stop_does_not_mark_stopped_before_process_group_is_gone(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
+
+    session = supervisor.start(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=child_ignores_sigterm_argv(ready_path),
+    )
+    wait_until_file_exists(ready_path)
+    running = supervisor.store.get_session(session.id)
+    assert running.pid is not None
+    assert running.pgid is not None
+
+    stop_results: list[SessionRecord] = []
+    stop_errors: list[BaseException] = []
+
+    def stop_session() -> None:
+        try:
+            stop_results.append(supervisor.stop(session.id, timeout_seconds=1.0))
+        except BaseException as exc:
+            stop_errors.append(exc)
+
+    stop_thread = threading.Thread(target=stop_session)
+
+    try:
+        stop_thread.start()
+        wait_until_pid_gone(running.pid)
+        assert process_group_exists(running.pgid)
+        wait_until_session_status(supervisor, session.id, SessionStatus.STOPPING)
+
+        stop_thread.join(timeout=3.0)
+
+        assert not stop_thread.is_alive()
+        assert not stop_errors
+        assert stop_results[0].status == SessionStatus.STOPPED
+        wait_until_process_group_gone(running.pgid)
+        assert supervisor.store.get_session(session.id).status == SessionStatus.STOPPED
+    finally:
+        cleanup_process_group(running.pgid, running.pid)
+        stop_thread.join(timeout=3.0)
+
+
 def test_reconcile_marks_missing_running_session_failed(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
     missing = missing_process_id()
@@ -264,6 +325,35 @@ def test_reconcile_keeps_running_session_when_pgid_is_alive(tmp_path: Path) -> N
 
         reconciled = supervisor.store.get_session(session.id)
         assert reconciled.status == SessionStatus.RUNNING
+
+        restarted_store = Store(tmp_path / "agentic-os.db")
+        restarted_store.init()
+        restarted = ProcessSupervisor(
+            store=restarted_store,
+            logs=JsonlLogStore(),
+            state_dir=tmp_path,
+        )
+        stopped = restarted.stop(session.id, timeout_seconds=0.1)
+
+        assert stopped.status == SessionStatus.STOPPED
+        wait_until_process_group_gone(pgid)
+    finally:
+        cleanup_process_group(pgid, pid)
+
+
+def test_reconcile_keeps_stopping_session_when_pgid_is_alive(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "orphan-ready"
+    pid, pgid = orphaned_child_process_group(ready_path)
+    session = create_running_session(supervisor.store, tmp_path, pid=pid, pgid=pgid)
+    supervisor.store.mark_stopping(session.id)
+
+    try:
+        supervisor.reconcile()
+
+        reconciled = supervisor.store.get_session(session.id)
+        assert reconciled.status == SessionStatus.STOPPING
+        assert process_group_exists(pgid)
 
         restarted_store = Store(tmp_path / "agentic-os.db")
         restarted_store.init()

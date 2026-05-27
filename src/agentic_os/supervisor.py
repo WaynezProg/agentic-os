@@ -146,9 +146,7 @@ class ProcessSupervisor:
             thread.join(timeout=1.0)
 
         current = self.store.get_session(session_id)
-        if current.status == SessionStatus.STOPPING:
-            self._mark_stopped_once(session_id)
-        elif current.status == SessionStatus.RUNNING:
+        if current.status == SessionStatus.RUNNING:
             self.store.mark_finished(session_id, exit_code)
 
         with self._lock:
