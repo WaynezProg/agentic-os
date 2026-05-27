@@ -17,3 +17,11 @@ agentctl stop <session_id>
 ```
 
 Read the first spec: [specs/001-daemon-runtime.md](specs/001-daemon-runtime.md).
+
+## Development
+
+```bash
+uv sync
+uv run pytest -q
+uv run ruff check .
+```
