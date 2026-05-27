@@ -9,10 +9,34 @@ from typing import Any
 from agentic_os.models import EventRecord, SessionCreate, SessionRecord, SessionStatus
 
 
-TERMINAL_STATUSES = frozenset(
-    {SessionStatus.SUCCEEDED, SessionStatus.FAILED, SessionStatus.STOPPED}
-)
+ALLOWED_TRANSITIONS = {
+    SessionStatus.QUEUED: frozenset({SessionStatus.RUNNING, SessionStatus.FAILED}),
+    SessionStatus.RUNNING: frozenset(
+        {
+            SessionStatus.STOPPING,
+            SessionStatus.SUCCEEDED,
+            SessionStatus.FAILED,
+            SessionStatus.STOPPED,
+        }
+    ),
+    SessionStatus.STOPPING: frozenset({SessionStatus.STOPPED, SessionStatus.FAILED}),
+    SessionStatus.SUCCEEDED: frozenset(),
+    SessionStatus.FAILED: frozenset(),
+    SessionStatus.STOPPED: frozenset(),
+}
 SESSION_STATUS_SQL = ", ".join(f"'{status.value}'" for status in SessionStatus)
+
+EVENTS_SCHEMA = """
+CREATE TABLE events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+"""
 
 SCHEMA = f"""
 PRAGMA foreign_keys = ON;
@@ -67,6 +91,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate_events_foreign_key(conn)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -215,11 +240,37 @@ class Store:
 
     def _ensure_transition_allowed(self, session_id: str, status: SessionStatus) -> None:
         current = self.get_session(session_id)
-        if current.status in TERMINAL_STATUSES and current.status != status:
+        if status not in ALLOWED_TRANSITIONS[current.status]:
             raise ValueError(
-                f"Cannot transition terminal session {session_id} "
+                f"Cannot transition session {session_id} "
                 f"from {current.status.value} to {status.value}"
             )
+
+    def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
+        if _events_has_session_foreign_key(conn):
+            return
+
+        conn.execute("ALTER TABLE events RENAME TO events_without_session_fk")
+        conn.execute(EVENTS_SCHEMA)
+        conn.execute(
+            """
+            INSERT INTO events (id, session_id, event_type, message, metadata_json, created_at)
+            SELECT
+              events_without_session_fk.id,
+              events_without_session_fk.session_id,
+              events_without_session_fk.event_type,
+              events_without_session_fk.message,
+              events_without_session_fk.metadata_json,
+              events_without_session_fk.created_at
+            FROM events_without_session_fk
+            WHERE EXISTS (
+              SELECT 1
+              FROM sessions
+              WHERE sessions.id = events_without_session_fk.session_id
+            )
+            """
+        )
+        conn.execute("DROP TABLE events_without_session_fk")
 
 
 def _session_from_row(row: sqlite3.Row) -> SessionRecord:
@@ -240,3 +291,8 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         ended_at=row["ended_at"],
         updated_at=row["updated_at"],
     )
+
+
+def _events_has_session_foreign_key(conn: sqlite3.Connection) -> bool:
+    foreign_keys = conn.execute("PRAGMA foreign_key_list(events)").fetchall()
+    return any(row[2] == "sessions" and row[3] == "session_id" for row in foreign_keys)

@@ -64,6 +64,7 @@ def test_succeeded_session_cannot_be_marked_running_again(tmp_path: Path) -> Non
     store = Store(tmp_path / "agentic-os.db")
     store.init()
     session = store.create_session(_session_create(tmp_path))
+    store.mark_running(session.id, pid=123, pgid=123)
     store.mark_finished(session.id, exit_code=0)
 
     with pytest.raises(ValueError):
@@ -72,8 +73,8 @@ def test_succeeded_session_cannot_be_marked_running_again(tmp_path: Path) -> Non
     stored = store.get_session(session.id)
     assert stored.status == SessionStatus.SUCCEEDED
     assert stored.exit_code == 0
-    assert stored.pid is None
-    assert stored.pgid is None
+    assert stored.pid == 123
+    assert stored.pgid == 123
 
 
 def test_nonzero_exit_marks_session_failed(tmp_path: Path) -> None:
@@ -85,3 +86,108 @@ def test_nonzero_exit_marks_session_failed(tmp_path: Path) -> None:
 
     assert finished.status == SessionStatus.FAILED
     assert finished.exit_code == 7
+
+
+def test_init_migrates_old_events_table_without_foreign_key(tmp_path: Path) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE sessions (
+              id TEXT PRIMARY KEY,
+              agent_id TEXT NOT NULL,
+              cwd TEXT NOT NULL,
+              argv_json TEXT NOT NULL,
+              status TEXT NOT NULL,
+              pid INTEGER,
+              pgid INTEGER,
+              exit_code INTEGER,
+              artifact_dir TEXT NOT NULL,
+              stdout_log TEXT NOT NULL,
+              stderr_log TEXT NOT NULL,
+              summary_one_liner TEXT NOT NULL DEFAULT '',
+              started_at TEXT,
+              ended_at TEXT,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              session_id TEXT NOT NULL,
+              event_type TEXT NOT NULL,
+              message TEXT NOT NULL,
+              metadata_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sessions (
+              id, agent_id, cwd, argv_json, status, artifact_dir,
+              stdout_log, stderr_log, updated_at
+            )
+            VALUES (
+              's_valid', 'shell', '/tmp', '["/bin/echo", "OK"]', 'queued',
+              '/tmp/sessions/s_valid', '/tmp/sessions/s_valid/stdout.jsonl',
+              '/tmp/sessions/s_valid/stderr.jsonl', CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO events (session_id, event_type, message, metadata_json)
+            VALUES ('s_valid', 'launch_failed', 'valid event', '{"valid": true}')
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO events (session_id, event_type, message, metadata_json)
+            VALUES ('missing-session', 'launch_failed', 'orphan event', '{}')
+            """
+        )
+
+    store = Store(db_path)
+    store.init()
+
+    with sqlite3.connect(db_path) as conn:
+        foreign_keys = conn.execute("PRAGMA foreign_key_list(events)").fetchall()
+
+    assert foreign_keys
+    assert len(store.list_events("s_valid")) == 1
+    assert store.list_events("missing-session") == []
+    with pytest.raises(sqlite3.IntegrityError):
+        store.record_event("missing-session", "launch_failed", "missing executable")
+
+
+def test_stopping_session_cannot_be_marked_running_again(tmp_path: Path) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+    session = store.create_session(_session_create(tmp_path))
+    store.mark_running(session.id, pid=123, pgid=123)
+    store.mark_stopping(session.id)
+
+    with pytest.raises(ValueError):
+        store.mark_running(session.id, pid=456, pgid=456)
+
+    assert store.get_session(session.id).status == SessionStatus.STOPPING
+
+
+@pytest.mark.parametrize("terminal_status", [SessionStatus.FAILED, SessionStatus.STOPPED])
+def test_terminal_sessions_cannot_be_marked_running_again(
+    tmp_path: Path, terminal_status: SessionStatus
+) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+    session = store.create_session(_session_create(tmp_path))
+
+    if terminal_status == SessionStatus.FAILED:
+        store.mark_finished(session.id, exit_code=7)
+    else:
+        store.mark_running(session.id, pid=123, pgid=123)
+        store.mark_stopped(session.id)
+
+    with pytest.raises(ValueError):
+        store.mark_running(session.id, pid=456, pgid=456)
+
+    assert store.get_session(session.id).status == terminal_status
