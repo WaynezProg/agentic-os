@@ -81,16 +81,35 @@ class ProcessSupervisor:
         return session
 
     def stop(self, session_id: str, timeout_seconds: float = 5.0) -> SessionRecord:
-        session = self.store.mark_stopping(session_id)
+        current = self.store.get_session(session_id)
+        if current.status == SessionStatus.STOPPED:
+            return current
+        if current.status == SessionStatus.STOPPING:
+            session = current
+        else:
+            session = self.store.mark_stopping(session_id)
+
         with self._lock:
             process = self._processes.get(session_id)
         if process is None or process.poll() is not None:
-            return self._mark_stopped_once(session_id)
+            if process is not None:
+                return self._mark_stopped_once(session_id)
+            if session.pgid is None:
+                return self._mark_stop_failed(
+                    session.id,
+                    "missing process handle and pgid",
+                    {"pid": session.pid},
+                )
+            return self._stop_persisted_process_group(session, timeout_seconds)
 
         pgid = session.pgid if session.pgid is not None else os.getpgid(process.pid)
-        try:
-            os.killpg(pgid, signal.SIGTERM)
-        except ProcessLookupError:
+        sigterm_sent = self._signal_process_group(
+            session.id,
+            pgid,
+            signal.SIGTERM,
+            {"pid": process.pid},
+        )
+        if not sigterm_sent:
             return self._mark_stopped_once(session_id)
 
         deadline = time.time() + timeout_seconds
@@ -99,12 +118,22 @@ class ProcessSupervisor:
                 return self._mark_stopped_once(session_id)
             time.sleep(0.05)
 
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except ProcessLookupError:
+        sigkill_sent = self._signal_process_group(
+            session.id,
+            pgid,
+            signal.SIGKILL,
+            {"pid": process.pid},
+        )
+        if not sigkill_sent:
             return self._mark_stopped_once(session_id)
         self.store.record_event(session_id, "stop_escalated", "sent SIGKILL", {"pid": process.pid})
-        return self._mark_stopped_once(session_id)
+        if self._wait_until_stopped(process, pgid, timeout_seconds):
+            return self._mark_stopped_once(session_id)
+        return self._mark_stop_failed(
+            session.id,
+            "process group survived SIGKILL",
+            {"pid": process.pid, "pgid": pgid},
+        )
 
     def retry(self, session_id: str) -> SessionRecord:
         previous = self.store.get_session(session_id)
@@ -161,6 +190,100 @@ class ProcessSupervisor:
                 return current
             raise
 
+    def _mark_stop_failed(
+        self,
+        session_id: str,
+        message: str,
+        metadata: dict[str, object],
+    ) -> SessionRecord:
+        self.store.record_event(session_id, "stop_failed", message, metadata)
+        return self.store.mark_failed(session_id)
+
+    def _stop_persisted_process_group(
+        self,
+        session: SessionRecord,
+        timeout_seconds: float,
+    ) -> SessionRecord:
+        if session.pgid is None:
+            return self._mark_stop_failed(session.id, "missing pgid", {"pid": session.pid})
+
+        sigterm_sent = self._signal_process_group(
+            session.id,
+            session.pgid,
+            signal.SIGTERM,
+            {"pid": session.pid},
+        )
+        if not sigterm_sent:
+            return self._mark_stopped_once(session.id)
+
+        if self._wait_until_process_group_gone(session.pgid, timeout_seconds):
+            return self._mark_stopped_once(session.id)
+
+        sigkill_sent = self._signal_process_group(
+            session.id,
+            session.pgid,
+            signal.SIGKILL,
+            {"pid": session.pid},
+        )
+        if not sigkill_sent:
+            return self._mark_stopped_once(session.id)
+        self.store.record_event(
+            session.id,
+            "stop_escalated",
+            "sent SIGKILL",
+            {"pid": session.pid, "pgid": session.pgid},
+        )
+        if self._wait_until_process_group_gone(session.pgid, timeout_seconds):
+            return self._mark_stopped_once(session.id)
+        return self._mark_stop_failed(
+            session.id,
+            "process group survived SIGKILL",
+            {"pid": session.pid, "pgid": session.pgid},
+        )
+
+    def _signal_process_group(
+        self,
+        session_id: str,
+        pgid: int,
+        signal_number: signal.Signals,
+        metadata: dict[str, object],
+    ) -> bool:
+        try:
+            os.killpg(pgid, signal_number)
+            return True
+        except ProcessLookupError:
+            return False
+        except (PermissionError, OSError) as exc:
+            self._mark_stop_failed(
+                session_id,
+                f"failed to signal process group: {exc}",
+                {**metadata, "pgid": pgid, "signal": signal_number.name},
+            )
+            raise
+
+    def _wait_until_stopped(
+        self,
+        process: subprocess.Popen[str],
+        pgid: int,
+        timeout_seconds: float,
+    ) -> bool:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if process.poll() is not None:
+                return True
+            if not _process_group_exists(pgid):
+                return True
+            time.sleep(0.05)
+        return process.poll() is not None or not _process_group_exists(pgid)
+
+    def _wait_until_process_group_gone(self, pgid: int, timeout_seconds: float) -> bool:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if not _process_group_exists(pgid):
+                return True
+            time.sleep(0.05)
+        return not _process_group_exists(pgid)
+
     def _move_session_paths(self, session_id: str, session_dir: Path) -> None:
         with self.store.connect() as conn:
             conn.execute(
@@ -181,6 +304,16 @@ class ProcessSupervisor:
 def _pid_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def _process_group_exists(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
         return True
     except ProcessLookupError:
         return False
