@@ -18,6 +18,57 @@ def _session_create(tmp_path: Path) -> SessionCreate:
     )
 
 
+def _create_old_sessions_db_without_status_check(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE sessions (
+              id TEXT PRIMARY KEY,
+              agent_id TEXT NOT NULL,
+              cwd TEXT NOT NULL,
+              argv_json TEXT NOT NULL,
+              status TEXT NOT NULL,
+              pid INTEGER,
+              pgid INTEGER,
+              exit_code INTEGER,
+              artifact_dir TEXT NOT NULL,
+              stdout_log TEXT NOT NULL,
+              stderr_log TEXT NOT NULL,
+              summary_one_liner TEXT NOT NULL DEFAULT '',
+              started_at TEXT,
+              ended_at TEXT,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sessions (
+              id, agent_id, cwd, argv_json, status, artifact_dir,
+              stdout_log, stderr_log, updated_at
+            )
+            VALUES (
+              's_valid', 'shell', '/tmp', '["/bin/echo", "OK"]', 'queued',
+              '/tmp/sessions/s_valid', '/tmp/sessions/s_valid/stdout.jsonl',
+              '/tmp/sessions/s_valid/stderr.jsonl', CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sessions (
+              id, agent_id, cwd, argv_json, status, artifact_dir,
+              stdout_log, stderr_log, updated_at
+            )
+            VALUES (
+              's_bogus', 'shell', '/tmp', '["/bin/echo", "OK"]', 'bogus',
+              '/tmp/sessions/s_bogus', '/tmp/sessions/s_bogus/stdout.jsonl',
+              '/tmp/sessions/s_bogus/stderr.jsonl', CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+
 def test_store_creates_and_updates_session(tmp_path: Path) -> None:
     store = Store(tmp_path / "agentic-os.db")
     store.init()
@@ -158,6 +209,52 @@ def test_init_migrates_old_events_table_without_foreign_key(tmp_path: Path) -> N
     assert store.list_events("missing-session") == []
     with pytest.raises(sqlite3.IntegrityError):
         store.record_event("missing-session", "launch_failed", "missing executable")
+
+
+def test_init_migrates_old_sessions_table_without_status_check(tmp_path: Path) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    _create_old_sessions_db_without_status_check(db_path)
+    Store(db_path).init()
+
+    with sqlite3.connect(db_path) as conn:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                """
+                INSERT INTO sessions (
+                  id, agent_id, cwd, argv_json, status, artifact_dir,
+                  stdout_log, stderr_log
+                )
+                VALUES (
+                  's_new_bogus', 'shell', '/tmp', '["/bin/echo", "OK"]', 'bogus',
+                  '/tmp/sessions/s_new_bogus', '/tmp/sessions/s_new_bogus/stdout.jsonl',
+                  '/tmp/sessions/s_new_bogus/stderr.jsonl'
+                )
+                """
+            )
+
+
+def test_init_preserves_valid_old_sessions(tmp_path: Path) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    _create_old_sessions_db_without_status_check(db_path)
+    store = Store(db_path)
+    store.init()
+
+    session = store.get_session("s_valid")
+
+    assert session.status == SessionStatus.QUEUED
+    assert session.argv == ["/bin/echo", "OK"]
+
+
+def test_init_drops_invalid_old_sessions(tmp_path: Path) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    _create_old_sessions_db_without_status_check(db_path)
+    store = Store(db_path)
+    store.init()
+
+    with pytest.raises(KeyError):
+        store.get_session("s_bogus")
+
+    assert [session.id for session in store.list_sessions()] == ["s_valid"]
 
 
 def test_stopping_session_cannot_be_marked_running_again(tmp_path: Path) -> None:

@@ -32,7 +32,28 @@ ALLOWED_PREVIOUS_STATUSES = {
     )
     for status in SessionStatus
 }
+VALID_STATUS_VALUES = tuple(status.value for status in SessionStatus)
 SESSION_STATUS_SQL = ", ".join(f"'{status.value}'" for status in SessionStatus)
+
+SESSIONS_SCHEMA = f"""
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  cwd TEXT NOT NULL,
+  argv_json TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ({SESSION_STATUS_SQL})),
+  pid INTEGER,
+  pgid INTEGER,
+  exit_code INTEGER,
+  artifact_dir TEXT NOT NULL,
+  stdout_log TEXT NOT NULL,
+  stderr_log TEXT NOT NULL,
+  summary_one_liner TEXT NOT NULL DEFAULT '',
+  started_at TEXT,
+  ended_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+"""
 
 EVENTS_SCHEMA = """
 CREATE TABLE events (
@@ -99,6 +120,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate_sessions_status_check(conn)
             self._migrate_events_foreign_key(conn)
 
     def connect(self) -> sqlite3.Connection:
@@ -252,6 +274,55 @@ class Store:
                 _raise_transition_error(conn, session_id, status)
         return self.get_session(session_id)
 
+    def _migrate_sessions_status_check(self, conn: sqlite3.Connection) -> None:
+        if _sessions_has_status_check(conn):
+            return
+
+        conn.execute("ALTER TABLE events RENAME TO events_before_sessions_status_migration")
+        conn.execute("ALTER TABLE sessions RENAME TO sessions_without_status_check")
+        conn.execute(SESSIONS_SCHEMA)
+
+        valid_status_placeholders = ", ".join("?" for _ in VALID_STATUS_VALUES)
+        # Legacy rows with invalid statuses cannot satisfy the rebuilt CHECK constraint.
+        conn.execute(
+            f"""
+            INSERT INTO sessions (
+              id, agent_id, cwd, argv_json, status, pid, pgid, exit_code,
+              artifact_dir, stdout_log, stderr_log, summary_one_liner,
+              started_at, ended_at, updated_at
+            )
+            SELECT
+              id, agent_id, cwd, argv_json, status, pid, pgid, exit_code,
+              artifact_dir, stdout_log, stderr_log, summary_one_liner,
+              started_at, ended_at, updated_at
+            FROM sessions_without_status_check
+            WHERE status IN ({valid_status_placeholders})
+            """,
+            VALID_STATUS_VALUES,
+        )
+
+        conn.execute(EVENTS_SCHEMA)
+        conn.execute(
+            """
+            INSERT INTO events (id, session_id, event_type, message, metadata_json, created_at)
+            SELECT
+              events_before_sessions_status_migration.id,
+              events_before_sessions_status_migration.session_id,
+              events_before_sessions_status_migration.event_type,
+              events_before_sessions_status_migration.message,
+              events_before_sessions_status_migration.metadata_json,
+              events_before_sessions_status_migration.created_at
+            FROM events_before_sessions_status_migration
+            WHERE EXISTS (
+              SELECT 1
+              FROM sessions
+              WHERE sessions.id = events_before_sessions_status_migration.session_id
+            )
+            """
+        )
+        conn.execute("DROP TABLE events_before_sessions_status_migration")
+        conn.execute("DROP TABLE sessions_without_status_check")
+
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
             return
@@ -302,6 +373,19 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
 def _events_has_session_foreign_key(conn: sqlite3.Connection) -> bool:
     foreign_keys = conn.execute("PRAGMA foreign_key_list(events)").fetchall()
     return any(row[2] == "sessions" and row[3] == "session_id" for row in foreign_keys)
+
+
+def _sessions_has_status_check(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sessions'"
+    ).fetchone()
+    if row is None:
+        return False
+
+    schema_sql = " ".join(row["sql"].lower().split())
+    return "check" in schema_sql and all(
+        f"'{status_value}'" in schema_sql for status_value in VALID_STATUS_VALUES
+    )
 
 
 def _raise_transition_error(
