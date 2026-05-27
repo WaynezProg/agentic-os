@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 from agentic_os.api import create_app
 
 
-def write_registry(path: Path, command: list[str] | None = None) -> None:
+def write_registry(
+    path: Path,
+    command: list[str] | None = None,
+    cwd_mode: str = "optional",
+) -> None:
     command = command or ["/usr/bin/printf", "%s", "{{message}}"]
     path.write_text(
         f"""
@@ -15,16 +19,20 @@ def write_registry(path: Path, command: list[str] | None = None) -> None:
 id = "shell"
 label = "Shell"
 command = {json.dumps(command)}
-cwd_mode = "optional"
+cwd_mode = {json.dumps(cwd_mode)}
 stop_policy = "process_group"
 """,
         encoding="utf-8",
     )
 
 
-def make_client(tmp_path: Path, command: list[str] | None = None) -> TestClient:
+def make_client(
+    tmp_path: Path,
+    command: list[str] | None = None,
+    cwd_mode: str = "optional",
+) -> TestClient:
     registry = tmp_path / "agents.toml"
-    write_registry(registry, command=command)
+    write_registry(registry, command=command, cwd_mode=cwd_mode)
     return TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
 
 
@@ -90,6 +98,21 @@ def test_api_rejects_stop_of_terminal_session(tmp_path: Path) -> None:
     assert stop.status_code == 409
 
 
+def test_api_rejects_repeated_stop_of_stopped_session(tmp_path: Path) -> None:
+    client = make_client(tmp_path, command=[sys.executable, "-c", "import time; time.sleep(5)"])
+    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    stop = client.post(f"/sessions/{session_id}/stop")
+    assert stop.status_code == 200
+    assert stop.json()["status"] == "stopped"
+
+    repeated_stop = client.post(f"/sessions/{session_id}/stop")
+
+    assert repeated_stop.status_code == 409
+
+
 def test_api_returns_404_for_unknown_agent_on_run(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -108,6 +131,14 @@ def test_api_returns_400_for_invalid_cwd_on_run(tmp_path: Path) -> None:
         "/sessions",
         json={"agent_id": "shell", "cwd": str(tmp_path / "missing"), "message": "OK"},
     )
+
+    assert response.status_code == 400
+
+
+def test_api_returns_400_when_required_cwd_is_omitted(tmp_path: Path) -> None:
+    client = make_client(tmp_path, cwd_mode="required")
+
+    response = client.post("/sessions", json={"agent_id": "shell", "message": "OK"})
 
     assert response.status_code == 400
 

@@ -6,6 +6,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from agentic_os.logs import JsonlLogStore
 from agentic_os.models import SessionCreate, SessionRecord, SessionStatus
 from agentic_os.storage import Store
@@ -348,6 +350,22 @@ def test_supervisor_stops_process_group(tmp_path: Path) -> None:
         wait_until_process_group_gone(running.pgid)
     finally:
         cleanup_process_group(running.pgid, running.pid)
+
+
+def test_supervisor_rejects_repeated_stop_of_stopped_session(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    missing_id = missing_process_id()
+    session = create_running_session(
+        supervisor.store,
+        tmp_path,
+        pid=missing_id,
+        pgid=missing_id,
+    )
+    stopped = supervisor.store.mark_stopped(session.id)
+    assert stopped.status == SessionStatus.STOPPED
+
+    with pytest.raises(ValueError, match="Cannot stop terminal session"):
+        supervisor.stop(session.id, timeout_seconds=0.1)
 
 
 def test_stop_does_not_mark_stopped_before_process_group_is_gone(tmp_path: Path) -> None:

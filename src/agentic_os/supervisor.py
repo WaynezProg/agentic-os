@@ -90,8 +90,10 @@ class ProcessSupervisor:
     def stop(self, session_id: str, timeout_seconds: float = 5.0) -> SessionRecord:
         current = self.store.get_session(session_id)
         current = self._repair_terminal_live_process_group(current)
-        if current.status == SessionStatus.STOPPED:
-            return current
+        if current.status in TERMINAL_STATUSES:
+            raise ValueError(
+                f"Cannot stop terminal session {session_id} with status {current.status.value}"
+            )
         if current.status == SessionStatus.STOPPING:
             session = current
         else:
