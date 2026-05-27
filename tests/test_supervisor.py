@@ -1,5 +1,6 @@
 import os
 import signal
+import sys
 import time
 from pathlib import Path
 
@@ -37,6 +38,24 @@ def wait_until_pid_gone(pid: int, timeout_seconds: float = 2.0) -> None:
     raise AssertionError(f"pid {pid} is still alive")
 
 
+def wait_until_process_group_gone(pgid: int, timeout_seconds: float = 2.0) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if not process_group_exists(pgid):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"process group {pgid} is still alive")
+
+
+def wait_until_file_exists(path: Path, timeout_seconds: float = 2.0) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if path.exists():
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"{path} was not created")
+
+
 def pid_exists(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -45,17 +64,48 @@ def pid_exists(pid: int) -> bool:
         return False
 
 
+def process_group_exists(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
 def cleanup_process_group(pgid: int | None, pid: int | None) -> None:
-    if pid is None or not pid_exists(pid):
+    if pgid is None:
+        if pid is None or not pid_exists(pid):
+            return
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        wait_until_pid_gone(pid)
+        return
+
+    if not process_group_exists(pgid):
         return
     try:
-        if pgid is not None:
-            os.killpg(pgid, signal.SIGKILL)
-        else:
-            os.kill(pid, signal.SIGKILL)
+        os.killpg(pgid, signal.SIGKILL)
     except ProcessLookupError:
         return
-    wait_until_pid_gone(pid)
+    wait_until_process_group_gone(pgid)
+
+
+def child_ignores_sigterm_argv(ready_path: Path) -> list[str]:
+    child_code = (
+        "import signal, time; "
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "time.sleep(10)"
+    )
+    parent_code = (
+        "import pathlib, signal, subprocess, sys, time; "
+        "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0)); "
+        f"subprocess.Popen([{sys.executable!r}, '-c', {child_code!r}]); "
+        "pathlib.Path(sys.argv[1]).write_text('ready', encoding='utf-8'); "
+        "time.sleep(10)"
+    )
+    return [sys.executable, "-c", parent_code, str(ready_path)]
 
 
 def test_supervisor_runs_successful_command(tmp_path: Path) -> None:
@@ -93,36 +143,41 @@ def test_supervisor_marks_failed_command(tmp_path: Path) -> None:
 
 def test_supervisor_stops_process_group(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
 
     session = supervisor.start(
         agent_id="shell",
         cwd=str(tmp_path),
-        argv=["/bin/sh", "-lc", "sleep 10"],
+        argv=child_ignores_sigterm_argv(ready_path),
     )
+    wait_until_file_exists(ready_path)
     running = supervisor.store.get_session(session.id)
     assert running.status == SessionStatus.RUNNING
+    assert running.pgid is not None
 
     try:
         stopped = supervisor.stop(session.id, timeout_seconds=0.1)
 
         assert stopped.status == SessionStatus.STOPPED
-        assert running.pid is not None
-        wait_until_pid_gone(running.pid)
+        wait_until_process_group_gone(running.pgid)
     finally:
         cleanup_process_group(running.pgid, running.pid)
 
 
 def test_supervisor_stops_persisted_process_group_after_restart(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
 
     session = supervisor.start(
         agent_id="shell",
         cwd=str(tmp_path),
-        argv=["/bin/sh", "-lc", "sleep 10"],
+        argv=child_ignores_sigterm_argv(ready_path),
     )
+    wait_until_file_exists(ready_path)
     running = supervisor.store.get_session(session.id)
     assert running.status == SessionStatus.RUNNING
     assert running.pid is not None
+    assert running.pgid is not None
 
     restarted_store = Store(tmp_path / "agentic-os.db")
     restarted_store.init()
@@ -136,6 +191,6 @@ def test_supervisor_stops_persisted_process_group_after_restart(tmp_path: Path) 
         stopped = restarted.stop(session.id, timeout_seconds=0.1)
 
         assert stopped.status == SessionStatus.STOPPED
-        wait_until_pid_gone(running.pid)
+        wait_until_process_group_gone(running.pgid)
     finally:
         cleanup_process_group(running.pgid, running.pid)

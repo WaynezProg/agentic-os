@@ -91,49 +91,22 @@ class ProcessSupervisor:
 
         with self._lock:
             process = self._processes.get(session_id)
-        if process is None or process.poll() is not None:
-            if process is not None:
-                return self._mark_stopped_once(session_id)
-            if session.pgid is None:
-                return self._mark_stop_failed(
-                    session.id,
-                    "missing process handle and pgid",
-                    {"pid": session.pid},
-                )
-            return self._stop_persisted_process_group(session, timeout_seconds)
 
-        pgid = session.pgid if session.pgid is not None else os.getpgid(process.pid)
-        sigterm_sent = self._signal_process_group(
-            session.id,
-            pgid,
-            signal.SIGTERM,
-            {"pid": process.pid},
-        )
-        if not sigterm_sent:
-            return self._mark_stopped_once(session_id)
+        pgid = session.pgid
+        metadata: dict[str, object] = {"pid": session.pid}
+        if process is not None:
+            metadata["pid"] = process.pid
+            if pgid is None:
+                pgid = os.getpgid(process.pid)
 
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
-            if process.poll() is not None:
-                return self._mark_stopped_once(session_id)
-            time.sleep(0.05)
+        if pgid is None:
+            return self._mark_stop_failed(
+                session.id,
+                "missing process handle and pgid",
+                metadata,
+            )
 
-        sigkill_sent = self._signal_process_group(
-            session.id,
-            pgid,
-            signal.SIGKILL,
-            {"pid": process.pid},
-        )
-        if not sigkill_sent:
-            return self._mark_stopped_once(session_id)
-        self.store.record_event(session_id, "stop_escalated", "sent SIGKILL", {"pid": process.pid})
-        if self._wait_until_stopped(process, pgid, timeout_seconds):
-            return self._mark_stopped_once(session_id)
-        return self._mark_stop_failed(
-            session.id,
-            "process group survived SIGKILL",
-            {"pid": process.pid, "pgid": pgid},
-        )
+        return self._terminate_process_group(session.id, pgid, timeout_seconds, metadata)
 
     def retry(self, session_id: str) -> SessionRecord:
         previous = self.store.get_session(session_id)
@@ -199,46 +172,47 @@ class ProcessSupervisor:
         self.store.record_event(session_id, "stop_failed", message, metadata)
         return self.store.mark_failed(session_id)
 
-    def _stop_persisted_process_group(
+    def _terminate_process_group(
         self,
-        session: SessionRecord,
+        session_id: str,
+        pgid: int,
         timeout_seconds: float,
+        metadata: dict[str, object],
     ) -> SessionRecord:
-        if session.pgid is None:
-            return self._mark_stop_failed(session.id, "missing pgid", {"pid": session.pid})
-
+        if not _process_group_exists(pgid):
+            return self._mark_stopped_once(session_id)
         sigterm_sent = self._signal_process_group(
-            session.id,
-            session.pgid,
+            session_id,
+            pgid,
             signal.SIGTERM,
-            {"pid": session.pid},
+            metadata,
         )
         if not sigterm_sent:
-            return self._mark_stopped_once(session.id)
+            return self._mark_stopped_once(session_id)
 
-        if self._wait_until_process_group_gone(session.pgid, timeout_seconds):
-            return self._mark_stopped_once(session.id)
+        if self._wait_until_process_group_gone(pgid, timeout_seconds):
+            return self._mark_stopped_once(session_id)
 
         sigkill_sent = self._signal_process_group(
-            session.id,
-            session.pgid,
+            session_id,
+            pgid,
             signal.SIGKILL,
-            {"pid": session.pid},
+            metadata,
         )
         if not sigkill_sent:
-            return self._mark_stopped_once(session.id)
+            return self._mark_stopped_once(session_id)
         self.store.record_event(
-            session.id,
+            session_id,
             "stop_escalated",
             "sent SIGKILL",
-            {"pid": session.pid, "pgid": session.pgid},
+            {**metadata, "pgid": pgid},
         )
-        if self._wait_until_process_group_gone(session.pgid, timeout_seconds):
-            return self._mark_stopped_once(session.id)
+        if self._wait_until_process_group_gone(pgid, timeout_seconds):
+            return self._mark_stopped_once(session_id)
         return self._mark_stop_failed(
-            session.id,
+            session_id,
             "process group survived SIGKILL",
-            {"pid": session.pid, "pgid": session.pgid},
+            {**metadata, "pgid": pgid},
         )
 
     def _signal_process_group(
@@ -260,21 +234,6 @@ class ProcessSupervisor:
                 {**metadata, "pgid": pgid, "signal": signal_number.name},
             )
             raise
-
-    def _wait_until_stopped(
-        self,
-        process: subprocess.Popen[str],
-        pgid: int,
-        timeout_seconds: float,
-    ) -> bool:
-        deadline = time.time() + timeout_seconds
-        while time.time() < deadline:
-            if process.poll() is not None:
-                return True
-            if not _process_group_exists(pgid):
-                return True
-            time.sleep(0.05)
-        return process.poll() is not None or not _process_group_exists(pgid)
 
     def _wait_until_process_group_gone(self, pgid: int, timeout_seconds: float) -> bool:
         deadline = time.time() + timeout_seconds
