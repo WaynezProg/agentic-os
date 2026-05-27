@@ -30,20 +30,25 @@ class Registry:
 
     def build_run(self, agent_id: str, cwd: str | None, message: str) -> RenderedRun:
         agent = self.get(agent_id)
-        if agent.cwd_mode == "required" and not cwd:
-            raise ValueError("cwd is required")
-        run_cwd = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd())
-        if agent.cwd_mode != "ignored" and not Path(run_cwd).exists():
-            raise ValueError(f"cwd does not exist: {run_cwd}")
+        if agent.cwd_mode == "ignored":
+            run_cwd = str(Path.cwd().resolve())
+        else:
+            if agent.cwd_mode == "required" and not cwd:
+                raise ValueError("cwd is required")
+            run_cwd = str(Path(cwd).expanduser().resolve()) if cwd else str(Path.cwd().resolve())
+            if not Path(run_cwd).exists():
+                raise ValueError(f"cwd does not exist: {run_cwd}")
         return RenderedRun(agent=agent, cwd=run_cwd, argv=render_command(agent.command, message))
 
     def _load(self) -> dict[str, AgentDefinition]:
         if not self.path.exists():
-            return {}
+            raise FileNotFoundError(self.path)
         data = tomllib.loads(self.path.read_text(encoding="utf-8"))
         agents = {}
         for raw_agent in data.get("agents", []):
             agent = AgentDefinition.model_validate(raw_agent)
+            if agent.id in agents:
+                raise ValueError(f"duplicate agent id: {agent.id}")
             agents[agent.id] = agent
         return agents
 
