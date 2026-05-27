@@ -46,6 +46,14 @@ def test_api_lists_agents(tmp_path: Path) -> None:
     assert response.json()["agents"][0]["id"] == "shell"
 
 
+def test_api_returns_404_for_unknown_agent_lookup(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/agents/missing")
+
+    assert response.status_code == 404
+
+
 def test_api_runs_session_and_reads_logs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -114,7 +122,7 @@ def test_api_rejects_repeated_stop_of_stopped_session(tmp_path: Path) -> None:
     assert repeated_stop.status_code == 409
 
 
-def test_api_returns_404_for_unknown_agent_on_run(tmp_path: Path) -> None:
+def test_api_returns_400_for_unknown_agent_on_run(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
     response = client.post(
@@ -122,7 +130,7 @@ def test_api_returns_404_for_unknown_agent_on_run(tmp_path: Path) -> None:
         json={"agent_id": "missing", "cwd": str(tmp_path), "message": "OK"},
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 400
 
 
 def test_api_returns_400_for_invalid_cwd_on_run(tmp_path: Path) -> None:

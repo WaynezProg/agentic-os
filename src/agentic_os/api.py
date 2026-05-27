@@ -61,7 +61,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         try:
             rendered = registry.build_run(request.agent_id, request.cwd, request.message)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         session = supervisor.start(rendered.agent.id, rendered.cwd, rendered.argv)
