@@ -64,4 +64,8 @@ class JsonlLogStore:
             return self.read(stderr_path, after=after)
         entries = [*self.read(stdout_path), *self.read(stderr_path)]
         entries.sort(key=lambda entry: entry.ts)
-        return entries[after:]
+        merged_entries = [
+            entry.model_copy(update={"index": index})
+            for index, entry in enumerate(entries, start=1)
+        ]
+        return [entry for entry in merged_entries if entry.index > after]
