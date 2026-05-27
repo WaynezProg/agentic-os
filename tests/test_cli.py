@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from typer.testing import CliRunner
 
 from agentic_os import cli
@@ -236,6 +237,26 @@ def test_client_get_logs_builds_after_and_stream_query(monkeypatch: Any) -> None
     ]
 
 
+def test_client_quotes_unsafe_path_segments(monkeypatch: Any) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    client.show_agent("agent/one?x=1#frag")
+    client.show_session("session/one?x=1#frag")
+    client.get_logs("session/one?x=1#frag")
+    client.stop_session("session/one?x=1#frag")
+    client.retry_session("session/one?x=1#frag")
+
+    assert [request["path"] for request in RecordingHttpxClient.requests] == [
+        "/agents/agent%2Fone%3Fx%3D1%23frag",
+        "/sessions/session%2Fone%3Fx%3D1%23frag",
+        "/sessions/session%2Fone%3Fx%3D1%23frag/logs",
+        "/sessions/session%2Fone%3Fx%3D1%23frag/stop",
+        "/sessions/session%2Fone%3Fx%3D1%23frag/retry",
+    ]
+
+
 def test_client_raises_for_http_errors(monkeypatch: Any) -> None:
     class ErrorResponse(FakeResponse):
         def raise_for_status(self) -> None:
@@ -249,20 +270,31 @@ def test_client_raises_for_http_errors(monkeypatch: Any) -> None:
 
     monkeypatch.setattr("agentic_os.client.httpx.Client", ErrorHttpxClient)
 
-    try:
+    with pytest.raises(httpx.HTTPStatusError) as error:
         AgenticClient("http://api.example").show_agent("missing")
-    except httpx.HTTPStatusError as exc:
-        assert exc.response.status_code == 404
-        assert exc.response.json() == {"detail": "unknown agent"}
-    else:
-        raise AssertionError("expected HTTPStatusError")
+
+    assert error.value.response.status_code == 404
+    assert error.value.response.json() == {"detail": "unknown agent"}
 
 
-def test_cli_http_errors_exit_nonzero_without_traceback(monkeypatch: Any) -> None:
+@pytest.mark.parametrize(
+    ("status_code", "detail"),
+    [
+        (400, "bad request"),
+        (404, "missing session"),
+        (409, "already terminal"),
+        (500, "daemon exploded"),
+    ],
+)
+def test_cli_http_errors_exit_nonzero_without_traceback(
+    monkeypatch: Any,
+    status_code: int,
+    detail: str,
+) -> None:
     class ErrorClient(FakeClient):
         def list_agents(self) -> dict[str, object]:
             request = httpx.Request("GET", "http://api.example/agents")
-            response = httpx.Response(500, json={"detail": "daemon exploded"}, request=request)
+            response = httpx.Response(status_code, json={"detail": detail}, request=request)
             raise httpx.HTTPStatusError("server error", request=request, response=response)
 
     install_fake_client(monkeypatch, ErrorClient())
@@ -270,9 +302,63 @@ def test_cli_http_errors_exit_nonzero_without_traceback(monkeypatch: Any) -> Non
     result = CliRunner().invoke(cli.app, ["agents", "list"])
 
     assert result.exit_code != 0
-    assert "500" in result.output
-    assert "daemon exploded" in result.output
+    assert str(status_code) in result.output
+    assert detail in result.output
     assert "Traceback" not in result.output
+
+
+def test_cli_request_errors_exit_nonzero_without_traceback(monkeypatch: Any) -> None:
+    class ErrorClient(FakeClient):
+        def list_agents(self) -> dict[str, object]:
+            request = httpx.Request("GET", "http://api.example/agents")
+            raise httpx.ConnectError("connection refused", request=request)
+
+    install_fake_client(monkeypatch, ErrorClient())
+
+    result = CliRunner().invoke(cli.app, ["agents", "list"])
+
+    assert result.exit_code != 0
+    assert "Request failed" in result.output
+    assert "connection refused" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_logs_follow_advances_cursor_and_does_not_duplicate_lines(monkeypatch: Any) -> None:
+    class StopFollow(Exception):
+        pass
+
+    class FollowClient(FakeClient):
+        def get_logs(
+            self,
+            session_id: str,
+            stream: str | None = None,
+            after: int = 0,
+        ) -> dict[str, object]:
+            self.calls.append(("get_logs", (session_id, stream, after), {}))
+            if len(self.calls) == 1:
+                return {
+                    "entries": [
+                        {"stream": "stderr", "line": "first", "index": 1},
+                        {"stream": "stderr", "line": "second", "index": 3},
+                    ]
+                }
+            if len(self.calls) == 2:
+                return {"entries": [{"stream": "stderr", "line": "third", "index": 4}]}
+            raise StopFollow
+
+    fake = FollowClient()
+    install_fake_client(monkeypatch, fake)
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+
+    result = CliRunner().invoke(cli.app, ["logs", "s_1", "--follow", "--stream", "stderr"])
+
+    assert isinstance(result.exception, StopFollow)
+    assert result.output == "stderr\tfirst\nstderr\tsecond\nstderr\tthird\n"
+    assert fake.calls == [
+        ("get_logs", ("s_1", "stderr", 0), {}),
+        ("get_logs", ("s_1", "stderr", 3), {}),
+        ("get_logs", ("s_1", "stderr", 4), {}),
+    ]
 
 
 def test_help_commands_import_successfully() -> None:
