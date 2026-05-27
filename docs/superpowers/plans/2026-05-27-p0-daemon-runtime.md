@@ -689,10 +689,10 @@ Create `examples/agents.toml`:
 [[agents]]
 id = "shell"
 label = "Shell Smoke"
-command = ["/bin/sh", "-lc", "printf '%s\n' '{{message}}'"]
+command = ["/usr/bin/printf", "%s\n", "{{message}}"]
 cwd_mode = "optional"
 stop_policy = "process_group"
-health_command = ["/bin/sh", "-lc", "printf OK"]
+health_command = ["/usr/bin/printf", "OK"]
 
 [[agents]]
 id = "openclaw"
@@ -1168,7 +1168,7 @@ def write_registry(path: Path) -> None:
 [[agents]]
 id = "shell"
 label = "Shell"
-command = ["/bin/sh", "-lc", "printf '%s' '{{message}}'"]
+command = ["/usr/bin/printf", "%s", "{{message}}"]
 cwd_mode = "optional"
 stop_policy = "process_group"
 """,
@@ -1698,7 +1698,7 @@ def test_e2e_shell_run_session_logs_and_retry(tmp_path: Path) -> None:
 [[agents]]
 id = "shell"
 label = "Shell"
-command = ["/bin/sh", "-lc", "printf '%s' '{{message}}'"]
+command = ["/usr/bin/printf", "%s", "{{message}}"]
 cwd_mode = "optional"
 stop_policy = "process_group"
 """,
