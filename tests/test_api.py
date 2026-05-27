@@ -261,3 +261,188 @@ def test_api_keeps_unrelated_validation_errors_as_422(tmp_path: Path) -> None:
     response = client.get("/sessions/missing/logs", params={"after": -1})
 
     assert response.status_code == 422
+
+
+def test_api_creates_and_reads_session_memory_summary(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "remember alpha"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    created = client.post(f"/sessions/{session_id}/memory/summary")
+    read = client.get(f"/sessions/{session_id}/memory/summary")
+
+    assert created.status_code == 200
+    assert read.status_code == 200
+    assert created.json()["id"] == read.json()["id"]
+    assert created.json()["session_id"] == session_id
+    assert created.json()["one_liner"] == "remember alpha"
+    assert created.json()["stdout_lines"] == 1
+    assert created.json()["stderr_lines"] == 0
+
+
+def test_api_returns_404_for_unknown_session_memory_summary(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    created = client.post("/sessions/missing/memory/summary")
+    read = client.get("/sessions/missing/memory/summary")
+
+    assert created.status_code == 404
+    assert read.status_code == 404
+
+
+def test_api_creates_memory_review_from_current_session_logs(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "review me"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    created = client.post(f"/sessions/{session_id}/memory/review")
+    listed = client.get("/memory/review")
+    summary = client.get(f"/sessions/{session_id}/memory/summary")
+
+    assert created.status_code == 200
+    assert created.json()["session_id"] == session_id
+    assert created.json()["status"] == "pending"
+    assert created.json()["title"] == "review me"
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [created.json()["id"]]
+    assert summary.status_code == 200
+    assert summary.json()["session_id"] == session_id
+
+
+def test_api_returns_404_for_unknown_session_memory_review(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.post("/sessions/missing/memory/review")
+
+    assert response.status_code == 404
+
+
+def test_api_approves_memory_review_and_searches_approved_memories_only(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    approved_run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "alpha approved memory"},
+    )
+    pending_run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "beta pending memory"},
+    )
+    assert approved_run.status_code == 200
+    assert pending_run.status_code == 200
+
+    approved_item_response = client.post(
+        f"/sessions/{approved_run.json()['id']}/memory/review",
+    )
+    pending_item_response = client.post(
+        f"/sessions/{pending_run.json()['id']}/memory/review",
+    )
+    assert approved_item_response.status_code == 200
+    assert pending_item_response.status_code == 200
+    approved_item = approved_item_response.json()
+    pending_item = pending_item_response.json()
+
+    approved = client.post(f"/memory/review/{approved_item['id']}/approve")
+    memories = client.get("/memory")
+    alpha_search = client.get("/memory/search", params={"q": "alpha"})
+    beta_search = client.get("/memory/search", params={"q": "beta"})
+
+    assert approved.status_code == 200
+    assert approved.json()["review_item_id"] == approved_item["id"]
+    assert memories.status_code == 200
+    assert [memory["title"] for memory in memories.json()["memories"]] == [
+        "alpha approved memory"
+    ]
+    assert [memory["title"] for memory in alpha_search.json()["memories"]] == [
+        "alpha approved memory"
+    ]
+    assert beta_search.json()["memories"] == []
+    assert pending_item["status"] == "pending"
+
+
+def test_api_rejects_memory_review_without_creating_memory(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "reject memory"},
+    )
+    assert run.status_code == 200
+    item_response = client.post(f"/sessions/{run.json()['id']}/memory/review")
+    assert item_response.status_code == 200
+    item = item_response.json()
+
+    rejected = client.post(f"/memory/review/{item['id']}/reject")
+
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert client.get("/memory").json()["memories"] == []
+
+
+def test_api_returns_404_for_unknown_memory_review_transition(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    approve = client.post("/memory/review/missing/approve")
+    reject = client.post("/memory/review/missing/reject")
+
+    assert approve.status_code == 404
+    assert reject.status_code == 404
+
+
+def test_api_returns_409_for_invalid_memory_review_transition(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "approve once"},
+    )
+    assert run.status_code == 200
+    item_response = client.post(f"/sessions/{run.json()['id']}/memory/review")
+    assert item_response.status_code == 200
+    item = item_response.json()
+    first = client.post(f"/memory/review/{item['id']}/approve")
+
+    repeated_approve = client.post(f"/memory/review/{item['id']}/approve")
+    repeated_reject = client.post(f"/memory/review/{item['id']}/reject")
+
+    assert first.status_code == 200
+    assert repeated_approve.status_code == 409
+    assert repeated_reject.status_code == 409
+
+
+def test_api_returns_p2_placeholder_skills_and_mcp(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    skills = client.get("/skills")
+    mcp = client.get("/mcp")
+
+    assert skills.status_code == 200
+    assert skills.json() == {
+        "skills": [{"id": "placeholder", "label": "Skills registry", "status": "placeholder"}]
+    }
+    assert mcp.status_code == 200
+    assert mcp.json() == {
+        "servers": [{"id": "placeholder", "label": "MCP servers", "status": "placeholder"}]
+    }
+
+
+def test_api_allows_localhost_cors_preflight(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.options(
+        "/memory",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
