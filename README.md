@@ -19,7 +19,7 @@ interface names for now, but the product language is:
 | Agent Session | Harness Run / Harness Session | `/sessions`, `agentctl sessions` |
 | Agent Policy | Harness Launch Policy | `/policy`, `agentctl policy` |
 | Skills / MCP | Shared Capability Catalog | `/skills`, `/mcp`, `agentctl skills`, `agentctl mcp` |
-| Adapter-profile wording | Harness Instance Profile | `specs/007-harness-instance-profile.md` |
+| Adapter-profile wording | Harness Instance Profile | `specs/007-harness-instance-profile-p3.7.md` |
 
 Phase positioning:
 
@@ -31,6 +31,8 @@ Phase positioning:
 | P3 | catalog/policy registries and evaluator | Shared Capability Catalog plus Harness Launch Policy | descriptive capability records, deterministic policy decisions | installing capabilities, starting MCP servers, live tool enforcement |
 | P3.5 | launch policy gate on run creation | Harness Launch Policy applied before spawning a run | allow / deny / approval-required audit trail | per-tool runtime enforcement |
 | P3.6 | retry bypass closure and clearer policy errors | all run-start paths share the same launch gate | retry policy audit, CLI/UI error display | approval workflow or harness-internal enforcement |
+| P3.7 | harness instance profile schema | management metadata for each harness instance | config path, workspace roots, launch/health/attach/log commands, default provider | harness internals, planning, tool execution |
+| P4 | fleet control plane goals spec | performance-first single-machine fleet control plane charter | goals, SLO, non-goals, governance principles | health probe implementation, drift detection, audit workflow |
 
 ## P0 Scope
 

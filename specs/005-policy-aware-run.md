@@ -62,7 +62,7 @@ data.  Add matching client method and CLI command (`agentctl sessions events`).
 ## Out of scope
 
 - Live per-tool / per-model enforcement inside an underlying harness.
-- P4 is Harness Instance Profile management, not tool loop, planner, executor,
-  browser driver, memory reasoning, or task decomposition design.
+- P3.7 is Harness Instance Profile schema; P4 is Fleet Control Plane Goals
+  (see `specs/008-harness-fleet-control-plane-goals.md`).
 - Pending / approval workflow with human-in-the-loop (future).
 - LLM summary, vector DB, Electron, Tauri.

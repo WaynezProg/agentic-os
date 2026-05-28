@@ -1,4 +1,4 @@
-# 007 — Harness Instance Profile (P4)
+# 007 — Harness Instance Profile (P3.7)
 
 Status: Draft
 Date: 2026-05-28
