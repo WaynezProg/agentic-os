@@ -20,9 +20,15 @@ agents = typer.Typer(help="Inspect configured agents.")
 sessions = typer.Typer(help="Inspect local sessions.")
 memory = typer.Typer(help="Inspect and promote session memory.")
 memory_review = typer.Typer(help="Inspect and manage memory review items.")
+skills = typer.Typer(help="Inspect and manage local skill registry records.")
+mcp = typer.Typer(help="Inspect and manage local MCP registry records.")
+policy = typer.Typer(help="Inspect and evaluate local capability policy.")
 app.add_typer(agents, name="agents")
 app.add_typer(sessions, name="sessions")
 app.add_typer(memory, name="memory")
+app.add_typer(skills, name="skills")
+app.add_typer(mcp, name="mcp")
+app.add_typer(policy, name="policy")
 memory.add_typer(memory_review, name="review")
 
 T = TypeVar("T")
@@ -191,3 +197,182 @@ def memory_search(query: str, api: str | None = _api_option()) -> None:
         typer.echo(
             f"{item['id']}\t{item['session_id']}\t{item.get('kind', '')}\t{item.get('title', '')}"
         )
+
+
+@skills.command("list")
+def skills_list(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).list_skills())
+    for skill in data["skills"]:
+        enabled = "enabled" if skill.get("enabled", True) else "disabled"
+        tags = ",".join(skill.get("tags") or [])
+        typer.echo(
+            f"{skill['id']}\t{skill.get('label', '')}\t{enabled}\t"
+            f"{skill.get('source', '')}\t{tags}"
+        )
+
+
+@skills.command("show")
+def skills_show(skill_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).show_skill(skill_id))
+    _echo_json(data)
+
+
+@skills.command("upsert")
+def skills_upsert(
+    skill_id: str,
+    label: str = typer.Option(..., "--label", help="Skill label."),
+    description: str = typer.Option("", "--description", help="Skill description."),
+    source: str = typer.Option("local", "--source", help="Skill source."),
+    entrypoint: str = typer.Option("", "--entrypoint", help="Non-executed entrypoint hint."),
+    tags: list[str] | None = typer.Option(None, "--tag", help="Skill tag."),
+    enabled: bool = typer.Option(True, "--enabled/--disabled", help="Initial enabled state."),
+    api: str | None = _api_option(),
+) -> None:
+    payload: dict[str, object] = {
+        "label": label,
+        "description": description,
+        "source": source,
+        "entrypoint": entrypoint,
+        "tags": tags or [],
+        "enabled": enabled,
+    }
+    data = _run_api_call(lambda: make_client(api).upsert_skill(skill_id, payload))
+    _echo_json(data)
+
+
+@skills.command("disable")
+def skills_disable(skill_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).disable_skill(skill_id))
+    _echo_json(data)
+
+
+@mcp.command("list")
+def mcp_list(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).list_mcp_servers())
+    for server in data["servers"]:
+        enabled = "enabled" if server.get("enabled", True) else "disabled"
+        command_preview = " ".join(server.get("command_preview") or [])
+        typer.echo(
+            f"{server['id']}\t{server.get('label', '')}\t{enabled}\t"
+            f"{server.get('transport', '')}\t{command_preview}"
+        )
+
+
+@mcp.command("show")
+def mcp_show(server_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).show_mcp_server(server_id))
+    _echo_json(data)
+
+
+@mcp.command("upsert")
+def mcp_upsert(
+    server_id: str,
+    label: str = typer.Option(..., "--label", help="MCP server label."),
+    description: str = typer.Option("", "--description", help="MCP server description."),
+    transport: str = typer.Option("stdio", "--transport", help="stdio, http, or sse."),
+    command_preview: list[str] | None = typer.Option(
+        None,
+        "--command-preview",
+        help="Display-only command preview part.",
+    ),
+    url: str | None = typer.Option(None, "--url", help="Display-only MCP URL."),
+    env_keys: list[str] | None = typer.Option(
+        None,
+        "--env-key",
+        help="Environment variable name only; values are not accepted.",
+    ),
+    enabled: bool = typer.Option(True, "--enabled/--disabled", help="Initial enabled state."),
+    api: str | None = _api_option(),
+) -> None:
+    payload: dict[str, object] = {
+        "label": label,
+        "description": description,
+        "transport": transport,
+        "command_preview": command_preview or [],
+        "url": url,
+        "env_keys": env_keys or [],
+        "enabled": enabled,
+    }
+    data = _run_api_call(lambda: make_client(api).upsert_mcp_server(server_id, payload))
+    _echo_json(data)
+
+
+@mcp.command("disable")
+def mcp_disable(server_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).disable_mcp_server(server_id))
+    _echo_json(data)
+
+
+@policy.command("show")
+def policy_show(
+    agent_id: str | None = typer.Argument(None, help="Agent id."),
+    api: str | None = _api_option(),
+) -> None:
+    client = make_client(api)
+    if agent_id:
+        data = _run_api_call(lambda: client.show_policy(agent_id))
+        _echo_json(data)
+        return
+
+    data = _run_api_call(client.list_policies)
+    for item in data["policies"]:
+        enabled = "enabled" if item.get("enabled", True) else "disabled"
+        mode = "readonly" if item.get("readonly", False) else "write"
+        typer.echo(
+            f"{item['agent_id']}\t{enabled}\t{mode}\t{item.get('rate_limit_per_minute', '')}"
+        )
+
+
+@policy.command("set")
+def policy_set(
+    agent_id: str,
+    enabled: bool = typer.Option(True, "--enabled/--disabled", help="Policy enabled state."),
+    readonly: bool = typer.Option(False, "--readonly", help="Deny write-capable tools."),
+    skill_ids: list[str] | None = typer.Option(None, "--skill", help="Allowed skill id."),
+    mcp_server_ids: list[str] | None = typer.Option(None, "--mcp", help="Allowed MCP server id."),
+    tool_names: list[str] | None = typer.Option(None, "--tool", help="Allowed tool name."),
+    approval_tools: list[str] | None = typer.Option(
+        None,
+        "--approval-tool",
+        help="Tool name that requires approval.",
+    ),
+    model_ids: list[str] | None = typer.Option(None, "--model", help="Allowed model id."),
+    cwd_roots: list[str] | None = typer.Option(None, "--cwd-root", help="Allowed cwd root."),
+    rate_limit: int = typer.Option(60, "--rate-limit", help="Declarative rate limit."),
+    api: str | None = _api_option(),
+) -> None:
+    payload: dict[str, object] = {
+        "enabled": enabled,
+        "readonly": readonly,
+        "allowed_skill_ids": skill_ids or [],
+        "allowed_mcp_server_ids": mcp_server_ids or [],
+        "allowed_tool_names": tool_names or [],
+        "approval_required_tool_names": approval_tools or [],
+        "allowed_model_ids": model_ids or [],
+        "cwd_roots": cwd_roots or [],
+        "rate_limit_per_minute": rate_limit,
+    }
+    data = _run_api_call(lambda: make_client(api).upsert_policy(agent_id, payload))
+    _echo_json(data)
+
+
+@policy.command("evaluate")
+def policy_evaluate(
+    agent_id: str,
+    skill_id: str | None = typer.Option(None, "--skill", help="Requested skill id."),
+    mcp_server_id: str | None = typer.Option(None, "--mcp", help="Requested MCP server id."),
+    tool_name: str | None = typer.Option(None, "--tool", help="Requested tool name."),
+    model_id: str | None = typer.Option(None, "--model", help="Requested model id."),
+    cwd: str | None = typer.Option(None, "--cwd", help="Requested working directory."),
+    api: str | None = _api_option(),
+) -> None:
+    payload: dict[str, object] = {
+        "agent_id": agent_id,
+        "skill_id": skill_id,
+        "mcp_server_id": mcp_server_id,
+        "tool_name": tool_name,
+        "model_id": model_id,
+        "cwd": cwd,
+    }
+    data = _run_api_call(lambda: make_client(api).evaluate_policy(payload))
+    _echo_json(data)

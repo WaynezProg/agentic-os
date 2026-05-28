@@ -424,13 +424,113 @@ def test_api_returns_p2_placeholder_skills_and_mcp(tmp_path: Path) -> None:
     mcp = client.get("/mcp")
 
     assert skills.status_code == 200
-    assert skills.json() == {
-        "skills": [{"id": "placeholder", "label": "Skills registry", "status": "placeholder"}]
-    }
+    assert skills.json() == {"skills": []}
     assert mcp.status_code == 200
-    assert mcp.json() == {
-        "servers": [{"id": "placeholder", "label": "MCP servers", "status": "placeholder"}]
-    }
+    assert mcp.json() == {"servers": []}
+
+
+def test_api_upserts_reads_lists_and_disables_skill(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    created = client.post(
+        "/skills/reviewer",
+        json={
+            "label": "Reviewer",
+            "description": "Review local changes",
+            "source": "workspace",
+            "entrypoint": "skills/reviewer/SKILL.md",
+            "tags": ["review", "local"],
+        },
+    )
+    listed = client.get("/skills")
+    shown = client.get("/skills/reviewer")
+    disabled = client.post("/skills/reviewer/disable")
+
+    assert created.status_code == 200
+    assert created.json()["id"] == "reviewer"
+    assert created.json()["enabled"] is True
+    assert [skill["id"] for skill in listed.json()["skills"]] == ["reviewer"]
+    assert shown.json()["tags"] == ["review", "local"]
+    assert disabled.json()["enabled"] is False
+
+
+def test_api_upserts_reads_lists_and_disables_mcp_server(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    created = client.post(
+        "/mcp/filesystem",
+        json={
+            "label": "Filesystem MCP",
+            "description": "Local metadata",
+            "transport": "stdio",
+            "command_preview": ["mcp-server", "--token", "TOKEN_PLACEHOLDER"],
+            "env_keys": ["MCP_TOKEN=TOKEN_PLACEHOLDER"],
+        },
+    )
+    listed = client.get("/mcp")
+    shown = client.get("/mcp/filesystem")
+    disabled = client.post("/mcp/filesystem/disable")
+
+    assert created.status_code == 200
+    assert created.json()["id"] == "filesystem"
+    assert "TOKEN_PLACEHOLDER" not in json.dumps(created.json())
+    assert created.json()["env_keys"] == ["MCP_TOKEN"]
+    assert [server["id"] for server in listed.json()["servers"]] == ["filesystem"]
+    assert shown.json()["label"] == "Filesystem MCP"
+    assert disabled.json()["enabled"] is False
+
+
+def test_api_upserts_reads_lists_and_evaluates_policy(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    client.post("/skills/reviewer", json={"label": "Reviewer"})
+    client.post("/mcp/filesystem", json={"label": "Filesystem MCP"})
+
+    created = client.post(
+        "/policy/shell",
+        json={
+            "allowed_skill_ids": ["reviewer"],
+            "allowed_mcp_server_ids": ["filesystem"],
+            "allowed_tool_names": ["read", "exec"],
+            "approval_required_tool_names": ["exec"],
+            "allowed_model_ids": ["local-model"],
+            "cwd_roots": [str(tmp_path)],
+            "rate_limit_per_minute": 20,
+        },
+    )
+    listed = client.get("/policy")
+    shown = client.get("/policy/shell")
+    allowed = client.post(
+        "/policy/evaluate",
+        json={
+            "agent_id": "shell",
+            "skill_id": "reviewer",
+            "mcp_server_id": "filesystem",
+            "tool_name": "read",
+            "model_id": "local-model",
+            "cwd": str(tmp_path / "project"),
+        },
+    )
+    approval = client.post("/policy/evaluate", json={"agent_id": "shell", "tool_name": "exec"})
+
+    assert created.status_code == 200
+    assert created.json()["agent_id"] == "shell"
+    assert [policy["agent_id"] for policy in listed.json()["policies"]] == ["shell"]
+    assert shown.json()["allowed_skill_ids"] == ["reviewer"]
+    assert allowed.json()["decision"] == "allow"
+    assert allowed.json()["reason"] == "policy allowed request"
+    assert approval.json()["decision"] == "approval_required"
+
+
+def test_api_returns_404_for_unknown_control_plane_reads(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    skill = client.get("/skills/missing")
+    mcp = client.get("/mcp/missing")
+    policy = client.get("/policy/missing")
+
+    assert skill.status_code == 404
+    assert mcp.status_code == 404
+    assert policy.status_code == 404
 
 
 def test_api_allows_localhost_cors_preflight(tmp_path: Path) -> None:

@@ -10,8 +10,15 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from agentic_os.control_plane import (
+    ControlPlaneStore,
+    McpServerUpsert,
+    PolicyEvaluationRequest,
+    PolicyUpsert,
+    SkillUpsert,
+)
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
@@ -27,6 +34,46 @@ class SessionRunRequest(BaseModel):
     message: str
 
 
+class SkillUpsertRequest(BaseModel):
+    label: str
+    description: str = ""
+    source: str = "local"
+    entrypoint: str = ""
+    tags: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class McpServerUpsertRequest(BaseModel):
+    label: str
+    description: str = ""
+    transport: str = "stdio"
+    command_preview: list[str] = Field(default_factory=list)
+    url: str | None = None
+    env_keys: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class PolicyUpsertRequest(BaseModel):
+    enabled: bool = True
+    readonly: bool = False
+    allowed_skill_ids: list[str] = Field(default_factory=list)
+    allowed_mcp_server_ids: list[str] = Field(default_factory=list)
+    allowed_tool_names: list[str] = Field(default_factory=list)
+    approval_required_tool_names: list[str] = Field(default_factory=list)
+    allowed_model_ids: list[str] = Field(default_factory=list)
+    cwd_roots: list[str] = Field(default_factory=list)
+    rate_limit_per_minute: int = 60
+
+
+class PolicyEvaluateRequest(BaseModel):
+    agent_id: str
+    skill_id: str | None = None
+    mcp_server_id: str | None = None
+    tool_name: str | None = None
+    model_id: str | None = None
+    cwd: str | None = None
+
+
 def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     state_dir.mkdir(parents=True, exist_ok=True)
     registry = Registry(registry_path)
@@ -34,6 +81,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     store.init()
     memory_store = MemoryStore(state_dir / "agentic-os.db")
     memory_store.init()
+    control_plane = ControlPlaneStore(state_dir / "agentic-os.db")
+    control_plane.init()
     logs = JsonlLogStore()
     supervisor = ProcessSupervisor(store=store, logs=logs, state_dir=state_dir)
     supervisor.reconcile()
@@ -180,19 +229,139 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.get("/skills")
     def list_skills() -> dict[str, object]:
-        return {
-            "skills": [
-                {"id": "placeholder", "label": "Skills registry", "status": "placeholder"}
-            ]
-        }
+        return {"skills": [_asdict(skill) for skill in control_plane.list_skills()]}
+
+    @app.get("/skills/{skill_id}")
+    def show_skill(skill_id: str) -> dict[str, Any]:
+        try:
+            return _asdict(control_plane.get_skill(skill_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/skills/{skill_id}")
+    def upsert_skill(skill_id: str, request: SkillUpsertRequest) -> dict[str, Any]:
+        try:
+            return _asdict(
+                control_plane.upsert_skill(
+                    skill_id,
+                    SkillUpsert(
+                        label=request.label,
+                        description=request.description,
+                        source=request.source,
+                        entrypoint=request.entrypoint,
+                        tags=request.tags,
+                        enabled=request.enabled,
+                    ),
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/skills/{skill_id}/disable")
+    def disable_skill(skill_id: str) -> dict[str, Any]:
+        try:
+            return _asdict(control_plane.disable_skill(skill_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/mcp")
     def list_mcp_servers() -> dict[str, object]:
-        return {
-            "servers": [
-                {"id": "placeholder", "label": "MCP servers", "status": "placeholder"}
-            ]
-        }
+        return {"servers": [_asdict(server) for server in control_plane.list_mcp_servers()]}
+
+    @app.get("/mcp/{server_id}")
+    def show_mcp_server(server_id: str) -> dict[str, Any]:
+        try:
+            return _asdict(control_plane.get_mcp_server(server_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/{server_id}")
+    def upsert_mcp_server(server_id: str, request: McpServerUpsertRequest) -> dict[str, Any]:
+        try:
+            return _asdict(
+                control_plane.upsert_mcp_server(
+                    server_id,
+                    McpServerUpsert(
+                        label=request.label,
+                        description=request.description,
+                        transport=request.transport,
+                        command_preview=request.command_preview,
+                        url=request.url,
+                        env_keys=request.env_keys,
+                        enabled=request.enabled,
+                    ),
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/{server_id}/disable")
+    def disable_mcp_server(server_id: str) -> dict[str, Any]:
+        try:
+            return _asdict(control_plane.disable_mcp_server(server_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/policy")
+    def list_policies() -> dict[str, object]:
+        return {"policies": [_asdict(policy) for policy in control_plane.list_policies()]}
+
+    @app.post("/policy/evaluate")
+    def evaluate_policy(request: PolicyEvaluateRequest) -> dict[str, Any]:
+        try:
+            return _asdict(
+                control_plane.evaluate_policy(
+                    PolicyEvaluationRequest(
+                        agent_id=request.agent_id,
+                        skill_id=request.skill_id,
+                        mcp_server_id=request.mcp_server_id,
+                        tool_name=request.tool_name,
+                        model_id=request.model_id,
+                        cwd=request.cwd,
+                    )
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/policy/{agent_id}")
+    def show_policy(agent_id: str) -> dict[str, Any]:
+        try:
+            return _asdict(control_plane.get_policy(agent_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/policy/{agent_id}")
+    def upsert_policy(agent_id: str, request: PolicyUpsertRequest) -> dict[str, Any]:
+        try:
+            return _asdict(
+                control_plane.upsert_policy(
+                    agent_id,
+                    PolicyUpsert(
+                        enabled=request.enabled,
+                        readonly=request.readonly,
+                        allowed_skill_ids=request.allowed_skill_ids,
+                        allowed_mcp_server_ids=request.allowed_mcp_server_ids,
+                        allowed_tool_names=request.allowed_tool_names,
+                        approval_required_tool_names=request.approval_required_tool_names,
+                        allowed_model_ids=request.allowed_model_ids,
+                        cwd_roots=request.cwd_roots,
+                        rate_limit_per_minute=request.rate_limit_per_minute,
+                    ),
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     def _get_session_or_404(session_id: str) -> SessionRecord:
         try:

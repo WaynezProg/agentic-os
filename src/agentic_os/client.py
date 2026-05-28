@@ -72,8 +72,38 @@ class AgenticClient:
     def list_skills(self) -> dict[str, Any]:
         return self._get("/skills")
 
+    def show_skill(self, skill_id: str) -> dict[str, Any]:
+        return self._get(f"/skills/{_validate_path_id(skill_id)}")
+
+    def upsert_skill(self, skill_id: str, payload: dict[str, object]) -> dict[str, Any]:
+        return self._post(f"/skills/{_validate_path_id(skill_id)}", payload)
+
+    def disable_skill(self, skill_id: str) -> dict[str, Any]:
+        return self._post(f"/skills/{_validate_path_id(skill_id)}/disable", {})
+
     def list_mcp_servers(self) -> dict[str, Any]:
         return self._get("/mcp")
+
+    def show_mcp_server(self, server_id: str) -> dict[str, Any]:
+        return self._get(f"/mcp/{_validate_path_id(server_id)}")
+
+    def upsert_mcp_server(self, server_id: str, payload: dict[str, object]) -> dict[str, Any]:
+        return self._post(f"/mcp/{_validate_path_id(server_id)}", payload)
+
+    def disable_mcp_server(self, server_id: str) -> dict[str, Any]:
+        return self._post(f"/mcp/{_validate_path_id(server_id)}/disable", {})
+
+    def list_policies(self) -> dict[str, Any]:
+        return self._get("/policy")
+
+    def show_policy(self, agent_id: str) -> dict[str, Any]:
+        return self._get(f"/policy/{_validate_path_id(agent_id)}")
+
+    def upsert_policy(self, agent_id: str, payload: dict[str, object]) -> dict[str, Any]:
+        return self._post(f"/policy/{_validate_path_id(agent_id)}", payload)
+
+    def evaluate_policy(self, payload: dict[str, object]) -> dict[str, Any]:
+        return self._post("/policy/evaluate", payload)
 
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:

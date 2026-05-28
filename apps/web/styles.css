@@ -356,6 +356,23 @@ tbody tr:last-child td {
   min-width: 0;
 }
 
+.policy-surface {
+  margin-top: 14px;
+}
+
+.eval-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.eval-grid label {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .search {
   display: flex;
   gap: 8px;
@@ -408,7 +425,8 @@ tbody tr:last-child td {
 
   .api-controls,
   .control-row,
-  .detail-grid {
+  .detail-grid,
+  .eval-grid {
     grid-template-columns: 1fr;
     align-items: stretch;
   }

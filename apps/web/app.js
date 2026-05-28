@@ -20,6 +20,8 @@ const ENDPOINTS = Object.freeze({
   memorySearch: "/memory/search",
   skills: "/skills",
   mcp: "/mcp",
+  policySummary: "/policy",
+  policyEvaluate: "/policy/evaluate",
 });
 
 const HTML_ENTITIES = Object.freeze({
@@ -68,6 +70,7 @@ function bindControls() {
   byId("load-logs").addEventListener("click", loadLogs);
   byId("refresh-memory").addEventListener("click", loadMemory);
   byId("refresh-skills").addEventListener("click", loadSkillsMcp);
+  byId("run-policy-eval").addEventListener("click", evaluatePolicy);
   byId("search-memory").addEventListener("click", () => {
     loadMemories(byId("memory-search").value.trim());
   });
@@ -445,16 +448,33 @@ async function loadMemories(query = "") {
 }
 
 async function loadSkillsMcp() {
-  await Promise.allSettled([loadSkills(), loadMcpServers()]);
+  await Promise.allSettled([loadSkills(), loadMcpServers(), loadPolicies()]);
 }
 
 async function loadSkills() {
   const body = byId("skills-body");
   try {
     const data = await apiFetch(buildEndpoint("skills"));
-    renderRegistryRows(body, asArray(data.skills), "No skills returned.");
+    const skills = asArray(data.skills);
+    if (skills.length === 0) {
+      renderEmptyRow(body, 5, "No skills returned.");
+      return;
+    }
+    body.innerHTML = skills
+      .map(
+        (skill) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(skill.id)}</td>
+            <td>${escapeHtml(skill.label)}</td>
+            <td>${escapeHtml(String(skill.enabled !== false))}</td>
+            <td>${escapeHtml(skill.source)}</td>
+            <td>${escapeHtml(asArray(skill.tags).join(", "))}</td>
+          </tr>
+        `,
+      )
+      .join("");
   } catch (error) {
-    renderErrorRow(body, 3, error.message);
+    renderErrorRow(body, 5, error.message);
   }
 }
 
@@ -462,28 +482,84 @@ async function loadMcpServers() {
   const body = byId("mcp-body");
   try {
     const data = await apiFetch(buildEndpoint("mcp"));
-    renderRegistryRows(body, asArray(data.servers), "No MCP servers returned.");
+    const servers = asArray(data.servers);
+    if (servers.length === 0) {
+      renderEmptyRow(body, 5, "No MCP servers returned.");
+      return;
+    }
+    body.innerHTML = servers
+      .map(
+        (server) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(server.id)}</td>
+            <td>${escapeHtml(server.label)}</td>
+            <td>${escapeHtml(String(server.enabled !== false))}</td>
+            <td>${escapeHtml(server.transport)}</td>
+            <td class="cell-code">${escapeHtml(asArray(server.command_preview).join(" "))}</td>
+          </tr>
+        `,
+      )
+      .join("");
   } catch (error) {
-    renderErrorRow(body, 3, error.message);
+    renderErrorRow(body, 5, error.message);
   }
 }
 
-function renderRegistryRows(body, rows, emptyMessage) {
-  if (rows.length === 0) {
-    renderEmptyRow(body, 3, emptyMessage);
+async function loadPolicies() {
+  const body = byId("policy-summary-body");
+  try {
+    const data = await apiFetch(buildEndpoint("policySummary"));
+    const policies = asArray(data.policies);
+    if (policies.length === 0) {
+      renderEmptyRow(body, 4, "No policies returned.");
+      return;
+    }
+    body.innerHTML = policies
+      .map(
+        (policy) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(policy.agent_id)}</td>
+            <td>${escapeHtml(String(policy.enabled !== false))}</td>
+            <td>${escapeHtml(policy.readonly ? "readonly" : "write")}</td>
+            <td>${escapeHtml(policy.rate_limit_per_minute)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(body, 4, error.message);
+  }
+}
+
+async function evaluatePolicy() {
+  const result = byId("policy-eval-result");
+  const agentId = byId("policy-eval-agent").value.trim();
+  if (!agentId) {
+    result.textContent = "agent_id is required";
     return;
   }
-  body.innerHTML = rows
-    .map(
-      (row) => `
-        <tr>
-          <td class="cell-id">${escapeHtml(row.id)}</td>
-          <td>${escapeHtml(row.label)}</td>
-          <td><span class="${statusPillClass(row.status)}">${escapeHtml(row.status)}</span></td>
-        </tr>
-      `,
-    )
-    .join("");
+  try {
+    const payload = {
+      agent_id: agentId,
+      skill_id: emptyToNull(byId("policy-eval-skill").value),
+      mcp_server_id: emptyToNull(byId("policy-eval-mcp").value),
+      tool_name: emptyToNull(byId("policy-eval-tool").value),
+      model_id: emptyToNull(byId("policy-eval-model").value),
+      cwd: emptyToNull(byId("policy-eval-cwd").value),
+    };
+    const data = await apiFetch(buildEndpoint("policyEvaluate"), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    result.textContent = [
+      `decision: ${valueOrDash(data.decision)}`,
+      `reason: ${valueOrDash(data.reason)}`,
+      `readonly: ${valueOrDash(data.readonly)}`,
+      `rate_limit_per_minute: ${valueOrDash(data.rate_limit_per_minute)}`,
+    ].join("\n");
+  } catch (error) {
+    result.textContent = error.message;
+  }
 }
 
 function renderSessionSummary(summary) {
@@ -601,6 +677,11 @@ function valueOrDash(value) {
     return "-";
   }
   return String(value);
+}
+
+function emptyToNull(value) {
+  const trimmed = String(value || "").trim();
+  return trimmed ? trimmed : null;
 }
 
 function escapeHtml(value) {

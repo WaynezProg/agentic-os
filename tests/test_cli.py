@@ -141,6 +141,87 @@ class FakeClient:
             ]
         }
 
+    def list_skills(self) -> dict[str, object]:
+        self.calls.append(("list_skills", (), {}))
+        return {
+            "skills": [
+                {
+                    "id": "reviewer",
+                    "label": "Reviewer",
+                    "enabled": True,
+                    "source": "workspace",
+                    "tags": ["review"],
+                }
+            ]
+        }
+
+    def show_skill(self, skill_id: str) -> dict[str, object]:
+        self.calls.append(("show_skill", (skill_id,), {}))
+        return {"id": skill_id, "label": "Reviewer", "enabled": True}
+
+    def upsert_skill(self, skill_id: str, payload: dict[str, object]) -> dict[str, object]:
+        self.calls.append(("upsert_skill", (skill_id, payload), {}))
+        return {"id": skill_id, **payload, "enabled": payload.get("enabled", True)}
+
+    def disable_skill(self, skill_id: str) -> dict[str, object]:
+        self.calls.append(("disable_skill", (skill_id,), {}))
+        return {"id": skill_id, "label": "Reviewer", "enabled": False}
+
+    def list_mcp_servers(self) -> dict[str, object]:
+        self.calls.append(("list_mcp_servers", (), {}))
+        return {
+            "servers": [
+                {
+                    "id": "filesystem",
+                    "label": "Filesystem MCP",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command_preview": ["mcp-server"],
+                }
+            ]
+        }
+
+    def show_mcp_server(self, server_id: str) -> dict[str, object]:
+        self.calls.append(("show_mcp_server", (server_id,), {}))
+        return {"id": server_id, "label": "Filesystem MCP", "enabled": True}
+
+    def upsert_mcp_server(self, server_id: str, payload: dict[str, object]) -> dict[str, object]:
+        self.calls.append(("upsert_mcp_server", (server_id, payload), {}))
+        return {"id": server_id, **payload, "enabled": payload.get("enabled", True)}
+
+    def disable_mcp_server(self, server_id: str) -> dict[str, object]:
+        self.calls.append(("disable_mcp_server", (server_id,), {}))
+        return {"id": server_id, "label": "Filesystem MCP", "enabled": False}
+
+    def list_policies(self) -> dict[str, object]:
+        self.calls.append(("list_policies", (), {}))
+        return {
+            "policies": [
+                {
+                    "agent_id": "shell",
+                    "enabled": True,
+                    "readonly": False,
+                    "rate_limit_per_minute": 60,
+                }
+            ]
+        }
+
+    def show_policy(self, agent_id: str) -> dict[str, object]:
+        self.calls.append(("show_policy", (agent_id,), {}))
+        return {"agent_id": agent_id, "enabled": True, "readonly": False}
+
+    def upsert_policy(self, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+        self.calls.append(("upsert_policy", (agent_id, payload), {}))
+        return {"agent_id": agent_id, **payload}
+
+    def evaluate_policy(self, payload: dict[str, object]) -> dict[str, object]:
+        self.calls.append(("evaluate_policy", (payload,), {}))
+        return {
+            "agent_id": payload["agent_id"],
+            "decision": "allow",
+            "reason": "policy allowed request",
+        }
+
 
 def install_fake_client(monkeypatch: Any, fake: FakeClient) -> None:
     monkeypatch.setattr(cli, "make_client", lambda api: fake)
@@ -333,6 +414,282 @@ def test_memory_search_prints_tab_separated_rows(monkeypatch: Any) -> None:
     assert fake.calls == [("search_memories", ("branch fix",), {})]
 
 
+def test_skills_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["skills", "list"])
+
+    assert result.exit_code == 0
+    assert result.output == "reviewer\tReviewer\tenabled\tworkspace\treview\n"
+    assert fake.calls == [("list_skills", (), {})]
+
+
+def test_skills_show_prints_skill_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["skills", "show", "reviewer"])
+
+    assert result.exit_code == 0
+    assert '"id": "reviewer"' in result.output
+    assert fake.calls == [("show_skill", ("reviewer",), {})]
+
+
+def test_skills_upsert_sends_payload_and_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "skills",
+            "upsert",
+            "reviewer",
+            "--label",
+            "Reviewer",
+            "--description",
+            "Review local changes",
+            "--source",
+            "workspace",
+            "--entrypoint",
+            "skills/reviewer/SKILL.md",
+            "--tag",
+            "review",
+            "--tag",
+            "local",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"id": "reviewer"' in result.output
+    assert fake.calls == [
+        (
+            "upsert_skill",
+            (
+                "reviewer",
+                {
+                    "label": "Reviewer",
+                    "description": "Review local changes",
+                    "source": "workspace",
+                    "entrypoint": "skills/reviewer/SKILL.md",
+                    "tags": ["review", "local"],
+                    "enabled": True,
+                },
+            ),
+            {},
+        )
+    ]
+
+
+def test_skills_disable_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["skills", "disable", "reviewer"])
+
+    assert result.exit_code == 0
+    assert '"enabled": false' in result.output
+    assert fake.calls == [("disable_skill", ("reviewer",), {})]
+
+
+def test_mcp_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["mcp", "list"])
+
+    assert result.exit_code == 0
+    assert result.output == "filesystem\tFilesystem MCP\tenabled\tstdio\tmcp-server\n"
+    assert fake.calls == [("list_mcp_servers", (), {})]
+
+
+def test_mcp_show_prints_server_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["mcp", "show", "filesystem"])
+
+    assert result.exit_code == 0
+    assert '"id": "filesystem"' in result.output
+    assert fake.calls == [("show_mcp_server", ("filesystem",), {})]
+
+
+def test_mcp_upsert_sends_env_keys_only(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "mcp",
+            "upsert",
+            "filesystem",
+            "--label",
+            "Filesystem MCP",
+            "--description",
+            "Local metadata",
+            "--transport",
+            "stdio",
+            "--command-preview",
+            "mcp-server",
+            "--command-preview",
+            "--safe-flag",
+            "--env-key",
+            "MCP_TOKEN",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"id": "filesystem"' in result.output
+    assert fake.calls == [
+        (
+            "upsert_mcp_server",
+            (
+                "filesystem",
+                {
+                    "label": "Filesystem MCP",
+                    "description": "Local metadata",
+                    "transport": "stdio",
+                    "command_preview": ["mcp-server", "--safe-flag"],
+                    "url": None,
+                    "env_keys": ["MCP_TOKEN"],
+                    "enabled": True,
+                },
+            ),
+            {},
+        )
+    ]
+
+
+def test_mcp_disable_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["mcp", "disable", "filesystem"])
+
+    assert result.exit_code == 0
+    assert '"enabled": false' in result.output
+    assert fake.calls == [("disable_mcp_server", ("filesystem",), {})]
+
+
+def test_policy_show_without_agent_lists_policies(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["policy", "show"])
+
+    assert result.exit_code == 0
+    assert result.output == "shell\tenabled\twrite\t60\n"
+    assert fake.calls == [("list_policies", (), {})]
+
+
+def test_policy_show_with_agent_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["policy", "show", "shell"])
+
+    assert result.exit_code == 0
+    assert '"agent_id": "shell"' in result.output
+    assert fake.calls == [("show_policy", ("shell",), {})]
+
+
+def test_policy_set_sends_payload(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "policy",
+            "set",
+            "shell",
+            "--skill",
+            "reviewer",
+            "--mcp",
+            "filesystem",
+            "--tool",
+            "read",
+            "--approval-tool",
+            "exec",
+            "--model",
+            "local-model",
+            "--cwd-root",
+            "/tmp/project",
+            "--rate-limit",
+            "20",
+            "--readonly",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"agent_id": "shell"' in result.output
+    assert fake.calls == [
+        (
+            "upsert_policy",
+            (
+                "shell",
+                {
+                    "enabled": True,
+                    "readonly": True,
+                    "allowed_skill_ids": ["reviewer"],
+                    "allowed_mcp_server_ids": ["filesystem"],
+                    "allowed_tool_names": ["read"],
+                    "approval_required_tool_names": ["exec"],
+                    "allowed_model_ids": ["local-model"],
+                    "cwd_roots": ["/tmp/project"],
+                    "rate_limit_per_minute": 20,
+                },
+            ),
+            {},
+        )
+    ]
+
+
+def test_policy_evaluate_prints_decision_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "policy",
+            "evaluate",
+            "shell",
+            "--skill",
+            "reviewer",
+            "--mcp",
+            "filesystem",
+            "--tool",
+            "read",
+            "--model",
+            "local-model",
+            "--cwd",
+            "/tmp/project",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"decision": "allow"' in result.output
+    assert fake.calls == [
+        (
+            "evaluate_policy",
+            (
+                {
+                    "agent_id": "shell",
+                    "skill_id": "reviewer",
+                    "mcp_server_id": "filesystem",
+                    "tool_name": "read",
+                    "model_id": "local-model",
+                    "cwd": "/tmp/project",
+                },
+            ),
+            {},
+        )
+    ]
+
+
 def test_make_client_uses_default_env_and_explicit_api(monkeypatch: Any) -> None:
     monkeypatch.delenv("AGENTIC_OS_API", raising=False)
     assert cli.make_client(None).base_url == "http://127.0.0.1:8767"
@@ -483,6 +840,85 @@ def test_client_memory_methods_build_expected_requests(monkeypatch: Any) -> None
     ]
 
 
+def test_client_control_plane_methods_build_expected_requests(monkeypatch: Any) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    client.list_skills()
+    client.show_skill("reviewer")
+    client.upsert_skill("reviewer", {"label": "Reviewer"})
+    client.disable_skill("reviewer")
+    client.list_mcp_servers()
+    client.show_mcp_server("filesystem")
+    client.upsert_mcp_server("filesystem", {"label": "Filesystem MCP"})
+    client.disable_mcp_server("filesystem")
+    client.list_policies()
+    client.show_policy("shell")
+    client.upsert_policy("shell", {"allowed_tool_names": ["read"]})
+    client.evaluate_policy({"agent_id": "shell", "tool_name": "read"})
+
+    assert RecordingHttpxClient.requests == [
+        {"method": "GET", "base_url": "http://api.example", "path": "/skills", "params": None},
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/skills/reviewer",
+            "params": None,
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/skills/reviewer",
+            "json": {"label": "Reviewer"},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/skills/reviewer/disable",
+            "json": {},
+        },
+        {"method": "GET", "base_url": "http://api.example", "path": "/mcp", "params": None},
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/mcp/filesystem",
+            "params": None,
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/mcp/filesystem",
+            "json": {"label": "Filesystem MCP"},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/mcp/filesystem/disable",
+            "json": {},
+        },
+        {"method": "GET", "base_url": "http://api.example", "path": "/policy", "params": None},
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/policy/shell",
+            "params": None,
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/policy/shell",
+            "json": {"allowed_tool_names": ["read"]},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/policy/evaluate",
+            "json": {"agent_id": "shell", "tool_name": "read"},
+        },
+    ]
+
+
 @pytest.mark.parametrize(
     "unsafe_id",
     ["", "id/with/slash", "id?query=1", "id#fragment", "id%2Flogs"],
@@ -508,6 +944,14 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.create_memory_review(unsafe_id),
         lambda: client.approve_memory_review(unsafe_id),
         lambda: client.reject_memory_review(unsafe_id),
+        lambda: client.show_skill(unsafe_id),
+        lambda: client.upsert_skill(unsafe_id, {"label": "bad"}),
+        lambda: client.disable_skill(unsafe_id),
+        lambda: client.show_mcp_server(unsafe_id),
+        lambda: client.upsert_mcp_server(unsafe_id, {"label": "bad"}),
+        lambda: client.disable_mcp_server(unsafe_id),
+        lambda: client.show_policy(unsafe_id),
+        lambda: client.upsert_policy(unsafe_id, {}),
     ]
 
     for call in calls:
@@ -653,3 +1097,6 @@ def test_help_commands_import_successfully() -> None:
     assert runner.invoke(cli.app, ["agents", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["sessions", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["memory", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["skills", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["mcp", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["policy", "--help"]).exit_code == 0

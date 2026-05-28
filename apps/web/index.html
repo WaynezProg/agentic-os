@@ -209,12 +209,14 @@
                   <tr>
                     <th>ID</th>
                     <th>Label</th>
-                    <th>Status</th>
+                    <th>Enabled</th>
+                    <th>Source</th>
+                    <th>Tags</th>
                   </tr>
                 </thead>
                 <tbody id="skills-body">
                   <tr>
-                    <td colspan="3">No data loaded.</td>
+                    <td colspan="5">No data loaded.</td>
                   </tr>
                 </tbody>
               </table>
@@ -228,16 +230,61 @@
                   <tr>
                     <th>ID</th>
                     <th>Label</th>
-                    <th>Status</th>
+                    <th>Enabled</th>
+                    <th>Transport</th>
+                    <th>Command preview</th>
                   </tr>
                 </thead>
                 <tbody id="mcp-body">
                   <tr>
-                    <td colspan="3">No data loaded.</td>
+                    <td colspan="5">No data loaded.</td>
                   </tr>
                 </tbody>
               </table>
             </div>
+          </section>
+        </div>
+        <div class="split policy-surface">
+          <section class="subpanel">
+            <h3>Policy summary</h3>
+            <div class="table-shell">
+              <table id="policy-summary-table">
+                <thead>
+                  <tr>
+                    <th>Agent</th>
+                    <th>Enabled</th>
+                    <th>Mode</th>
+                    <th>Rate limit</th>
+                  </tr>
+                </thead>
+                <tbody id="policy-summary-body">
+                  <tr>
+                    <td colspan="4">No data loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="subpanel">
+            <div class="subpanel-head">
+              <h3>Policy evaluation</h3>
+              <button id="run-policy-eval" type="button">Evaluate</button>
+            </div>
+            <div class="eval-grid">
+              <label for="policy-eval-agent">Agent</label>
+              <input id="policy-eval-agent" type="text" spellcheck="false" />
+              <label for="policy-eval-skill">Skill</label>
+              <input id="policy-eval-skill" type="text" spellcheck="false" />
+              <label for="policy-eval-mcp">MCP</label>
+              <input id="policy-eval-mcp" type="text" spellcheck="false" />
+              <label for="policy-eval-tool">Tool</label>
+              <input id="policy-eval-tool" type="text" spellcheck="false" />
+              <label for="policy-eval-model">Model</label>
+              <input id="policy-eval-model" type="text" spellcheck="false" />
+              <label for="policy-eval-cwd">CWD</label>
+              <input id="policy-eval-cwd" type="text" spellcheck="false" />
+            </div>
+            <pre id="policy-eval-result" class="summary-output" aria-live="polite"></pre>
           </section>
         </div>
       </section>

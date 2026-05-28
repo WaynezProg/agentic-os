@@ -100,6 +100,29 @@ def test_skills_mcp_placeholder_panels_exist() -> None:
     assert 'id="mcp-body"' in html
 
 
+def test_skills_mcp_p3_registry_tables_exist() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    for header in ["ID", "Label", "Enabled", "Source", "Tags"]:
+        assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
+    for header in ["ID", "Label", "Enabled", "Transport", "Command preview"]:
+        assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
+
+
+def test_policy_summary_and_evaluation_controls_exist() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert 'id="policy-summary-body"' in html
+    assert 'id="policy-eval-agent"' in html
+    assert 'id="policy-eval-skill"' in html
+    assert 'id="policy-eval-mcp"' in html
+    assert 'id="policy-eval-tool"' in html
+    assert 'id="policy-eval-model"' in html
+    assert 'id="policy-eval-cwd"' in html
+    assert 'id="run-policy-eval"' in html
+    assert 'id="policy-eval-result"' in html
+
+
 def test_javascript_references_required_daemon_endpoints() -> None:
     js = APP_JS.read_text(encoding="utf-8")
 
@@ -120,8 +143,20 @@ def test_javascript_references_required_daemon_endpoints() -> None:
         "/memory/search",
         "/skills",
         "/mcp",
+        "/policy",
+        "/policy/evaluate",
     ]:
         assert endpoint in js
+
+
+def test_javascript_renders_policy_summary_and_evaluation_result() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert "loadPolicies" in js
+    assert "evaluatePolicy" in js
+    assert "policySummary" in js
+    assert "policyEvaluate" in js
+    assert "policy-eval-result" in js
 
 
 def test_javascript_uses_session_detail_and_summary_read_paths() -> None:
@@ -191,3 +226,19 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
     combined = INDEX_HTML.read_text(encoding="utf-8") + APP_JS.read_text(encoding="utf-8")
     for token in ["vite", "webpack", "parcel", "npm install", "node_modules"]:
         assert token not in combined.lower()
+
+
+def test_readme_documents_p3_usage_and_limits() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    for token in [
+        "Run P3 Skills / MCP / Policy",
+        "agentctl skills list",
+        "agentctl mcp list",
+        "agentctl policy evaluate",
+        "Skills / MCP tab",
+        "P3 does not start MCP servers",
+        "P3 does not execute external tools",
+        "Secrets must not be stored",
+    ]:
+        assert token in readme

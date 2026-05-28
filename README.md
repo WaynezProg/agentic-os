@@ -110,14 +110,52 @@ port.
 P2 shows agents, sessions, bounded logs, memory review/approved memory, and
 placeholder Skills/MCP registries. The daemon remains the only process owner.
 
-## P1/P2 Limitations
+## Run P3 Skills / MCP / Policy
 
-P1/P2 intentionally do not include:
+Start the daemon:
+
+```bash
+rtk uv run agentd serve --state-dir .agentic-os --registry examples/agents.toml
+```
+
+Use the CLI registry path:
+
+```bash
+rtk uv run agentctl skills upsert reviewer --label "Reviewer" --source workspace --tag review
+rtk uv run agentctl skills list
+rtk uv run agentctl mcp upsert filesystem --label "Filesystem MCP" --transport stdio --env-key MCP_TOKEN
+rtk uv run agentctl mcp list
+rtk uv run agentctl policy set shell --skill reviewer --mcp filesystem --tool read --model local-model --cwd-root "$PWD"
+rtk uv run agentctl policy evaluate shell --skill reviewer --mcp filesystem --tool read --model local-model --cwd "$PWD"
+```
+
+Use the daemon API path:
+
+```bash
+curl http://127.0.0.1:8767/skills
+curl http://127.0.0.1:8767/mcp
+curl http://127.0.0.1:8767/policy
+```
+
+Use the UI path by starting `apps/web` as in P2 and opening the Skills / MCP tab.
+It shows registry rows, policy summary, and deterministic evaluation results.
+
+P3 does not start MCP servers, install skills, execute external tools, enforce
+runtime loops, or take over Hermes/OpenClaw. P3 does not execute external tools
+during policy evaluation. Secrets must not be stored: use
+environment variable names such as `MCP_TOKEN`, not token values. Command and
+URL previews are redacted before storage/display.
+
+## P1/P2/P3 Limitations
+
+P1/P2/P3 intentionally do not include:
 
 - LLM-generated summaries; summaries are deterministic from session metadata
   and stdout/stderr logs.
 - Embeddings, vector DB, LanceDB, Redis, or remote sync.
-- P3 policy editing, tool approval editing, or model allowlist editing.
+- Live policy enforcement inside Hermes/OpenClaw runtime loops.
+- MCP server process ownership, browser-side subprocess work, or UI indexing.
+- Multi-user auth, RBAC, cloud sync, chat UI, Kanban, Electron, or Tauri.
 
 ## Development
 
