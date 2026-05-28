@@ -108,6 +108,30 @@ class AgenticClient:
     def evaluate_policy(self, payload: dict[str, object]) -> dict[str, Any]:
         return self._post("/policy/evaluate", payload)
 
+    def fleet_health(self) -> dict[str, Any]:
+        return self._get("/fleet/health")
+
+    def fleet_instance_health(self, agent_id: str) -> dict[str, Any]:
+        return self._get(f"/fleet/{_validate_path_id(agent_id)}/health")
+
+    def fleet_events(
+        self,
+        agent_id: str | None = None,
+        event_type: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if agent_id is not None:
+            params["agent_id"] = agent_id
+        if event_type is not None:
+            params["event_type"] = event_type
+        return self._get("/fleet/events", params=params)
+
+    def fleet_capacity(self) -> dict[str, Any]:
+        return self._get("/fleet/capacity")
+
+    def fleet_probe(self) -> dict[str, Any]:
+        return self._post("/fleet/probe", {})
+
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
             response = client.get(path, params=params)

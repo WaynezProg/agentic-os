@@ -30,6 +30,8 @@ app.add_typer(skills, name="skills")
 app.add_typer(mcp, name="mcp")
 app.add_typer(policy, name="policy")
 memory.add_typer(memory_review, name="review")
+fleet = typer.Typer(help="Inspect fleet health, events, and capacity.")
+app.add_typer(fleet, name="fleet")
 
 T = TypeVar("T")
 
@@ -390,3 +392,54 @@ def policy_evaluate(
     }
     data = _run_api_call(lambda: make_client(api).evaluate_policy(payload))
     _echo_json(data)
+
+
+@fleet.command("health")
+def fleet_health(
+    agent_id: str | None = typer.Argument(None, help="Show health for a specific agent."),
+    api: str | None = _api_option(),
+) -> None:
+    client = make_client(api)
+    if agent_id:
+        data = _run_api_call(lambda: client.fleet_instance_health(agent_id))
+        _echo_json(data)
+        return
+    data = _run_api_call(client.fleet_health)
+    for instance in data.get("instances", []):
+        typer.echo(
+            f"{instance['agent_id']}\t{instance['state']}\t"
+            f"{instance.get('version', '-')}\t{instance['message']}"
+        )
+
+
+@fleet.command("events")
+def fleet_events_cmd(
+    agent_id: str | None = typer.Option(None, "--agent", help="Filter by agent."),
+    event_type: str | None = typer.Option(None, "--type", help="Filter by event type."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).fleet_events(agent_id=agent_id, event_type=event_type)
+    )
+    for event in data.get("events", []):
+        typer.echo(
+            f"{event.get('id', '-')}\t{event['agent_id']}\t"
+            f"{event['event_type']}\t{event['message']}\t{event['created_at']}"
+        )
+
+
+@fleet.command("capacity")
+def fleet_capacity_cmd(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).fleet_capacity())
+    typer.echo(
+        f"sessions: {data['running_sessions']}/{data['max_running_sessions']}"
+    )
+    typer.echo(
+        f"instances: {data['registered_instances']}/{data['max_registered_instances']}"
+    )
+
+
+@fleet.command("probe")
+def fleet_probe_cmd(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).fleet_probe())
+    typer.echo(f"Probed {data['probed']} instances")

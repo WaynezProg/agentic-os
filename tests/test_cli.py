@@ -235,6 +235,66 @@ class FakeClient:
             "reason": "policy allowed request",
         }
 
+    def fleet_health(self) -> dict[str, object]:
+        self.calls.append(("fleet_health", (), {}))
+        return {
+            "instances": [
+                {
+                    "agent_id": "shell",
+                    "state": "up",
+                    "version": "1.0.0",
+                    "config_fingerprint": "abc",
+                    "message": "OK",
+                    "updated_at": "2026-05-29 00:00:00",
+                }
+            ]
+        }
+
+    def fleet_instance_health(self, agent_id: str) -> dict[str, object]:
+        self.calls.append(("fleet_instance_health", (agent_id,), {}))
+        return {
+            "agent_id": agent_id,
+            "state": "up",
+            "version": "1.0.0",
+            "config_fingerprint": "abc",
+            "message": "OK",
+            "updated_at": "2026-05-29 00:00:00",
+        }
+
+    def fleet_events(
+        self,
+        agent_id: str | None = None,
+        event_type: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(("fleet_events", (), {"agent_id": agent_id, "event_type": event_type}))
+        return {
+            "events": [
+                {
+                    "id": 1,
+                    "agent_id": "shell",
+                    "event_type": "health_state_changed",
+                    "message": "unknown -> up: OK",
+                    "metadata": {},
+                    "created_at": "2026-05-29 00:00:00",
+                }
+            ]
+        }
+
+    def fleet_capacity(self) -> dict[str, object]:
+        self.calls.append(("fleet_capacity", (), {}))
+        return {
+            "running_sessions": 2,
+            "max_running_sessions": 50,
+            "registered_instances": 5,
+            "max_registered_instances": 100,
+            "at_session_limit": False,
+            "at_instance_limit": False,
+        }
+
+    def fleet_probe(self) -> dict[str, object]:
+        self.calls.append(("fleet_probe", (), {}))
+        return {"probed": 3}
+
 
 def install_fake_client(monkeypatch: Any, fake: FakeClient) -> None:
     monkeypatch.setattr(cli, "make_client", lambda api: fake)
@@ -998,6 +1058,7 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.disable_mcp_server(unsafe_id),
         lambda: client.show_policy(unsafe_id),
         lambda: client.upsert_policy(unsafe_id, {}),
+        lambda: client.fleet_instance_health(unsafe_id),
     ]
 
     for call in calls:
@@ -1146,3 +1207,62 @@ def test_help_commands_import_successfully() -> None:
     assert runner.invoke(cli.app, ["skills", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["mcp", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["policy", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["fleet", "--help"]).exit_code == 0
+
+
+def test_fleet_health_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["fleet", "health"])
+    assert result.exit_code == 0
+    assert "shell\tup\t1.0.0\tOK" in result.output
+    assert fake.calls == [("fleet_health", (), {})]
+
+
+def test_fleet_health_show_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["fleet", "health", "shell"])
+    assert result.exit_code == 0
+    assert '"agent_id": "shell"' in result.output
+    assert fake.calls == [("fleet_instance_health", ("shell",), {})]
+
+
+def test_fleet_events_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["fleet", "events"])
+    assert result.exit_code == 0
+    assert "health_state_changed" in result.output
+    assert fake.calls == [("fleet_events", (), {"agent_id": None, "event_type": None})]
+
+
+def test_fleet_events_with_filters(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(
+        cli.app, ["fleet", "events", "--agent", "shell", "--type", "config_drift_detected"]
+    )
+    assert result.exit_code == 0
+    assert fake.calls == [
+        ("fleet_events", (), {"agent_id": "shell", "event_type": "config_drift_detected"})
+    ]
+
+
+def test_fleet_capacity_prints_summary(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["fleet", "capacity"])
+    assert result.exit_code == 0
+    assert "sessions: 2/50" in result.output
+    assert "instances: 5/100" in result.output
+    assert fake.calls == [("fleet_capacity", (), {})]
+
+
+def test_fleet_probe_prints_count(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["fleet", "probe"])
+    assert result.exit_code == 0
+    assert "Probed 3 instances" in result.output
+    assert fake.calls == [("fleet_probe", (), {})]
