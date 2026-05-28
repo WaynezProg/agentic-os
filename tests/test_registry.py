@@ -150,3 +150,58 @@ def test_example_agents_load_and_shell_command_avoids_shell_interpolation() -> N
 
     assert shell.command == ["/usr/bin/printf", "%s\\n", "{{message}}"]
     assert shell.command[:2] != ["/bin/sh", "-lc"]
+
+
+def test_agent_definition_fleet_profile_fields(tmp_path):
+    """AgentDefinition accepts fleet profile fields from TOML."""
+    toml_path = tmp_path / "agents.toml"
+    toml_path.write_text(
+        """\
+[[agents]]
+id = "test"
+label = "Test"
+command = ["/bin/echo", "hi"]
+health_command = ["/bin/echo", "OK"]
+version_command = ["/bin/echo", "1.0.0"]
+config_fingerprint_command = ["/bin/echo", "abc123"]
+attach_command = ["/bin/echo", "attached"]
+config_path = "~/.test/config.toml"
+log_paths = ["~/.test/logs"]
+default_provider = "openai"
+""",
+        encoding="utf-8",
+    )
+    from agentic_os.registry import Registry
+
+    reg = Registry(toml_path)
+    agent = reg.get("test")
+    assert agent.version_command == ["/bin/echo", "1.0.0"]
+    assert agent.config_fingerprint_command == ["/bin/echo", "abc123"]
+    assert agent.attach_command == ["/bin/echo", "attached"]
+    assert agent.config_path == "~/.test/config.toml"
+    assert agent.log_paths == ["~/.test/logs"]
+    assert agent.default_provider == "openai"
+
+
+def test_agent_definition_fleet_fields_optional(tmp_path):
+    """Fleet profile fields default to None/empty when not in TOML."""
+    toml_path = tmp_path / "agents.toml"
+    toml_path.write_text(
+        """\
+[[agents]]
+id = "minimal"
+label = "Minimal"
+command = ["/bin/echo", "hi"]
+""",
+        encoding="utf-8",
+    )
+    from agentic_os.registry import Registry
+
+    reg = Registry(toml_path)
+    agent = reg.get("minimal")
+    assert agent.version_command is None
+    assert agent.config_fingerprint_command is None
+    assert agent.attach_command is None
+    assert agent.config_path is None
+    assert agent.log_paths == []
+    assert agent.default_provider is None

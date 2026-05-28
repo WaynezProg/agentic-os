@@ -5,6 +5,8 @@ command = ["/usr/bin/printf", "%s\\n", "{{message}}"]
 cwd_mode = "optional"
 stop_policy = "process_group"
 health_command = ["/usr/bin/printf", "OK"]
+version_command = ["/usr/bin/printf", "1.0.0"]
+config_fingerprint_command = ["/usr/bin/printf", "static"]
 
 [[agents]]
 id = "openclaw"

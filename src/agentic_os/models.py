@@ -27,6 +27,12 @@ class AgentDefinition(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     stop_policy: StopPolicy = "process_group"
     health_command: list[str] | None = None
+    version_command: list[str] | None = None
+    config_fingerprint_command: list[str] | None = None
+    attach_command: list[str] | None = None
+    config_path: str | None = None
+    log_paths: list[str] = Field(default_factory=list)
+    default_provider: str | None = None
     enabled: bool = True
 
 
