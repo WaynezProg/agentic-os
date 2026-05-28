@@ -19,6 +19,7 @@ agentctl = "agentic_os.cli:app"
 [dependency-groups]
 dev = [
   "pytest>=8.2.0",
+  "pytest-asyncio>=1.4.0",
   "ruff>=0.6.0",
 ]
 
