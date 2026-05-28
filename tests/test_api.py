@@ -47,6 +47,13 @@ def _toml_inline_table(values: dict[str, str]) -> str:
     return f"{{ {entries} }}"
 
 
+@pytest.fixture()
+def tmp_app(tmp_path: Path):
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    return create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+
+
 def test_api_lists_agents(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -560,3 +567,66 @@ def test_api_allows_localhost_cors_preflight(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_fleet_health_empty(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    response = client.get("/fleet/health")
+    assert response.status_code == 200
+    assert response.json()["instances"] == []
+
+
+def test_fleet_health_after_record(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    from agentic_os.fleet import HealthState
+
+    tmp_app.state.fleet_store.record_health("shell", HealthState.UP, "OK", version="1.0.0")
+    response = client.get("/fleet/health")
+    assert response.status_code == 200
+    instances = response.json()["instances"]
+    assert len(instances) == 1
+    assert instances[0]["agent_id"] == "shell"
+    assert instances[0]["state"] == "up"
+
+
+def test_fleet_instance_health(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    from agentic_os.fleet import HealthState
+
+    tmp_app.state.fleet_store.record_health("shell", HealthState.UP, "OK")
+    response = client.get("/fleet/shell/health")
+    assert response.status_code == 200
+    assert response.json()["agent_id"] == "shell"
+
+
+def test_fleet_instance_health_404(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    response = client.get("/fleet/nonexistent/health")
+    assert response.status_code == 404
+
+
+def test_fleet_events(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    from agentic_os.fleet import HealthState
+
+    tmp_app.state.fleet_store.record_health("shell", HealthState.UP, "OK")
+    tmp_app.state.fleet_store.record_health("shell", HealthState.DOWN, "fail")
+    response = client.get("/fleet/events")
+    assert response.status_code == 200
+    assert len(response.json()["events"]) >= 1
+
+
+def test_fleet_capacity(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    response = client.get("/fleet/capacity")
+    assert response.status_code == 200
+    data = response.json()
+    assert "running_sessions" in data
+    assert "max_running_sessions" in data
+
+
+def test_fleet_probe_trigger(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    response = client.post("/fleet/probe")
+    assert response.status_code == 200
+    assert response.json()["probed"] >= 0

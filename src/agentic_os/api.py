@@ -20,10 +20,12 @@ from agentic_os.control_plane import (
     PolicyUpsert,
     SkillUpsert,
 )
+from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
+from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
-from agentic_os.models import SessionRecord
+from agentic_os.models import SessionRecord, SessionStatus
 from agentic_os.registry import Registry, RenderedRun
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
@@ -87,11 +89,16 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     memory_store.init()
     control_plane = ControlPlaneStore(state_dir / "agentic-os.db")
     control_plane.init()
+    fleet_store = FleetStore(state_dir / "agentic-os.db")
+    fleet_store.init()
+    prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
     supervisor = ProcessSupervisor(store=store, logs=logs, state_dir=state_dir)
     supervisor.reconcile()
 
     app = FastAPI(title="agentic-os")
+    app.state.store = store
+    app.state.fleet_store = fleet_store
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
@@ -107,6 +114,18 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         if request.method == "POST" and request.url.path == "/sessions":
             return JSONResponse(status_code=400, content={"detail": exc.errors()})
         return await request_validation_exception_handler(request, exc)
+
+    def _check_capacity() -> None:
+        running = [
+            s
+            for s in store.list_sessions()
+            if s.status in {SessionStatus.RUNNING, SessionStatus.QUEUED, SessionStatus.STOPPING}
+        ]
+        if len(running) >= fleet_store.MAX_RUNNING_SESSIONS:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Capacity limit reached: {len(running)}/{fleet_store.MAX_RUNNING_SESSIONS} concurrent sessions",
+            )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -125,6 +144,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
+        _check_capacity()
         try:
             rendered = registry.build_run(request.agent_id, request.cwd, request.message)
         except KeyError as exc:
@@ -189,6 +209,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions/{session_id}/retry")
     def retry_session(session_id: str) -> dict[str, object]:
+        _check_capacity()
         try:
             previous = supervisor.get_retryable(session_id)
         except KeyError as exc:
@@ -393,6 +414,45 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/fleet/health")
+    def fleet_health() -> dict[str, object]:
+        records = fleet_store.list_health()
+        return {"instances": [_fleet_health_dict(r) for r in records]}
+
+    @app.get("/fleet/{agent_id}/health")
+    def fleet_instance_health(agent_id: str) -> dict[str, object]:
+        record = fleet_store.get_health(agent_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"No health data for {agent_id}")
+        return _fleet_health_dict(record)
+
+    @app.get("/fleet/events")
+    def fleet_events(
+        agent_id: str | None = Query(default=None),
+        event_type: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        events = fleet_store.list_events(agent_id=agent_id, event_type=event_type)
+        return {"events": [_fleet_event_dict(e) for e in events]}
+
+    @app.get("/fleet/capacity")
+    def fleet_capacity() -> dict[str, object]:
+        running = [
+            s
+            for s in store.list_sessions()
+            if s.status in {SessionStatus.RUNNING, SessionStatus.QUEUED, SessionStatus.STOPPING}
+        ]
+        return fleet_store.get_capacity(
+            running_sessions=len(running),
+            registered_instances=len(registry.list_agents()),
+        )
+
+    @app.post("/fleet/probe")
+    async def fleet_probe() -> dict[str, object]:
+        agents = registry.list_agents()
+        probeable = [a for a in agents if a.health_command is not None]
+        await prober.probe_all(probeable)
+        return {"probed": len(probeable)}
+
     def _get_session_or_404(session_id: str) -> SessionRecord:
         try:
             return store.get_session(session_id)
@@ -454,6 +514,28 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         )
 
     return app
+
+
+def _fleet_health_dict(record: HealthRecord) -> dict[str, object]:
+    return {
+        "agent_id": record.agent_id,
+        "state": record.state.value,
+        "message": record.message,
+        "version": record.version,
+        "config_fingerprint": record.config_fingerprint,
+        "updated_at": record.updated_at,
+    }
+
+
+def _fleet_event_dict(event: FleetEvent) -> dict[str, object]:
+    return {
+        "id": event.id,
+        "agent_id": event.agent_id,
+        "event_type": event.event_type,
+        "message": event.message,
+        "metadata": event.metadata,
+        "created_at": event.created_at,
+    }
 
 
 def _asdict(record: object) -> dict[str, Any]:
