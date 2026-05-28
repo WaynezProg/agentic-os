@@ -190,11 +190,23 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/sessions/{session_id}/retry")
     def retry_session(session_id: str) -> dict[str, object]:
         try:
-            session = supervisor.retry(session_id)
+            previous = supervisor.get_retryable(session_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        policy_result = _evaluate_session_policy(previous.agent_id, previous.cwd)
+        if policy_result is not None and policy_result.decision != "allow":
+            rendered = RenderedRun(
+                agent=registry.get(previous.agent_id),
+                cwd=previous.cwd,
+                argv=previous.argv,
+                env=previous.env,
+            )
+            return _reject_session(rendered, policy_result)
+
+        session = supervisor.start(previous.agent_id, previous.cwd, previous.argv, env=previous.env)
         _wait_for_short_command(supervisor, session.id)
         return supervisor.store.get_session(session.id).model_dump()
 
@@ -399,16 +411,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError:
             return _build_and_store_summary(session_id)
 
-    def _evaluate_session_policy(
-        agent_id: str, cwd: str
-    ) -> PolicyEvaluationResult | None:
+    def _evaluate_session_policy(agent_id: str, cwd: str) -> PolicyEvaluationResult | None:
         try:
             policy = control_plane.get_policy(agent_id)
         except (KeyError, ValueError):
             return None
-        result = control_plane.evaluate_policy(
-            PolicyEvaluationRequest(agent_id=agent_id, cwd=cwd)
-        )
+        result = control_plane.evaluate_policy(PolicyEvaluationRequest(agent_id=agent_id, cwd=cwd))
         if result.decision == "allow" and _requires_session_start_approval(
             policy.approval_required_tool_names
         ):
@@ -424,17 +432,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def _requires_session_start_approval(tool_names: list[str]) -> bool:
         return "*" in tool_names or SESSION_START_APPROVAL_TOOL in tool_names
 
-    def _reject_session(
-        rendered: RenderedRun, result: PolicyEvaluationResult
-    ) -> JSONResponse:
+    def _reject_session(rendered: RenderedRun, result: PolicyEvaluationResult) -> JSONResponse:
         session = supervisor.start_rejected(
             rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
         )
-        event_type = (
-            "policy_denied"
-            if result.decision == "deny"
-            else "policy_approval_required"
-        )
+        event_type = "policy_denied" if result.decision == "deny" else "policy_approval_required"
         store.record_event(
             session.id,
             event_type,

@@ -24,7 +24,11 @@ def build_session_summary(session: SessionRecord, entries: list[LogEntry]) -> Bu
     stdout = _useful_lines(entries, "stdout")
     stderr = _useful_lines(entries, "stderr")
     first_signal = stdout[0] if stdout else (stderr[0] if stderr else "")
-    one_liner = _shorten(first_signal) if first_signal else f"{session.agent_id} session {session.status.value}"
+    one_liner = (
+        _shorten(first_signal)
+        if first_signal
+        else f"{session.agent_id} session {session.status.value}"
+    )
     stopped_at = session.ended_at if session.status == SessionStatus.STOPPED else None
 
     return BuiltSummary(
@@ -39,7 +43,9 @@ def build_session_summary(session: SessionRecord, entries: list[LogEntry]) -> Bu
 
 
 def _useful_lines(entries: list[LogEntry], stream: str) -> list[str]:
-    return [entry.line.strip() for entry in entries if entry.stream == stream and entry.line.strip()]
+    return [
+        entry.line.strip() for entry in entries if entry.stream == stream and entry.line.strip()
+    ]
 
 
 def _shorten(value: str) -> str:

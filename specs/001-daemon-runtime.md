@@ -5,15 +5,26 @@ Date: 2026-05-27
 
 ## Positioning
 
-`agentic-os` is a Local Agent Control Plane. P0 proves one thing: local agents can be launched, observed, stopped, and replayed through a stable daemon/CLI contract.
+`agentic-os` is a local Harness Manager substrate. P0 proves one thing:
+configured harness instances can be launched, observed, stopped, and replayed
+through a stable daemon/CLI contract.
 
-It is not a Claude OS clone. Claude OS is useful as a reference for simplified session state, knowledge-base layering, skills, and lifecycle ideas, but P0 does not build memory, RAG, skills management, MCP policy, Kanban, chat UI, or repo-wide indexing.
+It is not a Claude OS clone, a second OpenClaw, or an agent runtime. Claude OS is
+useful as a reference for simplified run state, knowledge-base layering,
+capability catalogs, and lifecycle ideas, but P0 does not build memory, RAG,
+Shared Capability Catalog management, Harness Launch Policy, Kanban, chat UI,
+or repo-wide indexing.
+
+| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
+|-------|-----------------|--------------------------------|------|--------------|
+| P0 | daemon, CLI, configured runners, process/log/session records | Harness Instance Registry and Harness Run lifecycle | local launch, stop, retry, logs, artifacts | harness internals, planning, tool execution |
 
 ## Goals
 
-- Register local agent runtimes such as OpenClaw, Hermes, Codex, Claude Code, Gemini CLI, and OpenCode.
-- Start an agent run from a selected working directory.
-- Track each run as a session with durable metadata.
+- Register local harness instances such as OpenClaw, Hermes, Codex, Claude Code,
+  Gemini CLI, and OpenCode.
+- Start a harness run from a selected working directory.
+- Track each run as a Harness Session with durable metadata.
 - Capture stdout and stderr as append-only logs.
 - Stop the entire process group for a running session.
 - Keep artifacts under a per-session folder.
@@ -23,7 +34,7 @@ It is not a Claude OS clone. Claude OS is useful as a reference for simplified s
 
 - No React/Tauri/Electron UI in P0.
 - No memory extraction or promotion pipeline in P0.
-- No skills/MCP install or policy editing in P0.
+- No Shared Capability Catalog install or Harness Launch Policy editing in P0.
 - No merged chat UI across agents.
 - No full repo embedding or semantic indexing.
 - No remote multi-user mode, auth, or RBAC.
@@ -33,8 +44,8 @@ It is not a Claude OS clone. Claude OS is useful as a reference for simplified s
 ```text
 agentic-os
 ├── agentd
-│   ├── agent registry
-│   ├── session lifecycle manager
+│   ├── harness instance registry
+│   ├── harness run lifecycle manager
 │   ├── process supervisor
 │   ├── log writer
 │   └── artifact manager
@@ -46,9 +57,11 @@ agentic-os
     └── per-session artifact folders
 ```
 
-## Agent Registry
+## Harness Instance Registry
 
-The registry is configuration, not code. Each agent definition declares:
+The registry is configuration, not code. The current TOML and API labels still
+use `agents` for compatibility; conceptually each record is a harness instance
+definition:
 
 - `id`: stable id, for example `openclaw`.
 - `label`: display name.
@@ -76,11 +89,13 @@ cwd_mode = "optional"
 stop_policy = "process_group"
 ```
 
-P0 must not hardcode every agent behavior into the CLI. Agent-specific quirks can exist in adapters later, but the first registry should be data-driven enough to add a basic command runner without changing code.
+P0 must not hardcode every harness behavior into the CLI. Harness-specific
+launch quirks can exist in profiles later, but the first registry should be
+data-driven enough to add a basic command runner without changing code.
 
-## Session Lifecycle
+## Harness Run Lifecycle
 
-Session states:
+Harness Session states:
 
 - `queued`: accepted by daemon, not started.
 - `running`: process started and pid/process group recorded.
@@ -89,7 +104,7 @@ Session states:
 - `failed`: process exited with non-zero code or launch error.
 - `stopped`: terminated by user request.
 
-Minimal session metadata:
+Minimal Harness Session metadata:
 
 ```text
 session_id
@@ -113,7 +128,8 @@ summary_one_liner
 
 ## Process Control
 
-`agentd` owns process execution. The UI or CLI never directly spawns long-running agent processes.
+`agentd` owns process launch and supervision for harness runs. The UI or CLI
+never directly spawns long-running harness processes.
 
 Rules:
 
@@ -161,7 +177,8 @@ Each session gets:
 └── artifacts/
 ```
 
-Artifact capture is passive in P0. The daemon creates the folder and records the path; agent-specific artifact discovery can come later.
+Artifact capture is passive in P0. The daemon creates the folder and records the
+path; harness-specific artifact discovery can come later.
 
 ## SQLite Metadata
 
@@ -245,7 +262,7 @@ The first implementation is not complete until these pass:
 
 ## Future Phases
 
-P1 adds session-to-memory pipeline:
+P1 adds run-to-memory pipeline:
 
 ```text
 raw logs/transcript -> session summary -> review queue -> approved memory -> searchable KB
@@ -253,4 +270,11 @@ raw logs/transcript -> session summary -> review queue -> approved memory -> sea
 
 P2 adds thin UI over the daemon.
 
-P3 adds Skills, MCP, tool policy, model allowlist, approval rules, data scope, rate limits, and readonly mode.
+P3 adds the Shared Capability Catalog, Harness Launch Policy, model allowlist,
+approval rules, data scope, rate limits, and readonly mode.
+
+P4 should add Harness Instance Profile documents for management metadata only.
+Profiles may describe `id/name`, `config_path`, `workspace_roots`,
+`launch_command`, `health_command`, `attach_command`, `log_paths`, and
+`default_provider`; they must not describe planner, executor, tool loop, browser
+driver, memory reasoning, or task decomposition behavior.

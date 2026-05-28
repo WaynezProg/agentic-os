@@ -1,10 +1,10 @@
-# P3 Skills MCP Policy Implementation Plan
+# P3 Shared Capability Catalog And Harness Launch Policy Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build durable local Skills, MCP, and policy registries with deterministic policy evaluation while preserving `agentic-os` as a thin local control plane.
+**Goal:** Build the durable local Shared Capability Catalog and Harness Launch Policy registry with deterministic policy evaluation while preserving `agentic-os` as a Harness Manager substrate.
 
-**Architecture:** P3 adds a SQLite-backed control-plane store and a pure evaluator that reads stored registry/policy state but never executes external tools. The daemon exposes CRUD/read/evaluate routes, `agentctl` wraps those routes, and the static UI displays registry and evaluation state by calling daemon API only.
+**Architecture:** P3 adds a SQLite-backed management store and a pure evaluator that reads stored catalog/policy state but never executes external tools. The daemon exposes CRUD/read/evaluate routes, `agentctl` wraps those routes, and the static UI displays catalog and evaluation state by calling daemon API only.
 
 **Tech Stack:** Python 3.12, FastAPI, Typer, SQLite, pytest, ruff, static HTML/CSS/JavaScript. No new runtime dependency and no Python version change.
 
@@ -12,16 +12,16 @@
 
 ## Context
 
-P0 owns process lifecycle, logs, sessions, and retries. P1 owns deterministic memory promotion. P2 owns a no-build thin UI and placeholder `GET /skills` plus `GET /mcp`. P3 replaces those placeholders with durable local registry and policy functions, but it must not install Skills, start MCP servers, enforce live runtime loops, or become a second orchestrator.
+P0 provides Harness Instance Registry, Harness Sessions, logs, and retries. P1 provides deterministic run evidence promotion. P2 provides a no-build thin UI and placeholder `GET /skills` plus `GET /mcp`. P3 replaces those placeholders with durable Shared Capability Catalog and Harness Launch Policy functions, but it must not install capabilities, start MCP servers, enforce live harness loops, or become a second orchestrator.
 
 ## File Structure
 
 - `specs/004-skills-mcp-policy.md`: P3 contract.
 - `src/agentic_os/control_plane.py`: registry records, SQLite schema/store, redaction, deterministic policy evaluator.
-- `src/agentic_os/api.py`: Skills, MCP, and policy API routes.
+- `src/agentic_os/api.py`: Shared Capability Catalog and Harness Launch Policy API routes.
 - `src/agentic_os/client.py`: HTTP client methods for P3 routes.
 - `src/agentic_os/cli.py`: `skills`, `mcp`, and `policy` CLI groups.
-- `apps/web/index.html`: expanded Skills / MCP tab with policy summary and evaluator controls.
+- `apps/web/index.html`: expanded Skills / MCP interface tab with Shared Capability Catalog summary and evaluator controls.
 - `apps/web/app.js`: API calls and rendering for registry/policy/evaluation.
 - `apps/web/styles.css`: layout support for evaluation controls without changing the thin UI boundary.
 - `tests/test_control_plane.py`: store, redaction, and evaluator unit tests.
@@ -56,14 +56,14 @@ Dispatch a fresh subagent to review this slice against `specs/004-skills-mcp-pol
 
 Write failing tests for:
 
-- skill upsert/list/show/disable durability;
-- MCP upsert/list/show/disable durability;
+- skill-like catalog upsert/list/show/disable durability;
+- MCP catalog upsert/list/show/disable durability;
 - command preview and URL redaction before storage;
 - env key storage without env values;
 - missing policy denies;
 - disabled policy denies;
 - enabled registry + matching policy allows;
-- unknown or disabled requested skill/MCP denies;
+- unknown or disabled requested catalog capability denies;
 - model allowlist mismatch denies;
 - cwd outside scope denies;
 - readonly write tool denies;
@@ -143,7 +143,7 @@ Expected: FAIL with missing routes/client methods.
 
 Initialize `ControlPlaneStore(state_dir / "agentic-os.db")` in `create_app`,
 call `init()`, and wire P3 routes. Extend `AgenticClient` with matching methods
-and safe path-id validation for skill, MCP, and policy ids.
+and safe path-id validation for catalog and policy ids.
 
 - [ ] **Step 4: Verify slice**
 
@@ -233,8 +233,8 @@ IDE.
 
 Add failing tests that require:
 
-- Skills table shows id, label, enabled, source, tags;
-- MCP table shows id, label, enabled, transport, command preview;
+- Shared Capability Catalog skill-like table shows id, label, enabled, source, tags;
+- Shared Capability Catalog MCP table shows id, label, enabled, transport, command preview;
 - policy summary area exists;
 - evaluation form/result area exists;
 - JavaScript references P3 endpoints;
@@ -251,10 +251,10 @@ Expected: FAIL with missing P3 UI elements.
 
 - [ ] **Step 3: GREEN UI/docs implementation**
 
-Update the Skills / MCP tab to render registry tables, policy summary, and a
-small deterministic evaluation form. The form calls `POST /policy/evaluate` and
-renders the returned decision and reason. Update README with P3 usage and
-explicit limits.
+Update the Skills / MCP tab to render Shared Capability Catalog tables, Harness
+Launch Policy summary, and a small deterministic evaluation form. The form calls
+`POST /policy/evaluate` and renders the returned decision and reason. Update
+README with P3 usage and explicit limits.
 
 - [ ] **Step 4: Verify slice**
 

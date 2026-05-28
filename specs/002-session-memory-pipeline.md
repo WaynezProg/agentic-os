@@ -5,8 +5,16 @@ Date: 2026-05-28
 
 ## Positioning
 
-P1 adds a deterministic session-to-memory pipeline on top of the P0 daemon.
-It does not add full RAG, embeddings, remote sync, or automatic policy decisions.
+P1 adds a deterministic Harness Run evidence pipeline on top of the P0 daemon.
+It turns completed run output into reviewable, human-approved local knowledge
+for the Harness Manager substrate.
+
+It does not add full RAG, embeddings, remote sync, autonomous memory reasoning,
+or automatic policy decisions.
+
+| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
+|-------|-----------------|--------------------------------|------|--------------|
+| P1 | deterministic session-to-memory pipeline | auditable run evidence and approved local knowledge | summaries, review queue, approved memory | autonomous memory reasoning, embeddings, RAG |
 
 The goal is to make session output reviewable and promotable:
 
@@ -16,6 +24,8 @@ session logs -> session summary -> review queue -> approved memory -> searchable
 
 The pipeline must keep humans in the loop. Raw process logs remain the source of
 truth. Memory records are derived artifacts and must cite the source session.
+Existing API/CLI labels still use `session`; the product concept is Harness Run
+or Harness Session.
 
 ## Goals
 
@@ -33,7 +43,7 @@ truth. Memory records are derived artifacts and must cite the source session.
 - No embeddings, vector DB, LanceDB, Redis, or external service.
 - No automatic promotion without explicit approval.
 - No full repository indexing.
-- No Skills/MCP policy implementation.
+- No Shared Capability Catalog or Harness Launch Policy implementation.
 
 ## Data Model
 

@@ -31,7 +31,7 @@ def test_start_local_script_launches_daemon_and_static_ui_without_seed_data() ->
 
     assert "rtk uv run agentd serve" in script
     assert "rtk uv run python -m http.server" in script
-    assert "--directory \"$ROOT_DIR/apps/web\"" in script
+    assert '--directory "$ROOT_DIR/apps/web"' in script
     assert "AGENTIC_OS_PORT" in script
     assert "AGENTIC_OS_UI_PORT" in script
     assert "trap cleanup EXIT INT TERM" in script

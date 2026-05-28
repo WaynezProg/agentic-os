@@ -192,9 +192,7 @@ def test_search_returns_approved_memories_only(tmp_path: Path) -> None:
     store.approve_review_item(store.create_review_item(approved_summary).id)
     store.create_review_item(pending_summary)
 
-    assert [memory.title for memory in store.search_memories("alpha")] == [
-        "remember alpha release"
-    ]
+    assert [memory.title for memory in store.search_memories("alpha")] == ["remember alpha release"]
     assert store.search_memories("beta") == []
 
 

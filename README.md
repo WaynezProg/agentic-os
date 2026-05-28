@@ -1,10 +1,42 @@
 # agentic-os
 
-Local Agent Control Plane for managing local coding and orchestration agents.
+Local Harness Manager substrate for managing local coding and orchestration
+harnesses.
+
+`agentic-os` is not a harness, not a second OpenClaw, and not an agent runtime.
+It is the management layer underneath harnesses such as OpenClaw, Hermes, Codex,
+Claude Code, Gemini CLI, and OpenCode: it records configured harness instances,
+starts and observes harness runs, stores local run evidence, exposes a thin
+control UI, and evaluates launch-time policy.
+
+P0-P3.6 are the substrate for a Harness Manager. Existing API and CLI labels
+such as `agents`, `sessions`, `skills`, `mcp`, and `policy` remain stable
+interface names for now, but the product language is:
+
+| Previous wording | Harness Manager wording | Existing interface labels |
+|------------------|--------------------------|---------------------------|
+| Agent Registry | Harness Instance Registry | `/agents`, `agentctl agents` |
+| Agent Session | Harness Run / Harness Session | `/sessions`, `agentctl sessions` |
+| Agent Policy | Harness Launch Policy | `/policy`, `agentctl policy` |
+| Skills / MCP | Shared Capability Catalog | `/skills`, `/mcp`, `agentctl skills`, `agentctl mcp` |
+| Adapter-profile wording | Harness Instance Profile | `specs/007-harness-instance-profile.md` |
+
+Phase positioning:
+
+| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
+|-------|-----------------|--------------------------------|------|--------------|
+| P0 | daemon, CLI, configured runners, process/log/session records | Harness Instance Registry and Harness Run lifecycle | local launch, stop, retry, logs, artifacts | harness internals, planning, tool execution |
+| P1 | deterministic session-to-memory pipeline | auditable run evidence and approved local knowledge | summaries, review queue, approved memory | autonomous memory reasoning, embeddings, RAG |
+| P2 | thin static UI | operator control surface over daemon APIs | status, bounded logs, review UI, catalog placeholders | browser subprocesses, IDE, chat UI |
+| P3 | catalog/policy registries and evaluator | Shared Capability Catalog plus Harness Launch Policy | descriptive capability records, deterministic policy decisions | installing capabilities, starting MCP servers, live tool enforcement |
+| P3.5 | launch policy gate on run creation | Harness Launch Policy applied before spawning a run | allow / deny / approval-required audit trail | per-tool runtime enforcement |
+| P3.6 | retry bypass closure and clearer policy errors | all run-start paths share the same launch gate | retry policy audit, CLI/UI error display | approval workflow or harness-internal enforcement |
 
 ## P0 Scope
 
-P0 is not a UI, memory system, or Claude OS clone. It is a local daemon and CLI that can reliably start, stop, list, inspect, and log agent sessions.
+P0 is not a UI, memory system, or Claude OS clone. It is a local daemon and CLI
+that can reliably register harness instances and start, stop, list, inspect, and
+log harness runs.
 
 Read the first spec: [specs/001-daemon-runtime.md](specs/001-daemon-runtime.md).
 
@@ -124,10 +156,11 @@ Open `http://127.0.0.1:5173`. The UI defaults to
 `http://127.0.0.1:8767`; edit the API URL field if the daemon uses another
 port.
 
-P2 shows agents, sessions, bounded logs, memory review/approved memory, and
-placeholder Skills/MCP registries. The daemon remains the only process owner.
+P2 shows harness instances, harness runs, bounded logs, memory review/approved
+memory, and placeholder Shared Capability Catalog views. The daemon remains the
+only process owner.
 
-## Run P3 Skills / MCP / Policy
+## Run P3 Shared Capability Catalog / Harness Launch Policy
 
 Start the daemon:
 
@@ -155,24 +188,77 @@ curl http://127.0.0.1:8767/policy
 ```
 
 Use the UI path by starting `apps/web` as in P2 and opening the Skills / MCP tab.
-It shows registry rows, policy summary, and deterministic evaluation results.
+The tab name is still the interface label, but its positioning is Shared
+Capability Catalog. It shows catalog rows, Harness Launch Policy summary, and
+deterministic evaluation results.
 
-P3 does not start MCP servers, install skills, execute external tools, enforce
-runtime loops, or take over Hermes/OpenClaw. P3 does not execute external tools
-during policy evaluation. Secrets must not be stored: use
-environment variable names such as `MCP_TOKEN`, not token values. Command and
-URL previews are redacted before storage/display.
+P3 does not start MCP servers, install catalog entries, execute external tools,
+enforce live harness loops, or take over Hermes/OpenClaw. P3 does not execute external tools during policy evaluation.
+Secrets must not be stored: use environment variable names such as `MCP_TOKEN`,
+not token values. Command and URL previews are redacted before storage/display.
 
-## P1/P2/P3 Limitations
+## Run P3.5/P3.6 Harness Launch Policy-Aware Run
 
-P1/P2/P3 intentionally do not include:
+P3.5 wires Harness Launch Policy into the run creation path. P3.6 closes the
+retry bypass and improves error display.
+
+Start the daemon:
+
+```bash
+rtk uv run agentd serve --state-dir .agentic-os --registry examples/agents.toml
+```
+
+Set a policy that restricts where `shell` can run:
+
+```bash
+rtk uv run agentctl policy set shell --cwd-root "$PWD" --tool '*' --model '*'
+```
+
+Run inside the allowed root (succeeds):
+
+```bash
+rtk uv run agentctl run shell --cwd "$PWD" --message "allowed"
+```
+
+Run outside the allowed root (denied with audit trail):
+
+```bash
+rtk uv run agentctl run shell --cwd /tmp --message "blocked"
+# HTTP 403: decision=deny  cwd is outside allowed roots for shell  session_id=s_...
+```
+
+Inspect the denied session's events:
+
+```bash
+rtk uv run agentctl sessions events <session_id>
+```
+
+Set approval-required on session start:
+
+```bash
+rtk uv run agentctl policy set shell --cwd-root "$PWD" --tool '*' --model '*' --approval-tool session.start
+rtk uv run agentctl run shell --cwd "$PWD" --message "needs approval"
+# HTTP 409: decision=approval_required  session.start requires approval for shell  session_id=s_...
+```
+
+Retry respects the same policy gate: a denied Harness Session cannot be retried
+into a running process if the policy still denies it.
+
+The UI Run button (Agents tab) and Retry button (Sessions tab) show
+`decision / reason / session_id` on 403/409.  The Logs tab shows session events
+in a collapsible panel below the log output.
+
+## P1/P2/P3/P3.5/P3.6 Limitations
+
+P1-P3.6 intentionally do not include:
 
 - LLM-generated summaries; summaries are deterministic from session metadata
   and stdout/stderr logs.
 - Embeddings, vector DB, LanceDB, Redis, or remote sync.
-- Live policy enforcement inside Hermes/OpenClaw runtime loops.
+- Live policy enforcement inside Hermes/OpenClaw harness loops.
 - MCP server process ownership, browser-side subprocess work, or UI indexing.
-- Multi-user auth, RBAC, cloud sync, chat UI, Kanban, Electron, or Tauri.
+- Multi-user auth, RBAC, cloud sync, chat UI, Kanban, Electron, Tauri, planner,
+  executor, tool loop, memory reasoning, browser driver, or task decomposition.
 
 ## Development
 

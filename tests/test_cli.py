@@ -720,7 +720,9 @@ def test_make_client_uses_default_env_and_explicit_api(monkeypatch: Any) -> None
 
     monkeypatch.setenv("AGENTIC_OS_API", "http://env.example:9000/")
     assert cli.make_client(None).base_url == "http://env.example:9000"
-    assert cli.make_client("http://explicit.example:9001/").base_url == "http://explicit.example:9001"
+    assert (
+        cli.make_client("http://explicit.example:9001/").base_url == "http://explicit.example:9001"
+    )
 
 
 class RecordingHttpxClient:

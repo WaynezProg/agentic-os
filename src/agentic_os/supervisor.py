@@ -165,12 +165,16 @@ class ProcessSupervisor:
 
         return self._terminate_process_group(session.id, pgid, timeout_seconds, metadata)
 
-    def retry(self, session_id: str) -> SessionRecord:
+    def get_retryable(self, session_id: str) -> SessionRecord:
         previous = self._repair_terminal_live_process_group(self.store.get_session(session_id))
         if previous.status not in TERMINAL_STATUSES:
             raise ValueError(
                 f"Cannot retry active session {session_id} with status {previous.status.value}"
             )
+        return previous
+
+    def retry(self, session_id: str) -> SessionRecord:
+        previous = self.get_retryable(session_id)
         return self.start(previous.agent_id, previous.cwd, previous.argv, env=previous.env)
 
     def reconcile(self) -> None:

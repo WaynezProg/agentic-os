@@ -167,7 +167,9 @@ class Store:
 
     def list_sessions(self) -> list[SessionRecord]:
         with self.connect() as conn:
-            rows = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC, id DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM sessions ORDER BY updated_at DESC, id DESC"
+            ).fetchall()
         return [_session_from_row(row) for row in rows]
 
     def update_session_paths(
@@ -501,6 +503,5 @@ def _raise_transition_error(
 
     current_status = SessionStatus(row["status"])
     raise ValueError(
-        f"Cannot transition session {session_id} "
-        f"from {current_status.value} to {status.value}"
+        f"Cannot transition session {session_id} from {current_status.value} to {status.value}"
     )

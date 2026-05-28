@@ -36,15 +36,35 @@ def test_read_merged_returns_chronological_entries_with_global_indexes(tmp_path:
     _write_jsonl(
         stdout_path,
         [
-            {"ts": "2026-05-27T00:00:01+00:00", "stream": "stdout", "session_id": "s_1", "line": "out-1"},
-            {"ts": "2026-05-27T00:00:04+00:00", "stream": "stdout", "session_id": "s_1", "line": "out-2"},
+            {
+                "ts": "2026-05-27T00:00:01+00:00",
+                "stream": "stdout",
+                "session_id": "s_1",
+                "line": "out-1",
+            },
+            {
+                "ts": "2026-05-27T00:00:04+00:00",
+                "stream": "stdout",
+                "session_id": "s_1",
+                "line": "out-2",
+            },
         ],
     )
     _write_jsonl(
         stderr_path,
         [
-            {"ts": "2026-05-27T00:00:02+00:00", "stream": "stderr", "session_id": "s_1", "line": "err-1"},
-            {"ts": "2026-05-27T00:00:03+00:00", "stream": "stderr", "session_id": "s_1", "line": "err-2"},
+            {
+                "ts": "2026-05-27T00:00:02+00:00",
+                "stream": "stderr",
+                "session_id": "s_1",
+                "line": "err-1",
+            },
+            {
+                "ts": "2026-05-27T00:00:03+00:00",
+                "stream": "stderr",
+                "session_id": "s_1",
+                "line": "err-2",
+            },
         ],
     )
 
@@ -62,15 +82,35 @@ def test_read_merged_after_cursor_returns_only_newer_entries(tmp_path: Path) -> 
     _write_jsonl(
         stdout_path,
         [
-            {"ts": "2026-05-27T00:00:01+00:00", "stream": "stdout", "session_id": "s_1", "line": "out-1"},
-            {"ts": "2026-05-27T00:00:03+00:00", "stream": "stdout", "session_id": "s_1", "line": "out-2"},
+            {
+                "ts": "2026-05-27T00:00:01+00:00",
+                "stream": "stdout",
+                "session_id": "s_1",
+                "line": "out-1",
+            },
+            {
+                "ts": "2026-05-27T00:00:03+00:00",
+                "stream": "stdout",
+                "session_id": "s_1",
+                "line": "out-2",
+            },
         ],
     )
     _write_jsonl(
         stderr_path,
         [
-            {"ts": "2026-05-27T00:00:02+00:00", "stream": "stderr", "session_id": "s_1", "line": "err-1"},
-            {"ts": "2026-05-27T00:00:04+00:00", "stream": "stderr", "session_id": "s_1", "line": "err-2"},
+            {
+                "ts": "2026-05-27T00:00:02+00:00",
+                "stream": "stderr",
+                "session_id": "s_1",
+                "line": "err-1",
+            },
+            {
+                "ts": "2026-05-27T00:00:04+00:00",
+                "stream": "stderr",
+                "session_id": "s_1",
+                "line": "err-2",
+            },
         ],
     )
 
@@ -88,14 +128,29 @@ def test_read_merged_stream_filter_keeps_per_file_indexes(tmp_path: Path) -> Non
     _write_jsonl(
         stdout_path,
         [
-            {"ts": "2026-05-27T00:00:01+00:00", "stream": "stdout", "session_id": "s_1", "line": "out-1"},
-            {"ts": "2026-05-27T00:00:03+00:00", "stream": "stdout", "session_id": "s_1", "line": "out-2"},
+            {
+                "ts": "2026-05-27T00:00:01+00:00",
+                "stream": "stdout",
+                "session_id": "s_1",
+                "line": "out-1",
+            },
+            {
+                "ts": "2026-05-27T00:00:03+00:00",
+                "stream": "stdout",
+                "session_id": "s_1",
+                "line": "out-2",
+            },
         ],
     )
     _write_jsonl(
         stderr_path,
         [
-            {"ts": "2026-05-27T00:00:02+00:00", "stream": "stderr", "session_id": "s_1", "line": "err-1"},
+            {
+                "ts": "2026-05-27T00:00:02+00:00",
+                "stream": "stderr",
+                "session_id": "s_1",
+                "line": "err-1",
+            },
         ],
     )
 

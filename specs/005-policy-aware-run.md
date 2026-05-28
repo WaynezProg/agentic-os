@@ -1,26 +1,34 @@
-# 005 — Policy-Aware Run (P3.5 Hardening)
+# 005 — Harness Launch Policy-Aware Run (P3.5 Hardening)
 
-> Before any session starts, agentic-os evaluates declarative policy and records
-> allow / deny / approval_required decisions as session or audit events.
+> Before any Harness Run starts, agentic-os evaluates declarative Harness Launch
+> Policy and records allow / deny / approval_required decisions as run or audit
+> events.
 
 ## Motivation
 
-P3 delivered a policy evaluation engine (`POST /policy/evaluate`) and a registry
-of skills, MCP servers, and per-agent policies.  But the engine is not wired into
-the session creation path — `POST /sessions` calls `registry.build_run()` then
-`supervisor.start()` with no policy check in between.  This means a deny policy
-can be queried but never enforced.
+P3 delivered a policy evaluation engine (`POST /policy/evaluate`), a Shared
+Capability Catalog, and per-harness launch policies. But the engine is not wired
+into the Harness Run creation path: `POST /sessions` calls
+`registry.build_run()` then `supervisor.start()` with no policy check in between.
+This means a deny policy can be queried but never enforced at launch time.
+
+Existing route and field names still use `sessions` and `agent_id`; those are
+compatibility labels for Harness Sessions and Harness Instance Registry ids.
+
+| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
+|-------|-----------------|--------------------------------|------|--------------|
+| P3.5 | launch policy gate on run creation | Harness Launch Policy applied before spawning a run | allow / deny / approval-required audit trail | per-tool runtime enforcement |
 
 ## Scope
 
 Three changes, all additive:
 
-### 1. Policy gate on `POST /sessions`
+### 1. Harness Launch Policy gate on `POST /sessions`
 
-After `registry.build_run()` succeeds, the API handler evaluates the agent's
-policy with `cwd` from the rendered run.  The evaluation request uses only the
-fields available at session-start time (`agent_id`, `cwd`); per-tool and per-model
-checks remain a future runtime concern.
+After `registry.build_run()` succeeds, the API handler evaluates the harness
+instance's launch policy with `cwd` from the rendered run. The evaluation
+request uses only the fields available at run-start time (`agent_id`, `cwd`);
+per-tool and per-model checks remain outside this Harness Manager layer.
 
 | Decision            | HTTP response | Behaviour                                     |
 |---------------------|---------------|-----------------------------------------------|
@@ -30,10 +38,10 @@ checks remain a future runtime concern.
 | No policy configured| 200           | Allow by default (open-by-default principle).  |
 
 The `policy_denied` and `policy_approval_required` events are recorded against a
-"shadow" session that is created in `queued` status and immediately marked
-`failed`, so the attempt is auditable.
+"shadow" Harness Session that is created in `queued` status and immediately
+marked `failed`, so the attempt is auditable.
 
-Run-level approval uses the reserved policy tool name `session.start`.  If
+Run-level approval uses the reserved policy tool name `session.start`. If
 `approval_required_tool_names` contains `session.start` or `*`, a session start
 that otherwise passes the cwd policy returns `approval_required`.
 
@@ -53,6 +61,8 @@ data.  Add matching client method and CLI command (`agentctl sessions events`).
 
 ## Out of scope
 
-- Per-tool / per-model runtime enforcement (future P4).
+- Live per-tool / per-model enforcement inside an underlying harness.
+- P4 is Harness Instance Profile management, not tool loop, planner, executor,
+  browser driver, memory reasoning, or task decomposition design.
 - Pending / approval workflow with human-in-the-loop (future).
 - LLM summary, vector DB, Electron, Tauri.

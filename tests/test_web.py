@@ -232,7 +232,7 @@ def test_readme_documents_p3_usage_and_limits() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     for token in [
-        "Run P3 Skills / MCP / Policy",
+        "Run P3 Shared Capability Catalog / Harness Launch Policy",
         "agentctl skills list",
         "agentctl mcp list",
         "agentctl policy evaluate",

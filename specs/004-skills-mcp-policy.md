@@ -1,27 +1,32 @@
-# 004 Skills MCP Policy
+# 004 Shared Capability Catalog And Harness Launch Policy
 
 Status: Draft
 Date: 2026-05-28
 
 ## Positioning
 
-P3 turns the P2 placeholder Skills / MCP view into a local control-plane
-surface for registry and policy decisions.
+P3 turns the P2 placeholder Skills / MCP interface into the Shared Capability
+Catalog and Harness Launch Policy surface for registry and policy decisions.
 
-It is still not an orchestrator. `agentd` may store registry records and
-evaluate whether a requested capability should be allowed, denied, or require
-approval, but it does not execute Skills, start MCP servers, run tools, enforce
-runtime loops, summarize with an LLM, index repositories, or replace Hermes,
-OpenClaw, Codex, Claude Code, Gemini CLI, or OpenCode.
+It is still not an orchestrator, not a second OpenClaw, and not an agent
+runtime. `agentd` may store catalog records and evaluate whether a requested
+launch capability should be allowed, denied, or require approval, but it does
+not execute catalog entries, start MCP servers, run tools, enforce harness
+loops, summarize with an LLM, index repositories, or replace Hermes, OpenClaw,
+Codex, Claude Code, Gemini CLI, or OpenCode.
+
+| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
+|-------|-----------------|--------------------------------|------|--------------|
+| P3 | catalog/policy registries and evaluator | Shared Capability Catalog plus Harness Launch Policy | descriptive capability records, deterministic policy decisions | installing capabilities, starting MCP servers, live tool enforcement |
 
 ## Goals
 
-- Store a durable local Skill Registry.
-- Store a durable local MCP Registry.
-- Store durable per-agent capability policy.
+- Store a durable local Shared Capability Catalog for skill-like and MCP-like
+  capabilities.
+- Store durable per-harness Harness Launch Policy.
 - Expose deterministic policy evaluation through daemon API and `agentctl`.
-- Let the thin UI display Skills, MCP servers, policy summary, and evaluation
-  results by calling daemon API only.
+- Let the thin UI display catalog entries, Harness Launch Policy summary, and
+  evaluation results by calling daemon API only.
 - Keep command and environment previews safe for local display.
 
 ## Non-Goals
@@ -35,11 +40,11 @@ OpenClaw, Codex, Claude Code, Gemini CLI, or OpenCode.
 - No chat UI, Kanban, IDE, full repo indexing, or runtime hook into Hermes or
   OpenClaw internals.
 
-## Skill Registry
+## Shared Capability Catalog: Skill Records
 
-The Skill Registry is a local catalog of capabilities known to `agentic-os`.
-It is descriptive and declarative. It does not install a skill, invoke a skill,
-or copy files into any agent runtime.
+The Shared Capability Catalog is a local catalog of capabilities known to
+`agentic-os`. Skill-like records are descriptive and declarative. They do not
+install a skill, invoke a skill, or copy files into an underlying harness.
 
 Skill record:
 
@@ -77,11 +82,11 @@ POST /skills/{skill_id}/disable
 `POST /skills/{skill_id}` upserts a registry record. The request body may omit
 optional fields; omitted values get deterministic defaults.
 
-## MCP Registry
+## Shared Capability Catalog: MCP Server Records
 
-The MCP Registry is a local catalog of MCP server configurations known to the
-control plane. It stores display-safe metadata only. It does not start, stop,
-proxy, or supervise MCP server processes.
+MCP server records are part of the Shared Capability Catalog. They store
+display-safe metadata only. They do not start, stop, proxy, or supervise MCP
+server processes.
 
 MCP server record:
 
@@ -116,9 +121,12 @@ POST /mcp/{server_id}
 POST /mcp/{server_id}/disable
 ```
 
-## Agent Capability Policy
+## Harness Launch Policy
 
-Policy is per agent id and declarative. A missing policy denies by default.
+Policy is per harness instance id and declarative. A missing policy denies by
+default. Existing storage/API field names still use `agent_id`; that field maps
+to the Harness Instance Registry id and does not mean ownership of harness
+internals.
 
 Policy record:
 
@@ -139,7 +147,7 @@ updated_at
 
 Rules:
 
-- `enabled=false` denies every evaluation for the agent.
+- `enabled=false` denies every evaluation for the harness instance.
 - Empty allowlists deny the corresponding requested capability.
 - `*` means all currently enabled registry entries or all values for that
   field, depending on field type.
@@ -167,7 +175,7 @@ Model selection is a policy input, not a runtime action. The evaluator checks
 `model_id` against `allowed_model_ids` when a model is requested.
 
 P3 does not call model providers, refresh catalogs, validate credentials, or
-change any agent runtime model setting.
+change any underlying harness model setting.
 
 ## Tool Approval Rules
 
@@ -182,7 +190,7 @@ approval_required
 Decision precedence:
 
 1. missing or disabled policy -> `deny`
-2. disabled or unknown requested Skill/MCP record -> `deny`
+2. disabled or unknown requested catalog record -> `deny`
 3. allowlist mismatch -> `deny`
 4. cwd outside data scope -> `deny`
 5. readonly write-tool request -> `deny`
@@ -225,7 +233,7 @@ Readonly mode denies those names before approval rules are considered.
 
 ## Failure Handling
 
-- Unknown Skill/MCP/policy ids return `404` on read routes.
+- Unknown catalog/policy ids return `404` on read routes.
 - Invalid request bodies return FastAPI validation errors.
 - Unsafe ids are rejected by the CLI client before making an HTTP request.
 - Disable routes are idempotent for existing records.
@@ -252,10 +260,11 @@ P3 is complete when:
 
 - storage tests cover registry CRUD, disable behavior, redaction, and policy
   evaluation decisions;
-- API tests cover Skills, MCP, policy read/upsert/disable/evaluate routes;
+- API tests cover catalog and policy read/upsert/disable/evaluate routes;
 - CLI tests cover `skills`, `mcp`, and `policy` commands with concise list
   output;
-- UI tests verify the Skills / MCP tab calls daemon APIs and does not spawn
+- UI tests verify the Skills / MCP tab calls daemon APIs as the Shared
+  Capability Catalog view and does not spawn
   processes;
 - end-to-end tests still prove the P0/P1 daemon and CLI paths work;
 - `rtk uv run pytest -q` passes;

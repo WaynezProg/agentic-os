@@ -6,8 +6,12 @@ Date: 2026-05-28
 ## Positioning
 
 P2 adds a browser control panel over the daemon. The UI is thin: it reads state,
-shows logs, and calls daemon API endpoints. It must not spawn agent processes,
+shows logs, and calls daemon API endpoints. It must not spawn harness processes,
 parse large logs in the UI thread, run indexing, or become an IDE.
+
+| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
+|-------|-----------------|--------------------------------|------|--------------|
+| P2 | thin static UI | operator control surface over daemon APIs | status, bounded logs, review UI, catalog placeholders | browser subprocesses, IDE, chat UI |
 
 ## Goals
 
@@ -21,7 +25,9 @@ parse large logs in the UI thread, run indexing, or become an IDE.
 - Poll daemon status through HTTP.
 - Keep log viewing append-only and bounded.
 - Provide memory review and approved-memory views.
-- Provide placeholder Skills/MCP registry views without P3 policy editing.
+- Provide placeholder Shared Capability Catalog views without P3 Harness Launch
+  Policy editing. The tab label may remain `Skills / MCP` while the product
+  language migrates.
 
 ## Non-Goals
 
@@ -33,9 +39,9 @@ parse large logs in the UI thread, run indexing, or become an IDE.
 - No tool approval or model allowlist editor.
 - No Electron or Tauri packaging.
 
-## Runtime Boundary
+## Harness Boundary
 
-The daemon remains the only process owner. The UI may call:
+The daemon remains the only process owner for Harness Runs. The UI may call:
 
 ```text
 GET /health
@@ -64,13 +70,14 @@ The first screen is the usable control panel, not a landing page.
 
 ### Agents
 
-- list agent id, label, enabled state, cwd mode, stop policy;
+- list harness instance id, label, enabled state, cwd mode, stop policy;
 - show command preview;
-- no agent editing in P2.
+- no harness instance editing in P2.
 
 ### Sessions
 
-- list sessions with id, agent id, cwd, status, exit code, updated time;
+- list Harness Sessions with id, harness id, cwd, status, exit code, updated
+  time;
 - actions: view logs, summarize, enqueue review, retry, stop;
 - stop/retry errors must be shown as daemon errors, not swallowed.
 
@@ -90,7 +97,7 @@ The first screen is the usable control panel, not a landing page.
 
 ### Skills / MCP
 
-- placeholder registry view for P2;
+- placeholder Shared Capability Catalog view for P2;
 - shows configured placeholder entries from daemon API;
 - no install, no policy, no permissions editor.
 

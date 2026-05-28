@@ -58,13 +58,20 @@ def _http_error_detail(response: httpx.Response) -> str:
         payload = response.json()
     except ValueError:
         return response.text
-    if isinstance(payload, dict) and "detail" in payload:
-        detail = payload["detail"]
-    else:
-        detail = payload
-    if isinstance(detail, str):
-        return detail
-    return json.dumps(detail, ensure_ascii=False)
+    if isinstance(payload, dict):
+        if "decision" in payload:
+            parts = [f"decision={payload['decision']}"]
+            if "detail" in payload:
+                parts.append(str(payload["detail"]))
+            if "session_id" in payload:
+                parts.append(f"session_id={payload['session_id']}")
+            return "  ".join(parts)
+        if "detail" in payload:
+            detail = payload["detail"]
+            if isinstance(detail, str):
+                return detail
+            return json.dumps(detail, ensure_ascii=False)
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def _echo_json(data: object) -> None:
@@ -174,9 +181,7 @@ def memory_review_create(session_id: str, api: str | None = _api_option()) -> No
 def memory_review_list(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).list_memory_review())
     for item in data["items"]:
-        typer.echo(
-            f"{item['id']}\t{item['session_id']}\t{item['status']}\t{item.get('title', '')}"
-        )
+        typer.echo(f"{item['id']}\t{item['session_id']}\t{item['status']}\t{item.get('title', '')}")
 
 
 @memory.command("approve")
@@ -216,8 +221,7 @@ def skills_list(api: str | None = _api_option()) -> None:
         enabled = "enabled" if skill.get("enabled", True) else "disabled"
         tags = ",".join(skill.get("tags") or [])
         typer.echo(
-            f"{skill['id']}\t{skill.get('label', '')}\t{enabled}\t"
-            f"{skill.get('source', '')}\t{tags}"
+            f"{skill['id']}\t{skill.get('label', '')}\t{enabled}\t{skill.get('source', '')}\t{tags}"
         )
 
 

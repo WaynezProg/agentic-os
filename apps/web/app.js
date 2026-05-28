@@ -153,7 +153,10 @@ async function apiFetch(path, options = {}) {
 
   if (!response.ok) {
     const detail = normalizeErrorDetail(payload.detail || response.statusText);
-    throw new Error(`${response.status} ${detail}`);
+    const error = new Error(`${response.status} ${detail}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -587,6 +590,14 @@ function renderSessionSummary(summary) {
   byId("memory-summary-output").textContent = lines.join("\n");
 }
 
+function formatPolicyError(error) {
+  const p = error.payload || {};
+  if (p.decision && p.session_id) {
+    return `${error.message}\ndecision: ${p.decision}  session_id: ${p.session_id}`;
+  }
+  return error.message;
+}
+
 function showRunForm(agentId) {
   byId("run-agent-id").value = agentId;
   byId("run-cwd").value = "";
@@ -621,8 +632,8 @@ async function submitRunForm() {
     setMessage("agents-message", `started session ${data.id}`);
     await loadSessions();
   } catch (error) {
-    result.textContent = error.message;
-    setMessage("agents-message", error.message, true);
+    result.textContent = formatPolicyError(error);
+    setMessage("agents-message", formatPolicyError(error), true);
   } finally {
     byId("run-submit").disabled = false;
   }
@@ -694,8 +705,12 @@ async function handleActionClick(event) {
       setMessage("sessions-message", `review item created for ${sessionId}`);
       await loadMemoryReview();
     } else if (action === "retry" && sessionId) {
-      await postEmpty(buildEndpoint("sessionRetry", { session_id: sessionId }));
-      setMessage("sessions-message", `retry started for ${sessionId}`);
+      try {
+        await postEmpty(buildEndpoint("sessionRetry", { session_id: sessionId }));
+        setMessage("sessions-message", `retry started for ${sessionId}`);
+      } catch (retryError) {
+        setMessage("sessions-message", formatPolicyError(retryError), true);
+      }
       await loadSessions();
     } else if (action === "stop" && sessionId) {
       await postEmpty(buildEndpoint("sessionStop", { session_id: sessionId }));

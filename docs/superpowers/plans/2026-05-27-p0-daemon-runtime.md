@@ -1,10 +1,10 @@
-# P0 Daemon Runtime Implementation Plan
+# P0 Harness Manager Substrate Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the P0 `agentd` daemon and `agentctl` CLI so local agent sessions can be registered, started, logged, listed, stopped, and retried.
+**Goal:** Build the P0 `agentd` daemon and `agentctl` CLI so local harness instances can be registered and Harness Sessions can be started, logged, listed, stopped, and retried.
 
-**Architecture:** Use a small Python package with focused modules: registry loading, SQLite metadata, JSONL log storage, process supervision, FastAPI routes, and Typer CLI. The daemon owns all process execution; the CLI only talks to the daemon HTTP API. Runtime state lives under `.agentic-os/`.
+**Architecture:** Use a small Python package with focused modules: Harness Instance Registry loading, SQLite metadata, JSONL log storage, process supervision, FastAPI routes, and Typer CLI. The daemon owns local Harness Run launch/supervision; the CLI only talks to the daemon HTTP API. Runtime state lives under `.agentic-os/`.
 
 **Tech Stack:** Python 3.12 via `mise`/`uv`, FastAPI, Uvicorn, Typer, Pydantic, stdlib `sqlite3`, stdlib `subprocess`, pytest.
 
@@ -12,7 +12,7 @@
 
 ## Scope Check
 
-The spec is focused enough for one implementation plan. P0 includes daemon, CLI, registry, sessions, logs, artifacts, process control, retry, and reconciliation. P0 excludes UI, memory pipeline, skills/MCP policy editing, semantic indexing, auth, and multi-user mode.
+The spec is focused enough for one implementation plan. P0 includes daemon, CLI, Harness Instance Registry, Harness Sessions, logs, artifacts, process control, retry, and reconciliation. P0 excludes UI, memory pipeline, Shared Capability Catalog / Harness Launch Policy editing, semantic indexing, auth, and multi-user mode.
 
 ## File Map
 
@@ -74,7 +74,7 @@ Create `pyproject.toml`:
 [project]
 name = "agentic-os"
 version = "0.1.0"
-description = "Local Agent Control Plane for local agent runtimes"
+description = "Local Harness Manager substrate for local harnesses"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -548,7 +548,11 @@ git commit -m "feat: add session metadata store"
 
 Expected: commit succeeds.
 
-## Task 3: Agent Registry And Command Rendering
+## Task 3: Harness Instance Registry And Command Rendering
+
+The implementation keeps the existing `agents` file/API names, but the
+positioning is Harness Instance Registry rather than ownership of the underlying
+harness internals.
 
 **Files:**
 - Create: `src/agentic_os/registry.py`
@@ -727,7 +731,7 @@ Run:
 
 ```bash
 git add src/agentic_os/registry.py examples/agents.toml tests/test_registry.py
-git commit -m "feat: add agent registry"
+git commit -m "feat: add harness instance registry"
 ```
 
 Expected: commit succeeds.
@@ -1139,7 +1143,7 @@ Run:
 
 ```bash
 git add src/agentic_os/supervisor.py tests/test_supervisor.py
-git commit -m "feat: supervise local agent processes"
+git commit -m "feat: supervise local harness processes"
 ```
 
 Expected: commit succeeds.
@@ -1403,7 +1407,7 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host."),
     port: int = typer.Option(8767, help="Bind port."),
     state_dir: Path = typer.Option(Path(".agentic-os"), help="Runtime state directory."),
-    registry: Path = typer.Option(Path("examples/agents.toml"), help="Agent registry TOML."),
+    registry: Path = typer.Option(Path("examples/agents.toml"), help="Harness Instance Registry TOML."),
 ) -> None:
     api = create_app(state_dir=state_dir, registry_path=registry)
     uvicorn.run(api, host=host, port=port)
@@ -1891,8 +1895,8 @@ Expected: commit succeeds.
 
 Spec coverage:
 
-- Agent registry: Task 3.
-- Start local agent run: Tasks 5, 6, 8, 9.
+- Harness Instance Registry: Task 3.
+- Start local Harness Run: Tasks 5, 6, 8, 9.
 - Session metadata: Task 2.
 - Append-only stdout/stderr logs: Task 4.
 - Stop process group: Task 5.

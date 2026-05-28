@@ -381,7 +381,9 @@ class ControlPlaneStore:
         try:
             policy = self.get_policy(request.agent_id)
         except KeyError:
-            return _decision(request.agent_id, "deny", f"no policy configured for {request.agent_id}")
+            return _decision(
+                request.agent_id, "deny", f"no policy configured for {request.agent_id}"
+            )
 
         if not policy.enabled:
             return _decision(

@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -211,9 +210,7 @@ stop_policy = "process_group"
 """,
         encoding="utf-8",
     )
-    client = TestClient(
-        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
-    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
 
     run = client.post(
         "/sessions",
@@ -225,3 +222,111 @@ stop_policy = "process_group"
     assert events.status_code == 200
     event_types = [e["event_type"] for e in events.json()["events"]]
     assert "launch_failed" in event_types
+
+
+# -- Retry policy enforcement tests (P3.6) --
+
+
+def test_retry_denied_when_policy_denies_cwd(tmp_path: Path) -> None:
+    client = _make_client(tmp_path)
+
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert run.status_code == 200
+    original_id = run.json()["id"]
+
+    _set_policy(client, "shell", cwd_roots=["/nonexistent/allowed"])
+
+    retry = client.post(f"/sessions/{original_id}/retry")
+
+    assert retry.status_code == 403
+    body = retry.json()
+    assert body["decision"] == "deny"
+    assert "session_id" in body
+    assert body["session_id"] != original_id
+
+
+def test_retry_denied_session_cannot_produce_running_process(tmp_path: Path) -> None:
+    client = _make_client(tmp_path)
+    _set_policy(client, "shell", cwd_roots=["/nonexistent/allowed"])
+
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "denied"},
+    )
+    assert run.status_code == 403
+    denied_id = run.json()["session_id"]
+
+    retry = client.post(f"/sessions/{denied_id}/retry")
+
+    assert retry.status_code == 403
+    audit_id = retry.json()["session_id"]
+
+    session = client.get(f"/sessions/{audit_id}")
+    assert session.json()["status"] == "failed"
+    assert session.json()["pid"] is None
+
+
+def test_retry_approval_required_returns_409(tmp_path: Path) -> None:
+    client = _make_client(tmp_path)
+
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert run.status_code == 200
+    original_id = run.json()["id"]
+
+    _set_policy(
+        client,
+        "shell",
+        cwd_roots=[str(tmp_path)],
+        approval_required_tool_names=["session.start"],
+    )
+
+    retry = client.post(f"/sessions/{original_id}/retry")
+
+    assert retry.status_code == 409
+    body = retry.json()
+    assert body["decision"] == "approval_required"
+    audit_id = body["session_id"]
+
+    events = client.get(f"/sessions/{audit_id}/events")
+    event_types = [e["event_type"] for e in events.json()["events"]]
+    assert "policy_approval_required" in event_types
+
+
+def test_retry_allowed_when_policy_permits(tmp_path: Path) -> None:
+    client = _make_client(tmp_path)
+    _set_policy(client, "shell", cwd_roots=[str(tmp_path)])
+
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert run.status_code == 200
+    original_id = run.json()["id"]
+
+    retry = client.post(f"/sessions/{original_id}/retry")
+
+    assert retry.status_code == 200
+    assert retry.json()["id"] != original_id
+    assert retry.json()["status"] in ("succeeded", "running", "queued")
+
+
+def test_retry_allowed_when_no_policy_configured(tmp_path: Path) -> None:
+    client = _make_client(tmp_path)
+
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert run.status_code == 200
+    original_id = run.json()["id"]
+
+    retry = client.post(f"/sessions/{original_id}/retry")
+
+    assert retry.status_code == 200
+    assert retry.json()["id"] != original_id

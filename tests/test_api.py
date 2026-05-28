@@ -67,7 +67,9 @@ def test_api_returns_404_for_unknown_agent_lookup(tmp_path: Path) -> None:
 def test_api_runs_session_and_reads_logs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
     assert run.status_code == 200
     session_id = run.json()["id"]
 
@@ -78,7 +80,9 @@ def test_api_runs_session_and_reads_logs(tmp_path: Path) -> None:
 
 def test_api_retries_short_command_and_reads_new_session_logs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
     assert run.status_code == 200
 
     retry = client.post(f"/sessions/{run.json()['id']}/retry")
@@ -95,7 +99,9 @@ def test_api_retries_short_command_and_reads_new_session_logs(tmp_path: Path) ->
 def test_api_returns_failed_session_for_empty_registry_command(tmp_path: Path) -> None:
     client = make_client(tmp_path, command=[])
 
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
 
     assert run.status_code == 200
     body = run.json()
@@ -120,7 +126,9 @@ def test_api_merges_registry_env_into_child_process(tmp_path: Path) -> None:
         env={"AGENTIC_OS_ENV_PROBE": "visible"},
     )
 
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
 
     assert run.status_code == 200
     assert run.json()["status"] == "succeeded"
@@ -138,7 +146,9 @@ def test_api_retry_preserves_registry_env(tmp_path: Path) -> None:
         ],
         env={"AGENTIC_OS_RETRY_ENV": "retry-visible"},
     )
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
     assert run.status_code == 200
     assert run.json()["status"] == "succeeded"
 
@@ -152,7 +162,9 @@ def test_api_retry_preserves_registry_env(tmp_path: Path) -> None:
 
 def test_api_rejects_retry_of_running_session(tmp_path: Path) -> None:
     client = make_client(tmp_path, command=[sys.executable, "-c", "import time; time.sleep(5)"])
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
     assert run.status_code == 200
     session_id = run.json()["id"]
 
@@ -166,7 +178,9 @@ def test_api_rejects_retry_of_running_session(tmp_path: Path) -> None:
 
 def test_api_rejects_stop_of_terminal_session(tmp_path: Path) -> None:
     client = make_client(tmp_path)
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
     assert run.status_code == 200
     assert run.json()["status"] == "succeeded"
 
@@ -177,7 +191,9 @@ def test_api_rejects_stop_of_terminal_session(tmp_path: Path) -> None:
 
 def test_api_rejects_repeated_stop_of_stopped_session(tmp_path: Path) -> None:
     client = make_client(tmp_path, command=[sys.executable, "-c", "import time; time.sleep(5)"])
-    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"})
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "OK"}
+    )
     assert run.status_code == 200
     session_id = run.json()["id"]
 
@@ -359,9 +375,7 @@ def test_api_approves_memory_review_and_searches_approved_memories_only(
     assert approved.status_code == 200
     assert approved.json()["review_item_id"] == approved_item["id"]
     assert memories.status_code == 200
-    assert [memory["title"] for memory in memories.json()["memories"]] == [
-        "alpha approved memory"
-    ]
+    assert [memory["title"] for memory in memories.json()["memories"]] == ["alpha approved memory"]
     assert [memory["title"] for memory in alpha_search.json()["memories"]] == [
         "alpha approved memory"
     ]
