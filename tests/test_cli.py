@@ -35,6 +35,19 @@ class FakeClient:
         self.calls.append(("show_session", (session_id,), {}))
         return {"id": session_id, "agent_id": "shell", "status": "succeeded"}
 
+    def get_session_events(self, session_id: str) -> dict[str, object]:
+        self.calls.append(("get_session_events", (session_id,), {}))
+        return {
+            "events": [
+                {
+                    "id": 1,
+                    "event_type": "policy_denied",
+                    "message": "blocked",
+                    "created_at": "2026-05-28 05:00:00",
+                }
+            ]
+        }
+
     def get_logs(
         self,
         session_id: str,
@@ -298,6 +311,17 @@ def test_sessions_show_prints_session_detail(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert '"id": "s_1"' in result.output
     assert fake.calls == [("show_session", ("s_1",), {})]
+
+
+def test_sessions_events_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["sessions", "events", "s_1"])
+
+    assert result.exit_code == 0
+    assert result.output == "1\tpolicy_denied\tblocked\t2026-05-28 05:00:00\n"
+    assert fake.calls == [("get_session_events", ("s_1",), {})]
 
 
 def test_logs_prints_tab_separated_rows(monkeypatch: Any) -> None:
@@ -716,6 +740,8 @@ class RecordingHttpxClient:
         self.requests.append(
             {"method": "GET", "base_url": self.base_url, "path": path, "params": params}
         )
+        if path.endswith("/events"):
+            return FakeResponse({"events": []})
         return FakeResponse({"entries": []})
 
     def post(self, path: str, json: dict[str, object]) -> "FakeResponse":
@@ -757,6 +783,23 @@ def test_client_get_logs_builds_after_and_stream_query(monkeypatch: Any) -> None
             "path": "/sessions/s_1/logs",
             "params": {"after": 8, "stream": "stderr"},
         },
+    ]
+
+
+def test_client_get_session_events_builds_expected_request(monkeypatch: Any) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    assert client.get_session_events("s_1") == {"events": []}
+
+    assert RecordingHttpxClient.requests == [
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/events",
+            "params": None,
+        }
     ]
 
 
@@ -936,6 +979,7 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
     calls = [
         lambda: client.show_agent(unsafe_id),
         lambda: client.show_session(unsafe_id),
+        lambda: client.get_session_events(unsafe_id),
         lambda: client.get_logs(unsafe_id),
         lambda: client.stop_session(unsafe_id),
         lambda: client.retry_session(unsafe_id),

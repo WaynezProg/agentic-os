@@ -8,6 +8,23 @@ P0 is not a UI, memory system, or Claude OS clone. It is a local daemon and CLI 
 
 Read the first spec: [specs/001-daemon-runtime.md](specs/001-daemon-runtime.md).
 
+## One-command local start
+
+Start the daemon and static UI together:
+
+```bash
+rtk bash scripts/start-local.sh
+```
+
+The script starts `agentd` on `127.0.0.1:8767` and the web UI on
+`127.0.0.1:5173`. Press `Ctrl-C` to stop both.
+
+Optional overrides:
+
+```bash
+AGENTIC_OS_PORT=8797 AGENTIC_OS_UI_PORT=5181 rtk bash scripts/start-local.sh
+```
+
 ## Run P0 Locally
 
 Terminal 1:

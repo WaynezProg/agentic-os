@@ -16,6 +16,7 @@ from agentic_os.control_plane import (
     ControlPlaneStore,
     McpServerUpsert,
     PolicyEvaluationRequest,
+    PolicyEvaluationResult,
     PolicyUpsert,
     SkillUpsert,
 )
@@ -23,9 +24,12 @@ from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
 from agentic_os.models import SessionRecord
-from agentic_os.registry import Registry
+from agentic_os.registry import Registry, RenderedRun
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
+
+
+SESSION_START_APPROVAL_TOOL = "session.start"
 
 
 class SessionRunRequest(BaseModel):
@@ -127,6 +131,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        policy_result = _evaluate_session_policy(rendered.agent.id, rendered.cwd)
+        if policy_result is not None and policy_result.decision != "allow":
+            return _reject_session(rendered, policy_result)
+
         session = supervisor.start(rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env)
         _wait_for_short_command(supervisor, session.id)
         return supervisor.store.get_session(session.id).model_dump()
@@ -141,6 +150,15 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return store.get_session(session_id).model_dump()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/sessions/{session_id}/events")
+    def session_events(session_id: str) -> dict[str, object]:
+        try:
+            store.get_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        events = store.list_events(session_id)
+        return {"events": [event.model_dump() for event in events]}
 
     @app.get("/sessions/{session_id}/logs")
     def session_logs(
@@ -380,6 +398,58 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return memory_store.get_summary(session_id)
         except KeyError:
             return _build_and_store_summary(session_id)
+
+    def _evaluate_session_policy(
+        agent_id: str, cwd: str
+    ) -> PolicyEvaluationResult | None:
+        try:
+            policy = control_plane.get_policy(agent_id)
+        except (KeyError, ValueError):
+            return None
+        result = control_plane.evaluate_policy(
+            PolicyEvaluationRequest(agent_id=agent_id, cwd=cwd)
+        )
+        if result.decision == "allow" and _requires_session_start_approval(
+            policy.approval_required_tool_names
+        ):
+            return PolicyEvaluationResult(
+                agent_id=agent_id,
+                decision="approval_required",
+                reason=f"{SESSION_START_APPROVAL_TOOL} requires approval for {agent_id}",
+                readonly=result.readonly,
+                rate_limit_per_minute=result.rate_limit_per_minute,
+            )
+        return result
+
+    def _requires_session_start_approval(tool_names: list[str]) -> bool:
+        return "*" in tool_names or SESSION_START_APPROVAL_TOOL in tool_names
+
+    def _reject_session(
+        rendered: RenderedRun, result: PolicyEvaluationResult
+    ) -> JSONResponse:
+        session = supervisor.start_rejected(
+            rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
+        )
+        event_type = (
+            "policy_denied"
+            if result.decision == "deny"
+            else "policy_approval_required"
+        )
+        store.record_event(
+            session.id,
+            event_type,
+            result.reason,
+            {"decision": result.decision, "agent_id": result.agent_id},
+        )
+        status_code = 403 if result.decision == "deny" else 409
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "detail": result.reason,
+                "decision": result.decision,
+                "session_id": session.id,
+            },
+        )
 
     return app
 

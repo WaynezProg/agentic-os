@@ -11,6 +11,8 @@ const ENDPOINTS = Object.freeze({
   sessionLogs: "/sessions/{session_id}/logs",
   sessionStop: "/sessions/{session_id}/stop",
   sessionRetry: "/sessions/{session_id}/retry",
+  sessionEvents: "/sessions/{session_id}/events",
+  sessionRun: "/sessions",
   sessionSummary: "/sessions/{session_id}/memory/summary",
   sessionReview: "/sessions/{session_id}/memory/review",
   memoryReview: "/memory/review",
@@ -71,6 +73,8 @@ function bindControls() {
   byId("refresh-memory").addEventListener("click", loadMemory);
   byId("refresh-skills").addEventListener("click", loadSkillsMcp);
   byId("run-policy-eval").addEventListener("click", evaluatePolicy);
+  byId("run-submit").addEventListener("click", submitRunForm);
+  byId("run-cancel").addEventListener("click", hideRunForm);
   byId("search-memory").addEventListener("click", () => {
     loadMemories(byId("memory-search").value.trim());
   });
@@ -203,7 +207,7 @@ async function loadAgents() {
     const data = await apiFetch(buildEndpoint("agents"));
     const agents = asArray(data.agents);
     if (agents.length === 0) {
-      renderEmptyRow(body, 6, "No agents returned.");
+      renderEmptyRow(body, 7, "No agents returned.");
       return;
     }
     body.innerHTML = agents
@@ -216,12 +220,17 @@ async function loadAgents() {
             <td>${escapeHtml(agent.cwd_mode)}</td>
             <td>${escapeHtml(agent.stop_policy)}</td>
             <td class="cell-code">${escapeHtml(commandPreview(agent.command))}</td>
+            <td>
+              <button type="button" data-action="run-agent" data-agent-id="${escapeHtml(agent.id)}" ${
+                agent.enabled === false ? "disabled" : ""
+              }>Run</button>
+            </td>
           </tr>
         `,
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 6, error.message);
+    renderErrorRow(body, 7, error.message);
   }
 }
 
@@ -288,6 +297,7 @@ async function loadLogs() {
   if (!sessionId) {
     byId("log-output").textContent = "";
     renderSessionDetail(null);
+    loadSessionEvents(null);
     setMessage("logs-message", "Enter a session id.");
     return;
   }
@@ -305,6 +315,7 @@ async function loadLogs() {
   try {
     const session = await loadSessionDetail(sessionId);
     renderSessionDetail(session);
+    loadSessionEvents(sessionId);
 
     const query = new URLSearchParams({ after: String(requestedAfter) });
     if (stream) {
@@ -576,6 +587,79 @@ function renderSessionSummary(summary) {
   byId("memory-summary-output").textContent = lines.join("\n");
 }
 
+function showRunForm(agentId) {
+  byId("run-agent-id").value = agentId;
+  byId("run-cwd").value = "";
+  byId("run-message").value = "";
+  byId("run-result").textContent = "";
+  byId("run-form-section").hidden = false;
+  byId("run-message").focus();
+}
+
+function hideRunForm() {
+  byId("run-form-section").hidden = true;
+}
+
+async function submitRunForm() {
+  const agentId = byId("run-agent-id").value.trim();
+  const cwd = emptyToNull(byId("run-cwd").value);
+  const message = byId("run-message").value.trim();
+  const result = byId("run-result");
+
+  if (!agentId || !message) {
+    result.textContent = "agent and message are required";
+    return;
+  }
+
+  byId("run-submit").disabled = true;
+  try {
+    const data = await apiFetch(buildEndpoint("sessionRun"), {
+      method: "POST",
+      body: JSON.stringify({ agent_id: agentId, cwd: cwd, message: message }),
+    });
+    result.textContent = `session created: ${data.id}  status: ${data.status}`;
+    setMessage("agents-message", `started session ${data.id}`);
+    await loadSessions();
+  } catch (error) {
+    result.textContent = error.message;
+    setMessage("agents-message", error.message, true);
+  } finally {
+    byId("run-submit").disabled = false;
+  }
+}
+
+async function loadSessionEvents(sessionId) {
+  const body = byId("events-body");
+  if (!sessionId) {
+    renderEmptyRow(body, 4, "Load a session to see events.");
+    return;
+  }
+  try {
+    const data = await apiFetch(
+      buildEndpoint("sessionEvents", { session_id: sessionId }),
+    );
+    const events = asArray(data.events);
+    if (events.length === 0) {
+      renderEmptyRow(body, 4, "No events for this session.");
+      return;
+    }
+    body.innerHTML = events
+      .map(
+        (evt) => `
+          <tr>
+            <td>${escapeHtml(evt.id)}</td>
+            <td>${escapeHtml(evt.event_type)}</td>
+            <td class="cell-code">${escapeHtml(evt.message)}</td>
+            <td>${escapeHtml(evt.created_at)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(body, 4, error.message);
+  }
+}
+
 async function handleActionClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) {
@@ -584,11 +668,16 @@ async function handleActionClick(event) {
 
   const action = button.dataset.action;
   const sessionId = button.dataset.sessionId;
+  const agentId = button.dataset.agentId;
   const itemId = button.dataset.itemId;
   button.disabled = true;
 
   try {
-    if (action === "logs" && sessionId) {
+    if (action === "run-agent" && agentId) {
+      showRunForm(agentId);
+      button.disabled = false;
+      return;
+    } else if (action === "logs" && sessionId) {
       byId("log-session-id").value = sessionId;
       resetLogState();
       showTab("logs", { skipLoad: true });

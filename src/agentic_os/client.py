@@ -28,6 +28,9 @@ class AgenticClient:
     def show_session(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}")
 
+    def get_session_events(self, session_id: str) -> dict[str, Any]:
+        return self._get(f"/sessions/{_validate_path_id(session_id)}/events")
+
     def get_logs(
         self,
         session_id: str,

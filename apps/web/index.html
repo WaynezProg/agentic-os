@@ -56,6 +56,7 @@
           <h2>Agents</h2>
           <button id="refresh-agents" type="button">Refresh agents</button>
         </div>
+        <p id="agents-message" class="message" aria-live="polite"></p>
         <div class="table-shell">
           <table id="agents-table">
             <thead>
@@ -66,15 +67,32 @@
                 <th>CWD mode</th>
                 <th>Stop policy</th>
                 <th>Command preview</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="agents-body">
               <tr>
-                <td colspan="6">No data loaded.</td>
+                <td colspan="7">No data loaded.</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <section id="run-form-section" class="subpanel" hidden>
+          <h3>Run session</h3>
+          <div class="eval-grid">
+            <label for="run-agent-id">Agent</label>
+            <input id="run-agent-id" type="text" spellcheck="false" readonly />
+            <label for="run-cwd">Working directory</label>
+            <input id="run-cwd" type="text" spellcheck="false" />
+            <label for="run-message">Message</label>
+            <textarea id="run-message" rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="actions" style="margin-top:0.5rem">
+            <button id="run-submit" type="button">Run</button>
+            <button id="run-cancel" type="button">Cancel</button>
+          </div>
+          <pre id="run-result" class="summary-output" aria-live="polite"></pre>
+        </section>
       </section>
 
       <section id="panel-sessions" class="panel" role="tabpanel" aria-labelledby="tab-sessions" hidden>
@@ -134,6 +152,26 @@
           <dd>-</dd>
         </dl>
         <pre id="log-output" class="log-output" aria-live="polite"></pre>
+        <details id="events-details" class="subpanel">
+          <summary>Session events</summary>
+          <div class="table-shell">
+            <table id="events-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Type</th>
+                  <th>Message</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="events-body">
+                <tr>
+                  <td colspan="4">Load a session to see events.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
       </section>
 
       <section id="panel-memory" class="panel" role="tabpanel" aria-labelledby="tab-memory" hidden>

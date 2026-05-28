@@ -33,6 +33,35 @@ class ProcessSupervisor:
         self._reader_threads: dict[str, list[threading.Thread]] = {}
         self._lock = threading.Lock()
 
+    def start_rejected(
+        self,
+        agent_id: str,
+        cwd: str,
+        argv: list[str],
+        env: dict[str, str] | None = None,
+    ) -> SessionRecord:
+        session_env = env or {}
+        session_dir = self.state_dir / "sessions" / "pending"
+        session = self.store.create_session(
+            SessionCreate(
+                agent_id=agent_id,
+                cwd=cwd,
+                argv=argv,
+                env=session_env,
+                artifact_dir=str(session_dir / "artifacts"),
+                stdout_log=str(session_dir / "stdout.jsonl"),
+                stderr_log=str(session_dir / "stderr.jsonl"),
+            )
+        )
+        session_dir = self.state_dir / "sessions" / session.id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+        self._move_session_paths(session.id, session_dir)
+        session = self.store.get_session(session.id)
+        Path(session.stdout_log).touch()
+        Path(session.stderr_log).touch()
+        return self.store.mark_failed(session.id)
+
     def start(
         self,
         agent_id: str,

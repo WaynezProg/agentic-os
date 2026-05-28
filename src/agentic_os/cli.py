@@ -116,6 +116,16 @@ def sessions_show(session_id: str, api: str | None = _api_option()) -> None:
     _echo_json(data)
 
 
+@sessions.command("events")
+def sessions_events(session_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).get_session_events(session_id))
+    for event in data.get("events", []):
+        typer.echo(
+            f"{event.get('id', '-')}\t{event['event_type']}\t"
+            f"{event['message']}\t{event['created_at']}"
+        )
+
+
 @app.command()
 def logs(
     session_id: str,
