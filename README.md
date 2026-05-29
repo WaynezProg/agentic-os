@@ -34,6 +34,7 @@ Phase positioning:
 | P3.7 | harness instance profile schema | management metadata for each harness instance | config path, workspace roots, launch/health/attach/log commands, default provider | harness internals, planning, tool execution |
 | P4 | fleet control plane goals spec | performance-first single-machine fleet control plane charter | goals, SLO, non-goals, governance principles | health probe implementation, drift detection, audit workflow |
 | P5 | fleet inventory and health | fleet health monitoring, capacity enforcement, config drift detection | health probes, drift events, capacity 429, fleet API/CLI/UI | audit workflow, governance closed loop |
+| P6 | governance closed loop | auditable workflow across all domains, deprecation lifecycle, bounded log reads, policy coverage | audit events, deprecation, log reader isolation, policy bypass verification | multi-user RBAC, cloud sync, approval workflow UX |
 
 ## P0 Scope
 
@@ -290,9 +291,50 @@ recorded as drift events), and G4 (capacity bounded and visible: 429 on session
 limit, queryable utilization). P5 does not implement G5 (deprecation workflow)
 or G6 (governance closed loop) — those are P6.
 
-## P1/P2/P3/P3.5/P3.6/P5 Limitations
+## Run P6 Governance Closed Loop
 
-P1-P5 intentionally do not include:
+Start the daemon:
+
+```bash
+rtk uv run agentd serve --state-dir .agentic-os --registry examples/agents.toml
+```
+
+Query audit trail, policy coverage, and deprecate capabilities:
+
+```bash
+rtk uv run agentctl audit events
+rtk uv run agentctl audit events --domain skill --type skill_deprecated
+rtk uv run agentctl audit coverage
+rtk uv run agentctl skills deprecate reviewer
+rtk uv run agentctl mcp deprecate filesystem
+rtk uv run agentctl policy deprecate shell
+```
+
+Use the daemon API path:
+
+```bash
+curl http://127.0.0.1:8767/audit/events
+curl http://127.0.0.1:8767/audit/events?domain=governance
+curl http://127.0.0.1:8767/audit/policy-coverage
+curl -X POST http://127.0.0.1:8767/skills/reviewer/deprecate
+```
+
+Use the UI by opening the Fleet tab — the Audit Trail section shows governance
+events with domain filtering.
+
+P6 closes the governance loop declared in P4 (specs/008):
+- G1 end-to-end: every skill/MCP/policy CRUD mutation and every run policy
+  decision produces an audit event
+- G2 enforcement: log reads are bounded at 5000 lines by default; truncation
+  is audited
+- G5: skills, MCP servers, and policies support deprecation — deprecated items
+  produce warnings but remain functional
+- G6: every run records whether it started with or without a policy evaluation;
+  `audit coverage` reports uncovered runs
+
+## P1/P2/P3/P3.5/P3.6/P5/P6 Limitations
+
+P1-P6 intentionally do not include:
 
 - LLM-generated summaries; summaries are deterministic from session metadata
   and stdout/stderr logs.
