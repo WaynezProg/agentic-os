@@ -339,3 +339,101 @@ def test_policy_evaluation_is_deterministic_for_same_input(tmp_path: Path) -> No
     second = store.evaluate_policy(request)
 
     assert first == second
+
+
+def test_skill_can_be_deprecated_and_upsert_resets_deprecated(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+
+    result = store.deprecate_skill("reviewer")
+    assert result.deprecated is True
+
+    # upsert resets deprecated
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer v2"))
+    result = store.get_skill("reviewer")
+    assert result.deprecated is False
+
+
+def test_mcp_server_can_be_deprecated_and_upsert_resets_deprecated(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_mcp_server("filesystem", McpServerUpsert(label="FS"))
+
+    result = store.deprecate_mcp_server("filesystem")
+    assert result.deprecated is True
+
+    store.upsert_mcp_server("filesystem", McpServerUpsert(label="FS v2"))
+    result = store.get_mcp_server("filesystem")
+    assert result.deprecated is False
+
+
+def test_policy_can_be_deprecated_and_upsert_resets_deprecated(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_policy("shell", PolicyUpsert())
+
+    result = store.deprecate_policy("shell")
+    assert result.deprecated is True
+
+    store.upsert_policy("shell", PolicyUpsert())
+    result = store.get_policy("shell")
+    assert result.deprecated is False
+
+
+def test_policy_evaluation_warns_for_deprecated_policy_skill_and_mcp(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+    store.upsert_mcp_server("filesystem", McpServerUpsert(label="FS"))
+    store.upsert_policy(
+        "shell",
+        PolicyUpsert(
+            allowed_skill_ids=["reviewer"],
+            allowed_mcp_server_ids=["filesystem"],
+            allowed_tool_names=["*"],
+            allowed_model_ids=["*"],
+            cwd_roots=["/tmp"],
+        ),
+    )
+
+    # Deprecate all three
+    store.deprecate_skill("reviewer")
+    store.deprecate_mcp_server("filesystem")
+    store.deprecate_policy("shell")
+
+    result = store.evaluate_policy(
+        PolicyEvaluationRequest(
+            agent_id="shell",
+            skill_id="reviewer",
+            mcp_server_id="filesystem",
+            cwd="/tmp",
+        )
+    )
+
+    # Decision is still allow — deprecated != denied
+    assert result.decision == "allow"
+    assert len(result.warnings) == 3
+    assert any("policy" in w and "deprecated" in w for w in result.warnings)
+    assert any("skill" in w and "deprecated" in w for w in result.warnings)
+    assert any("mcp" in w and "deprecated" in w for w in result.warnings)
+
+
+def test_policy_evaluation_no_warnings_when_not_deprecated(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+    store.upsert_policy(
+        "shell",
+        PolicyUpsert(
+            allowed_skill_ids=["reviewer"],
+            allowed_tool_names=["*"],
+            allowed_model_ids=["*"],
+            cwd_roots=["/tmp"],
+        ),
+    )
+
+    result = store.evaluate_policy(
+        PolicyEvaluationRequest(
+            agent_id="shell",
+            skill_id="reviewer",
+            cwd="/tmp",
+        )
+    )
+    assert result.decision == "allow"
+    assert result.warnings == []

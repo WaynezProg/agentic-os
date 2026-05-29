@@ -107,6 +107,7 @@ class SkillRecord:
     entrypoint: str
     tags: list[str]
     enabled: bool
+    deprecated: bool
     created_at: str
     updated_at: str
 
@@ -132,6 +133,7 @@ class McpServerRecord:
     url: str | None
     env_keys: list[str]
     enabled: bool
+    deprecated: bool
     created_at: str
     updated_at: str
 
@@ -153,6 +155,7 @@ class PolicyUpsert:
 class PolicyRecord:
     agent_id: str
     enabled: bool
+    deprecated: bool
     readonly: bool
     allowed_skill_ids: list[str]
     allowed_mcp_server_ids: list[str]
@@ -182,6 +185,14 @@ class PolicyEvaluationResult:
     reason: str
     readonly: bool
     rate_limit_per_minute: int | None
+    warnings: list[str] = field(default_factory=list)
+
+
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column_sql: str) -> None:
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_sql}")
+    except sqlite3.OperationalError:
+        pass  # column already exists
 
 
 class ControlPlaneStore:
@@ -192,6 +203,9 @@ class ControlPlaneStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            _add_column_if_missing(conn, "skills", "deprecated INTEGER NOT NULL DEFAULT 0")
+            _add_column_if_missing(conn, "mcp_servers", "deprecated INTEGER NOT NULL DEFAULT 0")
+            _add_column_if_missing(conn, "agent_policies", "deprecated INTEGER NOT NULL DEFAULT 0")
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -204,9 +218,9 @@ class ControlPlaneStore:
             conn.execute(
                 """
                 INSERT INTO skills (
-                  id, label, description, source, entrypoint, tags_json, enabled
+                  id, label, description, source, entrypoint, tags_json, enabled, deprecated
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT(id) DO UPDATE SET
                   label = excluded.label,
                   description = excluded.description,
@@ -214,6 +228,7 @@ class ControlPlaneStore:
                   entrypoint = excluded.entrypoint,
                   tags_json = excluded.tags_json,
                   enabled = excluded.enabled,
+                  deprecated = 0,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -256,6 +271,17 @@ class ControlPlaneStore:
                 raise KeyError(skill_id)
         return self.get_skill(skill_id)
 
+    def deprecate_skill(self, skill_id: str) -> SkillRecord:
+        _validate_id(skill_id)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "UPDATE skills SET deprecated = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (skill_id,),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(skill_id)
+        return self.get_skill(skill_id)
+
     def upsert_mcp_server(self, server_id: str, request: McpServerUpsert) -> McpServerRecord:
         _validate_id(server_id)
         _validate_transport(request.transport)
@@ -267,9 +293,9 @@ class ControlPlaneStore:
                 """
                 INSERT INTO mcp_servers (
                   id, label, description, transport, command_preview_json,
-                  url, env_keys_json, enabled
+                  url, env_keys_json, enabled, deprecated
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT(id) DO UPDATE SET
                   label = excluded.label,
                   description = excluded.description,
@@ -278,6 +304,7 @@ class ControlPlaneStore:
                   url = excluded.url,
                   env_keys_json = excluded.env_keys_json,
                   enabled = excluded.enabled,
+                  deprecated = 0,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -321,6 +348,17 @@ class ControlPlaneStore:
                 raise KeyError(server_id)
         return self.get_mcp_server(server_id)
 
+    def deprecate_mcp_server(self, server_id: str) -> McpServerRecord:
+        _validate_id(server_id)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "UPDATE mcp_servers SET deprecated = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (server_id,),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(server_id)
+        return self.get_mcp_server(server_id)
+
     def upsert_policy(self, agent_id: str, request: PolicyUpsert) -> PolicyRecord:
         _validate_id(agent_id)
         with self.connect() as conn:
@@ -330,9 +368,9 @@ class ControlPlaneStore:
                   agent_id, enabled, readonly, allowed_skill_ids_json,
                   allowed_mcp_server_ids_json, allowed_tool_names_json,
                   approval_required_tool_names_json, allowed_model_ids_json,
-                  cwd_roots_json, rate_limit_per_minute
+                  cwd_roots_json, rate_limit_per_minute, deprecated
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT(agent_id) DO UPDATE SET
                   enabled = excluded.enabled,
                   readonly = excluded.readonly,
@@ -343,6 +381,7 @@ class ControlPlaneStore:
                   allowed_model_ids_json = excluded.allowed_model_ids_json,
                   cwd_roots_json = excluded.cwd_roots_json,
                   rate_limit_per_minute = excluded.rate_limit_per_minute,
+                  deprecated = 0,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -376,6 +415,17 @@ class ControlPlaneStore:
             raise KeyError(agent_id)
         return _policy_from_row(row)
 
+    def deprecate_policy(self, agent_id: str) -> PolicyRecord:
+        _validate_id(agent_id)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                "UPDATE agent_policies SET deprecated = 1, updated_at = CURRENT_TIMESTAMP WHERE agent_id = ?",
+                (agent_id,),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(agent_id)
+        return self.get_policy(agent_id)
+
     def evaluate_policy(self, request: PolicyEvaluationRequest) -> PolicyEvaluationResult:
         _validate_id(request.agent_id)
         try:
@@ -393,15 +443,35 @@ class ControlPlaneStore:
                 policy,
             )
 
+        warnings: list[str] = []
+        if policy.deprecated:
+            warnings.append(f"policy for {request.agent_id} is deprecated")
+
         if request.skill_id:
-            skill_result = self._evaluate_skill(request.skill_id, policy)
+            skill_result, skill_warnings = self._evaluate_skill(request.skill_id, policy)
+            warnings.extend(skill_warnings)
             if skill_result is not None:
-                return skill_result
+                return PolicyEvaluationResult(
+                    agent_id=skill_result.agent_id,
+                    decision=skill_result.decision,
+                    reason=skill_result.reason,
+                    readonly=skill_result.readonly,
+                    rate_limit_per_minute=skill_result.rate_limit_per_minute,
+                    warnings=warnings,
+                )
 
         if request.mcp_server_id:
-            mcp_result = self._evaluate_mcp(request.mcp_server_id, policy)
+            mcp_result, mcp_warnings = self._evaluate_mcp(request.mcp_server_id, policy)
+            warnings.extend(mcp_warnings)
             if mcp_result is not None:
-                return mcp_result
+                return PolicyEvaluationResult(
+                    agent_id=mcp_result.agent_id,
+                    decision=mcp_result.decision,
+                    reason=mcp_result.reason,
+                    readonly=mcp_result.readonly,
+                    rate_limit_per_minute=mcp_result.rate_limit_per_minute,
+                    warnings=warnings,
+                )
 
         if request.model_id and not _is_allowed(policy.allowed_model_ids, request.model_id):
             return _decision(
@@ -409,6 +479,7 @@ class ControlPlaneStore:
                 "deny",
                 f"model {request.model_id} is not allowed for {request.agent_id}",
                 policy,
+                warnings=warnings,
             )
 
         if request.tool_name and not _is_allowed(policy.allowed_tool_names, request.tool_name):
@@ -417,6 +488,7 @@ class ControlPlaneStore:
                 "deny",
                 f"tool {request.tool_name} is not allowed for {request.agent_id}",
                 policy,
+                warnings=warnings,
             )
 
         if request.cwd and not _cwd_allowed(request.cwd, policy.cwd_roots):
@@ -425,6 +497,7 @@ class ControlPlaneStore:
                 "deny",
                 f"cwd is outside allowed roots for {request.agent_id}",
                 policy,
+                warnings=warnings,
             )
 
         if request.tool_name:
@@ -434,6 +507,7 @@ class ControlPlaneStore:
                     "deny",
                     f"readonly policy denies {request.tool_name}",
                     policy,
+                    warnings=warnings,
                 )
 
         if policy.rate_limit_per_minute < 1:
@@ -442,6 +516,7 @@ class ControlPlaneStore:
                 "deny",
                 "rate_limit_per_minute must be at least 1",
                 policy,
+                warnings=warnings,
             )
 
         if request.tool_name:
@@ -451,49 +526,72 @@ class ControlPlaneStore:
                     "approval_required",
                     f"tool {request.tool_name} requires approval",
                     policy,
+                    warnings=warnings,
                 )
 
-        return _decision(request.agent_id, "allow", "policy allowed request", policy)
+        return PolicyEvaluationResult(
+            agent_id=request.agent_id,
+            decision="allow",
+            reason="policy allowed request",
+            readonly=policy.readonly,
+            rate_limit_per_minute=policy.rate_limit_per_minute,
+            warnings=warnings,
+        )
 
     def _evaluate_skill(
         self,
         skill_id: str,
         policy: PolicyRecord,
-    ) -> PolicyEvaluationResult | None:
+    ) -> tuple[PolicyEvaluationResult | None, list[str]]:
+        warnings: list[str] = []
         try:
             skill = self.get_skill(skill_id)
         except KeyError:
-            return _decision(policy.agent_id, "deny", f"unknown skill {skill_id}", policy)
+            return _decision(policy.agent_id, "deny", f"unknown skill {skill_id}", policy), []
         if not skill.enabled:
-            return _decision(policy.agent_id, "deny", f"skill {skill_id} is disabled", policy)
+            return _decision(policy.agent_id, "deny", f"skill {skill_id} is disabled", policy), []
         if not _is_allowed(policy.allowed_skill_ids, skill_id):
-            return _decision(
-                policy.agent_id,
-                "deny",
-                f"skill {skill_id} is not allowed for {policy.agent_id}",
-                policy,
+            return (
+                _decision(
+                    policy.agent_id,
+                    "deny",
+                    f"skill {skill_id} is not allowed for {policy.agent_id}",
+                    policy,
+                ),
+                [],
             )
-        return None
+        if skill.deprecated:
+            warnings.append(f"skill {skill_id} is deprecated")
+        return None, warnings
 
     def _evaluate_mcp(
         self,
         server_id: str,
         policy: PolicyRecord,
-    ) -> PolicyEvaluationResult | None:
+    ) -> tuple[PolicyEvaluationResult | None, list[str]]:
+        warnings: list[str] = []
         try:
             server = self.get_mcp_server(server_id)
         except KeyError:
-            return _decision(policy.agent_id, "deny", f"unknown mcp server {server_id}", policy)
+            return _decision(policy.agent_id, "deny", f"unknown mcp server {server_id}", policy), []
         if not server.enabled:
-            return _decision(policy.agent_id, "deny", f"mcp server {server_id} is disabled", policy)
-        if not _is_allowed(policy.allowed_mcp_server_ids, server_id):
-            return _decision(
-                policy.agent_id,
-                "deny",
-                f"mcp server {server_id} is not allowed for {policy.agent_id}",
-                policy,
+            return (
+                _decision(policy.agent_id, "deny", f"mcp server {server_id} is disabled", policy),
+                [],
             )
-        return None
+        if not _is_allowed(policy.allowed_mcp_server_ids, server_id):
+            return (
+                _decision(
+                    policy.agent_id,
+                    "deny",
+                    f"mcp server {server_id} is not allowed for {policy.agent_id}",
+                    policy,
+                ),
+                [],
+            )
+        if server.deprecated:
+            warnings.append(f"mcp server {server_id} is deprecated")
+        return None, warnings
 
 
 def _decision(
@@ -501,6 +599,7 @@ def _decision(
     decision: Decision,
     reason: str,
     policy: PolicyRecord | None = None,
+    warnings: list[str] | None = None,
 ) -> PolicyEvaluationResult:
     return PolicyEvaluationResult(
         agent_id=agent_id,
@@ -508,6 +607,7 @@ def _decision(
         reason=reason,
         readonly=policy.readonly if policy else False,
         rate_limit_per_minute=policy.rate_limit_per_minute if policy else None,
+        warnings=warnings or [],
     )
 
 
@@ -607,6 +707,7 @@ def _skill_from_row(row: sqlite3.Row) -> SkillRecord:
         entrypoint=row["entrypoint"],
         tags=_load_json_list(row["tags_json"]),
         enabled=bool(row["enabled"]),
+        deprecated=bool(row["deprecated"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -622,6 +723,7 @@ def _mcp_from_row(row: sqlite3.Row) -> McpServerRecord:
         url=row["url"],
         env_keys=_load_json_list(row["env_keys_json"]),
         enabled=bool(row["enabled"]),
+        deprecated=bool(row["deprecated"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -631,6 +733,7 @@ def _policy_from_row(row: sqlite3.Row) -> PolicyRecord:
     return PolicyRecord(
         agent_id=row["agent_id"],
         enabled=bool(row["enabled"]),
+        deprecated=bool(row["deprecated"]),
         readonly=bool(row["readonly"]),
         allowed_skill_ids=_load_json_list(row["allowed_skill_ids_json"]),
         allowed_mcp_server_ids=_load_json_list(row["allowed_mcp_server_ids_json"]),
