@@ -273,7 +273,7 @@ P2 adds thin UI over the daemon.
 P3 adds the Shared Capability Catalog, Harness Launch Policy, model allowlist,
 approval rules, data scope, rate limits, and readonly mode.
 
-P4 should add Harness Instance Profile documents for management metadata only.
+P3.7 should add Harness Instance Profile documents for management metadata only.
 Profiles may describe `id/name`, `config_path`, `workspace_roots`,
 `launch_command`, `health_command`, `attach_command`, `log_paths`, and
 `default_provider`; they must not describe planner, executor, tool loop, browser

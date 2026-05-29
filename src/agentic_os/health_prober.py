@@ -65,9 +65,14 @@ class HealthProber:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
+        except OSError:
+            return None
+        try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=self.timeout_seconds)
             if proc.returncode == 0:
                 return stdout.decode().strip()
             return None
-        except (asyncio.TimeoutError, OSError):
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
             return None

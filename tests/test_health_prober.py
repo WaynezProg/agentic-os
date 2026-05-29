@@ -1,8 +1,10 @@
 from pathlib import Path
+import asyncio
 
 import pytest
 
 from agentic_os.fleet import FleetStore, HealthState
+from agentic_os import health_prober
 from agentic_os.health_prober import HealthProber
 from agentic_os.models import AgentDefinition
 
@@ -86,6 +88,44 @@ async def test_probe_one_collects_version(tmp_path):
     assert record is not None
     assert record.version == "2.1.0"
     assert record.config_fingerprint == "fp_abc"
+
+
+@pytest.mark.asyncio
+async def test_info_command_timeout_kills_child(monkeypatch, tmp_path):
+    class HangingProc:
+        returncode = None
+
+        def __init__(self) -> None:
+            self.killed = False
+            self.waited = False
+
+        async def communicate(self):
+            await asyncio.sleep(10)
+
+        def kill(self) -> None:
+            self.killed = True
+
+        async def wait(self) -> None:
+            self.waited = True
+
+    proc = HangingProc()
+
+    async def fake_create_subprocess_exec(*args, **kwargs):
+        return proc
+
+    monkeypatch.setattr(
+        health_prober.asyncio,
+        "create_subprocess_exec",
+        fake_create_subprocess_exec,
+    )
+
+    fleet = _make_fleet_store(tmp_path)
+    prober = HealthProber(fleet, timeout_seconds=0.01)
+    result = await prober._run_info_command(["fake-version"])
+
+    assert result is None
+    assert proc.killed is True
+    assert proc.waited is True
 
 
 @pytest.mark.asyncio

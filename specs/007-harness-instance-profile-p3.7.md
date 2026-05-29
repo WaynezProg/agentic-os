@@ -5,17 +5,17 @@ Date: 2026-05-28
 
 ## Positioning
 
-P4 defines Harness Instance Profile documents for Harness Manager metadata. A
+P3.7 defines Harness Instance Profile documents for Harness Manager metadata. A
 profile describes how `agentic-os` can locate, launch, health-check, attach to,
 and inspect logs for one configured harness instance such as `openclaw@work`.
 
-P4 is not a harness, not a second OpenClaw, and not an agent runtime. It does
+P3.7 is not a harness, not a second OpenClaw, and not an agent runtime. It does
 not define runtime behavior inside OpenClaw, Hermes, Codex, Claude Code, Gemini
 CLI, OpenCode, or any other underlying harness.
 
 | Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
 |-------|-----------------|--------------------------------|------|--------------|
-| P4 | Harness Instance Profile spec | management metadata for each harness instance | config path, workspace roots, launch/health/attach/log commands, default provider | harness internals, planning, tool execution |
+| P3.7 | Harness Instance Profile spec | management metadata for each harness instance | config path, workspace roots, launch/health/attach/log commands, default provider | harness internals, planning, tool execution |
 
 ## Allowed Fields
 
@@ -76,7 +76,7 @@ Manager profile layer.
 
 ## Compatibility
 
-Existing P0-P3.6 API, CLI, and SQLite names remain unchanged. P4 is a
+Existing P0-P3.6 API, CLI, and SQLite names remain unchanged. P3.7 is a
 positioning and schema-language spec for management metadata; adopting it must
 not require changing current API routes, CLI commands, runtime architecture, or
 SQLite tables.
