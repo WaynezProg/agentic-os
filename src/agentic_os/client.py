@@ -132,6 +132,34 @@ class AgenticClient:
     def fleet_probe(self) -> dict[str, Any]:
         return self._post("/fleet/probe", {})
 
+    def deprecate_skill(self, skill_id: str) -> dict[str, Any]:
+        return self._post(f"/skills/{_validate_path_id(skill_id)}/deprecate", {})
+
+    def deprecate_mcp_server(self, server_id: str) -> dict[str, Any]:
+        return self._post(f"/mcp/{_validate_path_id(server_id)}/deprecate", {})
+
+    def deprecate_policy(self, agent_id: str) -> dict[str, Any]:
+        return self._post(f"/policy/{_validate_path_id(agent_id)}/deprecate", {})
+
+    def audit_events(
+        self,
+        domain: str | None = None,
+        entity_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"limit": limit}
+        if domain is not None:
+            params["domain"] = domain
+        if entity_id is not None:
+            params["entity_id"] = entity_id
+        if event_type is not None:
+            params["event_type"] = event_type
+        return self._get("/audit/events", params=params)
+
+    def audit_policy_coverage(self) -> dict[str, Any]:
+        return self._get("/audit/policy-coverage")
+
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
             response = client.get(path, params=params)

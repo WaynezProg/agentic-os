@@ -32,6 +32,8 @@ app.add_typer(policy, name="policy")
 memory.add_typer(memory_review, name="review")
 fleet = typer.Typer(help="Inspect fleet health, events, and capacity.")
 app.add_typer(fleet, name="fleet")
+audit = typer.Typer(help="Query governance audit trail.")
+app.add_typer(audit, name="audit")
 
 T = TypeVar("T")
 
@@ -222,7 +224,12 @@ def memory_search(query: str, api: str | None = _api_option()) -> None:
 def skills_list(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).list_skills())
     for skill in data["skills"]:
-        enabled = "enabled" if skill.get("enabled", True) else "disabled"
+        if skill.get("deprecated"):
+            enabled = "deprecated"
+        elif skill.get("enabled", True):
+            enabled = "enabled"
+        else:
+            enabled = "disabled"
         tags = ",".join(skill.get("tags") or [])
         typer.echo(
             f"{skill['id']}\t{skill.get('label', '')}\t{enabled}\t{skill.get('source', '')}\t{tags}"
@@ -264,11 +271,22 @@ def skills_disable(skill_id: str, api: str | None = _api_option()) -> None:
     _echo_json(data)
 
 
+@skills.command("deprecate")
+def skills_deprecate(skill_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).deprecate_skill(skill_id))
+    _echo_json(data)
+
+
 @mcp.command("list")
 def mcp_list(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).list_mcp_servers())
     for server in data["servers"]:
-        enabled = "enabled" if server.get("enabled", True) else "disabled"
+        if server.get("deprecated"):
+            enabled = "deprecated"
+        elif server.get("enabled", True):
+            enabled = "enabled"
+        else:
+            enabled = "disabled"
         command_preview = " ".join(server.get("command_preview") or [])
         typer.echo(
             f"{server['id']}\t{server.get('label', '')}\t{enabled}\t"
@@ -321,6 +339,12 @@ def mcp_disable(server_id: str, api: str | None = _api_option()) -> None:
     _echo_json(data)
 
 
+@mcp.command("deprecate")
+def mcp_deprecate(server_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).deprecate_mcp_server(server_id))
+    _echo_json(data)
+
+
 @policy.command("show")
 def policy_show(
     agent_id: str | None = typer.Argument(None, help="Agent id."),
@@ -334,7 +358,12 @@ def policy_show(
 
     data = _run_api_call(client.list_policies)
     for item in data["policies"]:
-        enabled = "enabled" if item.get("enabled", True) else "disabled"
+        if item.get("deprecated"):
+            enabled = "deprecated"
+        elif item.get("enabled", True):
+            enabled = "enabled"
+        else:
+            enabled = "disabled"
         mode = "readonly" if item.get("readonly", False) else "write"
         typer.echo(
             f"{item['agent_id']}\t{enabled}\t{mode}\t{item.get('rate_limit_per_minute', '')}"
@@ -396,6 +425,12 @@ def policy_evaluate(
     _echo_json(data)
 
 
+@policy.command("deprecate")
+def policy_deprecate(agent_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).deprecate_policy(agent_id))
+    _echo_json(data)
+
+
 @fleet.command("health")
 def fleet_health(
     agent_id: str | None = typer.Argument(None, help="Show health for a specific agent."),
@@ -441,3 +476,36 @@ def fleet_capacity_cmd(api: str | None = _api_option()) -> None:
 def fleet_probe_cmd(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).fleet_probe())
     typer.echo(f"Probed {data['probed']} instances")
+
+
+@audit.command("events")
+def audit_events_cmd(
+    domain: str | None = typer.Option(None, "--domain", help="Filter by domain."),
+    entity_id: str | None = typer.Option(None, "--entity", help="Filter by entity id."),
+    event_type: str | None = typer.Option(None, "--type", help="Filter by event type."),
+    limit: int = typer.Option(500, "--limit", help="Max events to return."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).audit_events(
+            domain=domain, entity_id=entity_id, event_type=event_type, limit=limit
+        )
+    )
+    for event in data.get("events", []):
+        typer.echo(
+            f"{event.get('id', '-')}\t{event['domain']}\t{event['entity_id']}\t"
+            f"{event['event_type']}\t{event['message']}\t{event['created_at']}"
+        )
+
+
+@audit.command("coverage")
+def audit_coverage_cmd(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).audit_policy_coverage())
+    for item in data.get("coverage", []):
+        has_policy = "yes" if item["has_policy"] else "no"
+        last_eval = item.get("last_evaluated_at") or "-"
+        uncovered = len(item.get("runs_without_policy_evaluation", []))
+        typer.echo(
+            f"{item['agent_id']}\tpolicy={has_policy}\tlast_eval={last_eval}\t"
+            f"runs={item['recent_run_count']}\tuncovered={uncovered}"
+        )

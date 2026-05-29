@@ -296,6 +296,65 @@ class FakeClient:
         self.calls.append(("fleet_probe", (), {}))
         return {"probed": 3}
 
+    def deprecate_skill(self, skill_id: str) -> dict[str, object]:
+        self.calls.append(("deprecate_skill", (skill_id,), {}))
+        return {"id": skill_id, "label": "Reviewer", "enabled": True, "deprecated": True}
+
+    def deprecate_mcp_server(self, server_id: str) -> dict[str, object]:
+        self.calls.append(("deprecate_mcp_server", (server_id,), {}))
+        return {"id": server_id, "label": "FS", "enabled": True, "deprecated": True}
+
+    def deprecate_policy(self, agent_id: str) -> dict[str, object]:
+        self.calls.append(("deprecate_policy", (agent_id,), {}))
+        return {"agent_id": agent_id, "enabled": True, "deprecated": True}
+
+    def audit_events(
+        self,
+        domain: str | None = None,
+        entity_id: str | None = None,
+        event_type: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "audit_events",
+                (),
+                {
+                    "domain": domain,
+                    "entity_id": entity_id,
+                    "event_type": event_type,
+                    "limit": limit,
+                },
+            )
+        )
+        return {
+            "events": [
+                {
+                    "id": 1,
+                    "domain": "skill",
+                    "entity_id": "reviewer",
+                    "event_type": "skill_upserted",
+                    "message": "upserted",
+                    "metadata": {},
+                    "created_at": "2026-05-29 00:00:00",
+                }
+            ]
+        }
+
+    def audit_policy_coverage(self) -> dict[str, object]:
+        self.calls.append(("audit_policy_coverage", (), {}))
+        return {
+            "coverage": [
+                {
+                    "agent_id": "shell",
+                    "has_policy": True,
+                    "last_evaluated_at": "2026-05-29 00:00:00",
+                    "recent_run_count": 3,
+                    "runs_without_policy_evaluation": ["s_2"],
+                }
+            ]
+        }
+
 
 def install_fake_client(monkeypatch: Any, fake: FakeClient) -> None:
     monkeypatch.setattr(cli, "make_client", lambda api: fake)
@@ -1060,6 +1119,9 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.show_policy(unsafe_id),
         lambda: client.upsert_policy(unsafe_id, {}),
         lambda: client.fleet_instance_health(unsafe_id),
+        lambda: client.deprecate_skill(unsafe_id),
+        lambda: client.deprecate_mcp_server(unsafe_id),
+        lambda: client.deprecate_policy(unsafe_id),
     ]
 
     for call in calls:
@@ -1209,6 +1271,7 @@ def test_help_commands_import_successfully() -> None:
     assert runner.invoke(cli.app, ["mcp", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["policy", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["fleet", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["audit", "--help"]).exit_code == 0
 
 
 def test_fleet_health_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
@@ -1267,3 +1330,113 @@ def test_fleet_probe_prints_count(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert "Probed 3 instances" in result.output
     assert fake.calls == [("fleet_probe", (), {})]
+
+
+def test_skills_deprecate_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["skills", "deprecate", "reviewer"])
+    assert result.exit_code == 0
+    assert '"deprecated": true' in result.output
+    assert fake.calls == [("deprecate_skill", ("reviewer",), {})]
+
+
+def test_mcp_deprecate_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["mcp", "deprecate", "filesystem"])
+    assert result.exit_code == 0
+    assert '"deprecated": true' in result.output
+    assert fake.calls == [("deprecate_mcp_server", ("filesystem",), {})]
+
+
+def test_policy_deprecate_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["policy", "deprecate", "shell"])
+    assert result.exit_code == 0
+    assert '"deprecated": true' in result.output
+    assert fake.calls == [("deprecate_policy", ("shell",), {})]
+
+
+def test_audit_events_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["audit", "events"])
+    assert result.exit_code == 0
+    assert "skill_upserted" in result.output
+    assert fake.calls == [
+        (
+            "audit_events",
+            (),
+            {"domain": None, "entity_id": None, "event_type": None, "limit": 500},
+        )
+    ]
+
+
+def test_audit_events_with_filters(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "audit",
+            "events",
+            "--domain",
+            "skill",
+            "--entity",
+            "reviewer",
+            "--type",
+            "skill_upserted",
+            "--limit",
+            "10",
+        ],
+    )
+    assert result.exit_code == 0
+    assert fake.calls == [
+        (
+            "audit_events",
+            (),
+            {
+                "domain": "skill",
+                "entity_id": "reviewer",
+                "event_type": "skill_upserted",
+                "limit": 10,
+            },
+        )
+    ]
+
+
+def test_audit_coverage_prints_summary(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["audit", "coverage"])
+    assert result.exit_code == 0
+    assert "shell" in result.output
+    assert "policy=yes" in result.output
+    assert "uncovered=1" in result.output
+    assert fake.calls == [("audit_policy_coverage", (), {})]
+
+
+def test_deprecated_status_shown_in_skills_list(monkeypatch: Any) -> None:
+    class DeprecatedSkillClient(FakeClient):
+        def list_skills(self) -> dict[str, object]:
+            self.calls.append(("list_skills", (), {}))
+            return {
+                "skills": [
+                    {
+                        "id": "old",
+                        "label": "Old",
+                        "enabled": True,
+                        "deprecated": True,
+                        "source": "local",
+                        "tags": [],
+                    },
+                ]
+            }
+
+    fake = DeprecatedSkillClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["skills", "list"])
+    assert result.exit_code == 0
+    assert "deprecated" in result.output
