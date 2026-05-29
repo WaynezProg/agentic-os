@@ -9,7 +9,7 @@ block the daemon. Policy coverage is queryable.
 
 ## Architecture
 
-Single new module `audit.py` owns a unified `audit_events` SQLite table.
+Single new module `audit.py` owns a governance `audit_events` SQLite table.
 Existing session events (storage.py) and fleet events (fleet.py) remain
 unchanged — `audit_events` is an additive cross-domain governance trail.
 Deprecation is a column-level addition to the existing control_plane.py tables.
@@ -44,9 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_events (event_type);
 **AuditStore class**:
 - `__init__(self, db_path: Path)` — stores path, calls no I/O
 - `init()` — CREATE TABLE IF NOT EXISTS
-- `record(domain: str, entity_id: str, event_type: str, message: str, metadata: dict | None = None)` — INSERT one row
+- `record(domain: str, entity_id: str, event_type: str, message: str, metadata: dict | None = None) -> AuditEvent` — INSERT one row and return the inserted event
 - `list_events(domain: str | None = None, entity_id: str | None = None, event_type: str | None = None, limit: int = 500) -> list[AuditEvent]` — filtered SELECT, ORDER BY id DESC, LIMIT
-- `policy_coverage(agent_ids: list[str]) -> list[dict]` — for each agent_id, return `{"agent_id": str, "has_policy": bool, "last_evaluated_at": str | None}`
+- `policy_coverage(agent_ids: list[str], session_ids_by_agent: dict[str, list[str]]) -> list[dict]` — for each agent_id, return `{"agent_id": str, "has_policy": bool, "last_evaluated_at": str | None, "recent_run_count": int, "runs_without_policy_evaluation": list[str]}`
 
 **AuditEvent dataclass**:
 ```python
@@ -81,6 +81,11 @@ metadata contains field-level diffs where applicable (e.g.
 `{"field": "enabled", "before": true, "after": false}`). Secret-bearing fields
 (env_keys) record key names only, never values — maintaining existing redaction
 invariant from control_plane.py.
+
+The API layer reads the previous record before mutating so it can compute
+minimal before/after metadata. If an upsert resets `deprecated` from true to
+false, the `*_upserted` audit event must include
+`{"field": "deprecated", "before": true, "after": false}`.
 
 ### 3. Deprecation Lifecycle (G5)
 
@@ -125,12 +130,13 @@ OperationalError if column exists).
 ### 4. Log Reader Isolation (G2 enforcement)
 
 **logs.py changes**:
-- `read_stream()` gains `max_lines: int = 5000` parameter. Stops reading after cap, returns partial.
+- `JsonlLogStore.read()` gains `max_lines: int = 5000` parameter. Stops reading after cap, returns partial.
 - `read_merged()` gains same parameter. Applied per-stream before merge.
 - Both return a new `ReadResult` dataclass: `entries: list[LogEntry], truncated: bool`
 
 **API changes**:
-- `GET /sessions/{id}/logs` response gains `"truncated": bool` field
+- `GET /sessions/{id}/logs` accepts `max_lines` query param and response gains `"truncated": bool` field
+- `_build_and_store_summary()` unwraps `ReadResult.entries` before calling `build_session_summary()`
 - When truncated, audit_store records `domain="session", event_type="log_read_truncated"`
 
 **CLI changes**:
@@ -140,11 +146,11 @@ OperationalError if column exists).
 - No async file I/O rewrite
 - No file-level timeout (line cap is more reliable for Python sync I/O)
 
-### 5. Unified Audit Query API
+### 5. Governance Audit Query API
 
 **New API endpoints**:
 - `GET /audit/events` — query params: `domain`, `entity_id`, `event_type`, `limit` (default 500)
-- `GET /audit/policy-coverage` — returns per-agent policy status and last evaluation timestamp
+- `GET /audit/policy-coverage` — returns per-agent policy status, last evaluation timestamp, recent run count, and recent session ids with no matching policy evaluation
 
 **Client methods**:
 - `audit_events(domain, entity_id, event_type, limit)` → GET /audit/events
@@ -158,17 +164,26 @@ OperationalError if column exists).
 - Audit Events section added to Fleet tab (below fleet events)
 - Shows latest audit events with domain/type/entity filters
 
+`GET /audit/events` returns records from `audit_events` only. Existing
+`/sessions/{id}/events` and `/fleet/events` remain the canonical state-event
+APIs for P0/P5. P6 records governance-specific session/fleet audit events
+instead of backfilling or duplicating all historical session/fleet rows.
+
 ### 6. Policy Bypass Verification (G6)
 
 Not a new enforcement mechanism — P3.5/P3.6 already gate `POST /sessions` and
 `POST /sessions/{id}/retry`. P6 adds audit verification:
 
-- Every policy evaluation (allow/deny/approval_required) records
+- Every run creation path records either
   `domain="governance", event_type="policy_evaluated"` with metadata
-  `{"agent_id", "decision", "reason"}`
-- Every successful session start (queued→running) records
+  `{"agent_id", "session_id", "decision", "reason"}` or
+  `domain="governance", event_type="policy_missing_at_run_start"` with metadata
+  `{"agent_id", "session_id"}`.
+- Every successful session start records either
   `domain="governance", event_type="run_started_with_policy"` with metadata
-  linking to the policy evaluation
+  linking to the policy evaluation event id, or
+  `domain="governance", event_type="run_started_without_policy"` when no policy
+  existed and current backward-compatible launch semantics allowed the run.
 
 - `GET /audit/policy-coverage` lets operators verify: "every agent that can
   run has a policy, and every recent run has a matching policy_evaluated event"
@@ -185,7 +200,6 @@ No auto-remediation — the daemon reports, the operator decides.
 | `src/agentic_os/logs.py` | Modify | max_lines cap, ReadResult, truncated flag |
 | `src/agentic_os/client.py` | Modify | audit_events, deprecate, policy_coverage methods |
 | `src/agentic_os/cli.py` | Modify | audit subgroup, deprecate commands, deprecated labels |
-| `src/agentic_os/supervisor.py` | Modify | audit event on queued→running transition |
 | `apps/web/index.html` | Modify | audit events section, deprecated badges |
 | `apps/web/app.js` | Modify | loadAuditEvents, deprecated display |
 | `tests/test_audit.py` | Create | AuditStore unit tests |
