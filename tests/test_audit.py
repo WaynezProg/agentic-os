@@ -64,6 +64,7 @@ def test_policy_coverage_reports_missing_policy_and_uncovered_runs(tmp_path: Pat
     result = store.policy_coverage(
         agent_ids=["shell"],
         session_ids_by_agent={"shell": ["s_1", "s_2"]},
+        policy_agent_ids=[],
     )
     assert len(result) == 1
     assert result[0]["agent_id"] == "shell"
@@ -88,7 +89,20 @@ def test_policy_coverage_reports_last_evaluated_at(tmp_path: Path) -> None:
     result = store.policy_coverage(
         agent_ids=["shell"],
         session_ids_by_agent={"shell": ["s_1", "s_2"]},
+        policy_agent_ids=["shell"],
     )
     assert result[0]["has_policy"] is True
     assert result[0]["last_evaluated_at"] is not None
     assert result[0]["runs_without_policy_evaluation"] == ["s_2"]
+
+
+def test_policy_coverage_uses_current_policy_rows_not_audit_history(tmp_path: Path) -> None:
+    store = _make_store(tmp_path)
+
+    result = store.policy_coverage(
+        agent_ids=["shell"],
+        session_ids_by_agent={},
+        policy_agent_ids=["shell"],
+    )
+
+    assert result[0]["has_policy"] is True

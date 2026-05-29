@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentic_os.api import create_app
+from agentic_os.models import SessionCreate
 
 
 def write_registry(
@@ -625,6 +626,52 @@ def test_fleet_capacity(tmp_app) -> None:
     assert "max_running_sessions" in data
 
 
+def test_run_session_429_at_capacity(tmp_app, tmp_path: Path) -> None:
+    client = TestClient(tmp_app)
+    store = tmp_app.state.store
+    tmp_app.state.fleet_store.MAX_RUNNING_SESSIONS = 2
+    for i in range(2):
+        session = store.create_session(
+            SessionCreate(
+                agent_id="shell",
+                cwd=str(tmp_path),
+                argv=["/bin/sleep", "999"],
+                artifact_dir=str(tmp_path / f"art_{i}"),
+                stdout_log=str(tmp_path / f"out_{i}.jsonl"),
+                stderr_log=str(tmp_path / f"err_{i}.jsonl"),
+            )
+        )
+        store.mark_running(session.id, pid=99900 + i, pgid=99900 + i)
+
+    response = client.post("/sessions", json={"agent_id": "shell", "message": "test"})
+
+    assert response.status_code == 429
+    assert "capacity" in response.json()["detail"].lower()
+
+
+def test_run_session_429_records_capacity_event(tmp_app, tmp_path: Path) -> None:
+    client = TestClient(tmp_app)
+    store = tmp_app.state.store
+    tmp_app.state.fleet_store.MAX_RUNNING_SESSIONS = 1
+    session = store.create_session(
+        SessionCreate(
+            agent_id="shell",
+            cwd=str(tmp_path),
+            argv=["/bin/sleep", "999"],
+            artifact_dir=str(tmp_path / "art"),
+            stdout_log=str(tmp_path / "out.jsonl"),
+            stderr_log=str(tmp_path / "err.jsonl"),
+        )
+    )
+    store.mark_running(session.id, pid=99900, pgid=99900)
+
+    response = client.post("/sessions", json={"agent_id": "shell", "message": "test"})
+    events = client.get("/fleet/events", params={"event_type": "capacity_limit_reached"})
+
+    assert response.status_code == 429
+    assert events.json()["events"][0]["metadata"]["running_sessions"] == 1
+
+
 def test_fleet_probe_trigger(tmp_app) -> None:
     client = TestClient(tmp_app)
     response = client.post("/fleet/probe")
@@ -721,6 +768,26 @@ def test_denied_run_records_policy_evaluated_audit(tmp_app, tmp_path) -> None:
     assert "run_started_without_policy" not in types
 
 
+def test_denied_run_policy_coverage_treats_rejected_session_as_evaluated(
+    tmp_app,
+    tmp_path,
+) -> None:
+    client = TestClient(tmp_app)
+    allowed_root = tmp_path / "allowed"
+    allowed_root.mkdir()
+    client.post("/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": [str(allowed_root)]})
+
+    denied = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "test"},
+    )
+    assert denied.status_code == 403
+
+    coverage = client.get("/audit/policy-coverage").json()["coverage"][0]
+
+    assert denied.json()["session_id"] not in coverage["runs_without_policy_evaluation"]
+
+
 def test_audit_events_query_endpoint(tmp_app) -> None:
     client = TestClient(tmp_app)
     client.post("/skills/a", json={"label": "A"})
@@ -749,3 +816,71 @@ def test_logs_endpoint_returns_truncated_flag(tmp_app) -> None:
     assert resp.status_code == 200
     assert "truncated" in resp.json()
     assert isinstance(resp.json()["truncated"], bool)
+
+
+def test_logs_endpoint_records_audit_event_when_truncated(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        command=[
+            sys.executable,
+            "-c",
+            "for i in range(3): print(i)",
+        ],
+    )
+    run = client.post("/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "x"})
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    logs = client.get(f"/sessions/{session_id}/logs", params={"max_lines": 1})
+    assert logs.status_code == 200
+    assert logs.json()["truncated"] is True
+
+    events = client.get(
+        "/audit/events",
+        params={"domain": "session", "entity_id": session_id, "event_type": "log_read_truncated"},
+    )
+    assert events.json()["events"][0]["metadata"]["max_lines"] == 1
+
+
+def test_upsert_after_deprecation_records_reset_metadata_for_catalog_domains(
+    tmp_app,
+) -> None:
+    client = TestClient(tmp_app)
+    cases = [
+        (
+            "/skills/reviewer",
+            "/skills/reviewer/deprecate",
+            {"label": "Reviewer"},
+            "skill",
+            "reviewer",
+            "skill_upserted",
+        ),
+        (
+            "/mcp/filesystem",
+            "/mcp/filesystem/deprecate",
+            {"label": "FS"},
+            "mcp",
+            "filesystem",
+            "mcp_upserted",
+        ),
+        (
+            "/policy/shell",
+            "/policy/shell/deprecate",
+            {"allowed_tool_names": ["*"], "cwd_roots": ["/tmp"]},
+            "policy",
+            "shell",
+            "policy_upserted",
+        ),
+    ]
+
+    for upsert_path, deprecate_path, payload, domain, entity_id, event_type in cases:
+        assert client.post(upsert_path, json=payload).status_code == 200
+        assert client.post(deprecate_path).status_code == 200
+        assert client.post(upsert_path, json=payload).status_code == 200
+
+        events = client.get(
+            "/audit/events",
+            params={"domain": domain, "entity_id": entity_id, "event_type": event_type},
+        ).json()["events"]
+
+        assert events[0]["metadata"] == {"field": "deprecated", "before": True, "after": False}

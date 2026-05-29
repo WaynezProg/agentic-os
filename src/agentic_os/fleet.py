@@ -182,6 +182,15 @@ class FleetStore:
             "at_instance_limit": registered_instances >= self.MAX_REGISTERED_INSTANCES,
         }
 
+    def record_event(
+        self,
+        agent_id: str,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        self._record_event(agent_id, event_type, message, metadata)
+
     def _record_event(
         self,
         agent_id: str,

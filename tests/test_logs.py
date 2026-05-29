@@ -196,7 +196,7 @@ def test_read_truncates_at_max_lines(tmp_path: Path) -> None:
     assert result.truncated is True
 
 
-def test_read_merged_truncates_per_stream(tmp_path: Path) -> None:
+def test_read_merged_reports_truncated_when_stream_exceeds_cap(tmp_path: Path) -> None:
     logs = JsonlLogStore()
     stdout = tmp_path / "stdout.jsonl"
     stderr = tmp_path / "stderr.jsonl"
@@ -205,7 +205,21 @@ def test_read_merged_truncates_per_stream(tmp_path: Path) -> None:
         logs.append(stderr, "s_1", "stderr", f"err{i}")
     result = logs.read_merged(stdout, stderr, max_lines=3)
     assert result.truncated is True
-    assert len(result.entries) <= 6  # 3 per stream max
+    assert len(result.entries) == 3
+
+
+def test_read_merged_applies_max_lines_to_combined_result(tmp_path: Path) -> None:
+    logs = JsonlLogStore()
+    stdout = tmp_path / "stdout.jsonl"
+    stderr = tmp_path / "stderr.jsonl"
+    for i in range(3):
+        logs.append(stdout, "s_1", "stdout", f"out{i}")
+        logs.append(stderr, "s_1", "stderr", f"err{i}")
+
+    result = logs.read_merged(stdout, stderr, max_lines=3)
+
+    assert len(result.entries) == 3
+    assert result.truncated is True
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, str]]) -> None:

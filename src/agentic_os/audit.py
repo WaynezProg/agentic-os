@@ -94,8 +94,10 @@ class AuditStore:
         self,
         agent_ids: list[str],
         session_ids_by_agent: dict[str, list[str]],
+        policy_agent_ids: list[str],
     ) -> list[dict[str, object]]:
         result: list[dict[str, object]] = []
+        policy_agent_id_set = set(policy_agent_ids)
         with self._connect() as conn:
             for agent_id in agent_ids:
                 row = conn.execute(
@@ -110,17 +112,7 @@ class AuditStore:
                 ).fetchone()
                 last_evaluated_at = row["created_at"] if row else None
 
-                has_policy_row = conn.execute(
-                    """
-                    SELECT 1 FROM audit_events
-                    WHERE domain = 'policy'
-                      AND event_type = 'policy_upserted'
-                      AND entity_id = ?
-                    LIMIT 1
-                    """,
-                    (agent_id,),
-                ).fetchone()
-                has_policy = has_policy_row is not None
+                has_policy = agent_id in policy_agent_id_set
 
                 session_ids = session_ids_by_agent.get(agent_id, [])
                 covered_rows = conn.execute(

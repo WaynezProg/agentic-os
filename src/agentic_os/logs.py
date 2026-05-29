@@ -83,5 +83,5 @@ class JsonlLogStore:
             for index, entry in enumerate(entries, start=1)
         ]
         filtered = [entry for entry in merged_entries if entry.index > after]
-        truncated = stdout_result.truncated or stderr_result.truncated
-        return ReadResult(entries=filtered, truncated=truncated)
+        truncated = stdout_result.truncated or stderr_result.truncated or len(filtered) > max_lines
+        return ReadResult(entries=filtered[:max_lines], truncated=truncated)

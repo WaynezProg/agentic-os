@@ -103,6 +103,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     app.state.store = store
     app.state.fleet_store = fleet_store
     app.state.audit_store = audit_store
+    app.state.control_plane = control_plane
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
@@ -119,16 +120,29 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return JSONResponse(status_code=400, content={"detail": exc.errors()})
         return await request_validation_exception_handler(request, exc)
 
-    def _check_capacity() -> None:
+    def _check_capacity(agent_id: str = "_fleet") -> None:
         running = [
             s
             for s in store.list_sessions()
             if s.status in {SessionStatus.RUNNING, SessionStatus.QUEUED, SessionStatus.STOPPING}
         ]
         if len(running) >= fleet_store.MAX_RUNNING_SESSIONS:
+            detail = (
+                f"Capacity limit reached: {len(running)}/"
+                f"{fleet_store.MAX_RUNNING_SESSIONS} concurrent sessions"
+            )
+            fleet_store.record_event(
+                agent_id,
+                "capacity_limit_reached",
+                detail,
+                {
+                    "running_sessions": len(running),
+                    "max_running_sessions": fleet_store.MAX_RUNNING_SESSIONS,
+                },
+            )
             raise HTTPException(
                 status_code=429,
-                detail=f"Capacity limit reached: {len(running)}/{fleet_store.MAX_RUNNING_SESSIONS} concurrent sessions",
+                detail=detail,
             )
 
     @app.get("/health")
@@ -148,7 +162,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
-        _check_capacity()
+        _check_capacity(request.agent_id)
         try:
             rendered = registry.build_run(request.agent_id, request.cwd, request.message)
         except KeyError as exc:
@@ -159,13 +173,6 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         policy_result = _evaluate_session_policy(rendered.agent.id, rendered.cwd)
         if policy_result is not None:
             if policy_result.decision != "allow":
-                audit_store.record(
-                    "governance",
-                    rendered.agent.id,
-                    "policy_evaluated",
-                    f"{policy_result.decision}: {policy_result.reason}",
-                    metadata={"decision": policy_result.decision, "reason": policy_result.reason},
-                )
                 return _reject_session(rendered, policy_result)
             session = supervisor.start(
                 rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
@@ -175,11 +182,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 rendered.agent.id,
                 "policy_evaluated",
                 f"allow: {policy_result.reason}",
-                metadata={
-                    "session_id": session.id,
-                    "decision": "allow",
-                    "reason": policy_result.reason,
-                },
+                metadata=_policy_evaluation_metadata(session.id, policy_result),
             )
             audit_store.record(
                 "governance",
@@ -248,6 +251,20 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             after=after,
             max_lines=max_lines,
         )
+        if result.truncated:
+            audit_store.record(
+                "session",
+                session_id,
+                "log_read_truncated",
+                f"log read truncated at {max_lines} lines",
+                metadata={
+                    "session_id": session_id,
+                    "stream": stream or "merged",
+                    "after": after,
+                    "max_lines": max_lines,
+                    "returned_lines": len(result.entries),
+                },
+            )
         return {
             "entries": [entry.model_dump() for entry in result.entries],
             "truncated": result.truncated,
@@ -264,13 +281,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions/{session_id}/retry")
     def retry_session(session_id: str) -> dict[str, object]:
-        _check_capacity()
         try:
             previous = supervisor.get_retryable(session_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _check_capacity(previous.agent_id)
 
         policy_result = _evaluate_session_policy(previous.agent_id, previous.cwd)
         if policy_result is not None:
@@ -281,13 +298,6 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     argv=previous.argv,
                     env=previous.env,
                 )
-                audit_store.record(
-                    "governance",
-                    previous.agent_id,
-                    "policy_evaluated",
-                    f"{policy_result.decision}: {policy_result.reason}",
-                    metadata={"decision": policy_result.decision, "reason": policy_result.reason},
-                )
                 return _reject_session(rendered, policy_result)
             session = supervisor.start(
                 previous.agent_id, previous.cwd, previous.argv, env=previous.env
@@ -297,11 +307,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 previous.agent_id,
                 "policy_evaluated",
                 f"allow: {policy_result.reason}",
-                metadata={
-                    "session_id": session.id,
-                    "decision": "allow",
-                    "reason": policy_result.reason,
-                },
+                metadata=_policy_evaluation_metadata(session.id, policy_result),
             )
             audit_store.record(
                 "governance",
@@ -395,6 +401,10 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/skills/{skill_id}")
     def upsert_skill(skill_id: str, request: SkillUpsertRequest) -> dict[str, Any]:
         try:
+            try:
+                previous = control_plane.get_skill(skill_id)
+            except KeyError:
+                previous = None
             result = control_plane.upsert_skill(
                 skill_id,
                 SkillUpsert(
@@ -406,7 +416,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     enabled=request.enabled,
                 ),
             )
-            audit_store.record("skill", skill_id, "skill_upserted", f"upserted skill {skill_id}")
+            audit_store.record(
+                "skill",
+                skill_id,
+                "skill_upserted",
+                f"upserted skill {skill_id}",
+                metadata=_deprecated_reset_metadata(previous, result),
+            )
             return _asdict(result)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -448,6 +464,10 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/mcp/{server_id}")
     def upsert_mcp_server(server_id: str, request: McpServerUpsertRequest) -> dict[str, Any]:
         try:
+            try:
+                previous = control_plane.get_mcp_server(server_id)
+            except KeyError:
+                previous = None
             result = control_plane.upsert_mcp_server(
                 server_id,
                 McpServerUpsert(
@@ -460,7 +480,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     enabled=request.enabled,
                 ),
             )
-            audit_store.record("mcp", server_id, "mcp_upserted", f"upserted mcp server {server_id}")
+            audit_store.record(
+                "mcp",
+                server_id,
+                "mcp_upserted",
+                f"upserted mcp server {server_id}",
+                metadata=_deprecated_reset_metadata(previous, result),
+            )
             return _asdict(result)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -520,6 +546,10 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/policy/{agent_id}")
     def upsert_policy(agent_id: str, request: PolicyUpsertRequest) -> dict[str, Any]:
         try:
+            try:
+                previous = control_plane.get_policy(agent_id)
+            except KeyError:
+                previous = None
             result = control_plane.upsert_policy(
                 agent_id,
                 PolicyUpsert(
@@ -535,7 +565,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 ),
             )
             audit_store.record(
-                "policy", agent_id, "policy_upserted", f"upserted policy for {agent_id}"
+                "policy",
+                agent_id,
+                "policy_upserted",
+                f"upserted policy for {agent_id}",
+                metadata=_deprecated_reset_metadata(previous, result),
             )
             return _asdict(result)
         except ValueError as exc:
@@ -573,7 +607,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         session_ids_by_agent: dict[str, list[str]] = {}
         for s in sessions:
             session_ids_by_agent.setdefault(s.agent_id, []).append(s.id)
-        coverage = audit_store.policy_coverage(agent_ids, session_ids_by_agent)
+        policy_agent_ids = [p.agent_id for p in control_plane.list_policies()]
+        coverage = audit_store.policy_coverage(agent_ids, session_ids_by_agent, policy_agent_ids)
         return {"coverage": coverage}
 
     @app.get("/fleet/health")
@@ -658,6 +693,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         session = supervisor.start_rejected(
             rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
         )
+        audit_store.record(
+            "governance",
+            rendered.agent.id,
+            "policy_evaluated",
+            f"{result.decision}: {result.reason}",
+            metadata=_policy_evaluation_metadata(session.id, result),
+        )
         event_type = "policy_denied" if result.decision == "deny" else "policy_approval_required"
         store.record_event(
             session.id,
@@ -716,6 +758,24 @@ def _asdict(record: object) -> dict[str, Any]:
     if not is_dataclass(record):
         raise TypeError(f"Expected dataclass record, got {type(record).__name__}")
     return asdict(record)
+
+
+def _deprecated_reset_metadata(previous: object | None, current: object) -> dict[str, object] | None:
+    if bool(getattr(previous, "deprecated", False)) and not bool(getattr(current, "deprecated", False)):
+        return {"field": "deprecated", "before": True, "after": False}
+    return None
+
+
+def _policy_evaluation_metadata(
+    session_id: str,
+    result: PolicyEvaluationResult,
+) -> dict[str, object]:
+    return {
+        "session_id": session_id,
+        "decision": result.decision,
+        "reason": result.reason,
+        "warnings": result.warnings,
+    }
 
 
 def _wait_for_short_command(supervisor: ProcessSupervisor, session_id: str) -> None:
