@@ -385,6 +385,40 @@
             </table>
           </div>
         </section>
+
+        <section class="subpanel">
+          <h3>Audit Trail</h3>
+          <div class="control-row">
+            <label for="audit-domain">Domain</label>
+            <select id="audit-domain">
+              <option value="">all</option>
+              <option value="skill">skill</option>
+              <option value="mcp">mcp</option>
+              <option value="policy">policy</option>
+              <option value="governance">governance</option>
+              <option value="session">session</option>
+              <option value="fleet">fleet</option>
+            </select>
+            <button id="load-audit-events" type="button">Load</button>
+          </div>
+          <div class="table-shell">
+            <table id="audit-events-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Domain</th>
+                  <th>Entity</th>
+                  <th>Type</th>
+                  <th>Message</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="audit-events-body">
+                <tr><td colspan="6">Click Load to view audit events.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
   </body>

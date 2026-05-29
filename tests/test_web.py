@@ -269,6 +269,34 @@ def test_fleet_javascript_has_required_functions() -> None:
         assert fn in js
 
 
+def test_fleet_tab_has_audit_events_section() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'id="audit-events-table"' in html
+    assert 'id="audit-events-body"' in html
+    assert 'id="audit-domain"' in html
+    assert 'id="load-audit-events"' in html
+
+
+def test_javascript_references_audit_endpoints() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+    for endpoint in [
+        "/audit/events",
+        "/audit/policy-coverage",
+    ]:
+        assert endpoint in js
+
+
+def test_javascript_has_load_audit_events_function() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+    assert "loadAuditEvents" in js
+
+
+def test_javascript_renders_deprecated_badges() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+    assert "is-deprecated" in js
+    assert ".deprecated" in js
+
+
 def test_readme_documents_p3_usage_and_limits() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 

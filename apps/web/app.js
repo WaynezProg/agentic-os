@@ -29,6 +29,8 @@ const ENDPOINTS = Object.freeze({
   fleetEvents: "/fleet/events",
   fleetCapacity: "/fleet/capacity",
   fleetProbe: "/fleet/probe",
+  auditEvents: "/audit/events",
+  auditPolicyCoverage: "/audit/policy-coverage",
 });
 
 const HTML_ENTITIES = Object.freeze({
@@ -80,6 +82,7 @@ function bindControls() {
   byId("run-policy-eval").addEventListener("click", evaluatePolicy);
   byId("refresh-fleet").addEventListener("click", loadFleet);
   byId("fleet-probe-btn").addEventListener("click", triggerFleetProbe);
+  byId("load-audit-events").addEventListener("click", loadAuditEvents);
   byId("run-submit").addEventListener("click", submitRunForm);
   byId("run-cancel").addEventListener("click", hideRunForm);
   byId("search-memory").addEventListener("click", () => {
@@ -489,7 +492,7 @@ async function loadSkills() {
           <tr>
             <td class="cell-id">${escapeHtml(skill.id)}</td>
             <td>${escapeHtml(skill.label)}</td>
-            <td>${escapeHtml(String(skill.enabled !== false))}</td>
+            <td>${skill.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(skill.enabled !== false))}</td>
             <td>${escapeHtml(skill.source)}</td>
             <td>${escapeHtml(asArray(skill.tags).join(", "))}</td>
           </tr>
@@ -516,7 +519,7 @@ async function loadMcpServers() {
           <tr>
             <td class="cell-id">${escapeHtml(server.id)}</td>
             <td>${escapeHtml(server.label)}</td>
-            <td>${escapeHtml(String(server.enabled !== false))}</td>
+            <td>${server.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(server.enabled !== false))}</td>
             <td>${escapeHtml(server.transport)}</td>
             <td class="cell-code">${escapeHtml(asArray(server.command_preview).join(" "))}</td>
           </tr>
@@ -542,7 +545,7 @@ async function loadPolicies() {
         (policy) => `
           <tr>
             <td class="cell-id">${escapeHtml(policy.agent_id)}</td>
-            <td>${escapeHtml(String(policy.enabled !== false))}</td>
+            <td>${policy.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(policy.enabled !== false))}</td>
             <td>${escapeHtml(policy.readonly ? "readonly" : "write")}</td>
             <td>${escapeHtml(policy.rate_limit_per_minute)}</td>
           </tr>
@@ -750,7 +753,7 @@ async function handleActionClick(event) {
 }
 
 async function loadFleet() {
-  await Promise.allSettled([loadFleetHealth(), loadFleetCapacity(), loadFleetEvents()]);
+  await Promise.allSettled([loadFleetHealth(), loadFleetCapacity(), loadFleetEvents(), loadAuditEvents()]);
 }
 
 async function loadFleetHealth() {
@@ -833,6 +836,39 @@ async function triggerFleetProbe() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Probe Now";
+  }
+}
+
+async function loadAuditEvents() {
+  const body = byId("audit-events-body");
+  const domain = byId("audit-domain").value;
+  try {
+    const query = new URLSearchParams({ limit: "100" });
+    if (domain) {
+      query.set("domain", domain);
+    }
+    const data = await apiFetch(`${buildEndpoint("auditEvents")}?${query}`);
+    const events = asArray(data.events);
+    if (events.length === 0) {
+      renderEmptyRow(body, 6, "No audit events.");
+      return;
+    }
+    body.innerHTML = events
+      .map(
+        (evt) => `
+          <tr>
+            <td>${escapeHtml(evt.id)}</td>
+            <td>${escapeHtml(evt.domain)}</td>
+            <td class="cell-id">${escapeHtml(evt.entity_id)}</td>
+            <td>${escapeHtml(evt.event_type)}</td>
+            <td class="cell-code">${escapeHtml(evt.message)}</td>
+            <td>${escapeHtml(evt.created_at)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(body, 6, error.message);
   }
 }
 
