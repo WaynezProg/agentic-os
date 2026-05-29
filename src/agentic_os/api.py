@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 import sqlite3
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
-from agentic_os.models import SessionRecord, SessionStatus
+from agentic_os.models import AgentDefinition, SessionRecord, SessionStatus
 from agentic_os.registry import Registry, RenderedRun
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
@@ -176,6 +177,35 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return registry.get(agent_id).model_dump()
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/harnesses")
+    def list_harnesses() -> dict[str, object]:
+        return {"harnesses": [_harness_profile(a) for a in registry.list_agents()]}
+
+    @app.get("/harnesses/{harness_id}")
+    def show_harness(harness_id: str) -> dict[str, object]:
+        try:
+            return _harness_profile(registry.get(harness_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/harnesses/{harness_id}/health")
+    def harness_health(harness_id: str) -> dict[str, object]:
+        try:
+            agent = registry.get(harness_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if agent.health_command is None:
+            return {"id": agent.id, "state": "unknown", "message": "no health command defined"}
+        return _run_health_check(agent)
+
+    @app.get("/harnesses/{harness_id}/logs")
+    def harness_logs(harness_id: str) -> dict[str, object]:
+        try:
+            agent = registry.get(harness_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"id": agent.id, "log_paths": list(agent.log_paths)}
 
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
@@ -1132,3 +1162,40 @@ def _sqlite_count(db_path: Path, table: str) -> int:
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
     return int(row[0])
+
+
+def _harness_profile(agent: AgentDefinition) -> dict[str, object]:
+    """Map AgentDefinition to Harness Instance Profile field names."""
+    return {
+        "id": agent.id,
+        "name": agent.label,
+        "config_path": agent.config_path,
+        "workspace_roots": list(agent.workspace_roots),
+        "launch_command": list(agent.command),
+        "health_command": agent.health_command,
+        "attach_command": agent.attach_command,
+        "log_paths": list(agent.log_paths),
+        "default_provider": agent.default_provider,
+    }
+
+
+def _run_health_check(agent: AgentDefinition) -> dict[str, object]:
+    """Execute health_command and return the result."""
+    cmd = agent.health_command
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            message = proc.stdout.strip() or "OK"
+            return {"id": agent.id, "state": "up", "message": message}
+        else:
+            message = proc.stderr.strip() or f"exit code {proc.returncode}"
+            return {"id": agent.id, "state": "down", "message": message}
+    except subprocess.TimeoutExpired:
+        return {"id": agent.id, "state": "down", "message": "health check timed out"}
+    except Exception as exc:
+        return {"id": agent.id, "state": "down", "message": str(exc)}

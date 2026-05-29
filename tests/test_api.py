@@ -1123,3 +1123,195 @@ def test_upsert_after_deprecation_records_reset_metadata_for_catalog_domains(
         ).json()["events"]
 
         assert events[0]["metadata"] == {"field": "deprecated", "before": True, "after": False}
+
+
+def test_harness_lists_harnesses(tmp_path: Path) -> None:
+    """GET /harnesses returns all registered instances with profile metadata."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell Smoke"
+command = ["/usr/bin/printf", "%s", "{{message}}"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = ["/usr/bin/printf", "OK"]
+config_path = "~/.shell/config"
+log_paths = ["/tmp/shell.log"]
+default_provider = "local"
+workspace_roots = ["~/work", "~/bootstrap"]
+
+[[agents]]
+id = "openclaw"
+label = "OpenClaw"
+command = ["openclaw", "agent", "--message", "{{message}}"]
+cwd_mode = "required"
+stop_policy = "process_group"
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses")
+
+    assert response.status_code == 200
+    harnesses = response.json()["harnesses"]
+    assert len(harnesses) == 2
+    ids = [h["id"] for h in harnesses]
+    assert ids == ["openclaw", "shell"]
+    shell = harnesses[1]
+    assert shell["id"] == "shell"
+    assert shell["name"] == "Shell Smoke"
+    assert shell["launch_command"] == ["/usr/bin/printf", "%s", "{{message}}"]
+    assert shell["health_command"] == ["/usr/bin/printf", "OK"]
+    assert shell["config_path"] == "~/.shell/config"
+    assert shell["workspace_roots"] == ["~/work", "~/bootstrap"]
+    assert shell["log_paths"] == ["/tmp/shell.log"]
+    assert shell["default_provider"] == "local"
+    assert "enabled" not in shell
+
+
+def test_harness_show_harness(tmp_path: Path) -> None:
+    """GET /harnesses/{id} returns a single instance profile."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell Smoke"
+command = ["/usr/bin/printf", "OK"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+attach_command = ["/usr/bin/printf", "attach"]
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses/shell")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == "shell"
+    assert data["name"] == "Shell Smoke"
+    assert data["launch_command"] == ["/usr/bin/printf", "OK"]
+    assert data["attach_command"] == ["/usr/bin/printf", "attach"]
+
+
+def test_harness_show_harness_404(tmp_path: Path) -> None:
+    """GET /harnesses/{id} returns 404 for unknown id."""
+    client = make_client(tmp_path)
+
+    response = client.get("/harnesses/missing")
+
+    assert response.status_code == 404
+
+
+def test_harness_health_runs_command(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/health executes health_command and returns state."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        f"""
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "OK"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = [{sys.executable!r}, "-c", "print('healthy')"]
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses/shell/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == "shell"
+    assert data["state"] == "up"
+    assert "healthy" in data["message"]
+    assert "command" not in data
+
+
+def test_harness_health_no_command(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/health returns unknown when no health_command is defined."""
+    client = make_client(tmp_path)
+
+    response = client.get("/harnesses/shell/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == "shell"
+    assert data["state"] == "unknown"
+    assert "no health command" in data["message"]
+
+
+def test_harness_health_404(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/health returns 404 for unknown id."""
+    client = make_client(tmp_path)
+
+    response = client.get("/harnesses/missing/health")
+
+    assert response.status_code == 404
+
+
+def test_harness_health_command_fails(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/health returns down when health_command fails."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "OK"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = ["/usr/bin/false"]
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses/shell/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["state"] == "down"
+
+
+def test_harness_logs_returns_paths(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/logs returns the known log paths for a harness instance."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "OK"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+log_paths = ["/tmp/shell-stdout.log", "/tmp/shell-stderr.log"]
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses/shell/logs")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == "shell"
+    assert data["log_paths"] == ["/tmp/shell-stdout.log", "/tmp/shell-stderr.log"]
+
+
+def test_harness_logs_empty_paths(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/logs returns empty list when no log_paths are defined."""
+    client = make_client(tmp_path)
+
+    response = client.get("/harnesses/shell/logs")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["log_paths"] == []

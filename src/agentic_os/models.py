@@ -31,6 +31,7 @@ class AgentDefinition(BaseModel):
     config_fingerprint_command: list[str] | None = None
     attach_command: list[str] | None = None
     config_path: str | None = None
+    workspace_roots: list[str] = Field(default_factory=list)
     log_paths: list[str] = Field(default_factory=list)
     default_provider: str | None = None
     enabled: bool = True

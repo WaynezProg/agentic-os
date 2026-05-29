@@ -217,6 +217,18 @@ class AgenticClient:
     def diagnostics_resources(self) -> dict[str, Any]:
         return self._get("/diagnostics/resources")
 
+    def list_harnesses(self) -> dict[str, Any]:
+        return self._get("/harnesses")
+
+    def show_harness(self, harness_id: str) -> dict[str, Any]:
+        return self._get(f"/harnesses/{_validate_path_id(harness_id)}")
+
+    def harness_health(self, harness_id: str) -> dict[str, Any]:
+        return self._get(f"/harnesses/{_validate_path_id(harness_id)}/health")
+
+    def harness_logs(self, harness_id: str) -> dict[str, Any]:
+        return self._get(f"/harnesses/{_validate_path_id(harness_id)}/logs")
+
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
             response = client.get(path, params=params)

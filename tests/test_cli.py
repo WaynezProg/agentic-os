@@ -1192,6 +1192,10 @@ def test_client_control_plane_methods_build_expected_requests(monkeypatch: Any) 
     client.deprecate_policy("shell", reason="retire")
     client.undeprecate_policy("shell")
     client.diagnostics_resources()
+    client.list_harnesses()
+    client.show_harness("shell")
+    client.harness_health("shell")
+    client.harness_logs("shell")
 
     assert RecordingHttpxClient.requests == [
         {"method": "GET", "base_url": "http://api.example", "path": "/skills", "params": None},
@@ -1293,6 +1297,25 @@ def test_client_control_plane_methods_build_expected_requests(monkeypatch: Any) 
             "path": "/diagnostics/resources",
             "params": None,
         },
+        {"method": "GET", "base_url": "http://api.example", "path": "/harnesses", "params": None},
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/harnesses/shell",
+            "params": None,
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/harnesses/shell/health",
+            "params": None,
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/harnesses/shell/logs",
+            "params": None,
+        },
     ]
 
 
@@ -1333,6 +1356,9 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.disable_mcp_server(unsafe_id),
         lambda: client.show_policy(unsafe_id),
         lambda: client.upsert_policy(unsafe_id, {}),
+        lambda: client.show_harness(unsafe_id),
+        lambda: client.harness_health(unsafe_id),
+        lambda: client.harness_logs(unsafe_id),
         lambda: client.fleet_instance_health(unsafe_id),
         lambda: client.deprecate_skill(unsafe_id),
         lambda: client.undeprecate_skill(unsafe_id),
