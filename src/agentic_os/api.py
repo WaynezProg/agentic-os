@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from agentic_os.approvals import ApprovalCreate, ApprovalRecord, ApprovalStatus, ApprovalStore
 from agentic_os.audit import AuditEvent, AuditStore
 from agentic_os.control_plane import (
     ControlPlaneStore,
@@ -20,7 +22,9 @@ from agentic_os.control_plane import (
     PolicyEvaluationResult,
     PolicyUpsert,
     SkillUpsert,
+    SunsetChange,
 )
+from agentic_os.diagnostics import resource_snapshot
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
@@ -81,6 +85,16 @@ class PolicyEvaluateRequest(BaseModel):
     cwd: str | None = None
 
 
+class ApprovalRejectRequest(BaseModel):
+    reason: str = ""
+
+
+class DeprecationRequest(BaseModel):
+    reason: str = ""
+    replacement_id: str | None = None
+    sunset_at: str | None = None
+
+
 def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     state_dir.mkdir(parents=True, exist_ok=True)
     registry = Registry(registry_path)
@@ -88,6 +102,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     store.init()
     memory_store = MemoryStore(state_dir / "agentic-os.db")
     memory_store.init()
+    approval_store = ApprovalStore(state_dir / "agentic-os.db")
+    approval_store.init()
     control_plane = ControlPlaneStore(state_dir / "agentic-os.db")
     control_plane.init()
     fleet_store = FleetStore(state_dir / "agentic-os.db")
@@ -104,6 +120,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     app.state.fleet_store = fleet_store
     app.state.audit_store = audit_store
     app.state.control_plane = control_plane
+    app.state.approval_store = approval_store
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
@@ -338,6 +355,112 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             _wait_for_short_command(supervisor, session.id)
             return supervisor.store.get_session(session.id).model_dump()
 
+    @app.get("/approvals")
+    def list_approvals() -> dict[str, object]:
+        return {
+            "approvals": [
+                _asdict(_refresh_approval(approval)) for approval in approval_store.list()
+            ]
+        }
+
+    @app.get("/approvals/{approval_id}")
+    def show_approval(approval_id: str) -> dict[str, Any]:
+        try:
+            return _asdict(_refresh_approval(approval_store.get(approval_id)))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/approvals/{approval_id}/approve")
+    def approve_approval(approval_id: str) -> dict[str, Any]:
+        try:
+            approval = approval_store.get(approval_id)
+            if approval.status != ApprovalStatus.PENDING:
+                raise ValueError(f"approval {approval_id} is not pending")
+            _check_capacity(approval.agent_id)
+            policy_result = _evaluate_session_policy(approval.agent_id, approval.cwd)
+            if policy_result is None or policy_result.decision == "deny":
+                reason = (
+                    policy_result.reason
+                    if policy_result is not None
+                    else f"no policy configured for {approval.agent_id}"
+                )
+                approval_store.expire(approval_id, reason)
+                audit_store.record(
+                    "governance",
+                    approval.agent_id,
+                    "approval_expired",
+                    f"approval {approval_id} expired: {reason}",
+                    metadata={
+                        "approval_id": approval_id,
+                        "source_session_id": approval.source_session_id,
+                        "reason": reason,
+                    },
+                )
+                raise HTTPException(status_code=409, detail=reason) from None
+            claimed = approval_store.claim(approval_id)
+            session = supervisor.start(
+                claimed.agent_id,
+                claimed.cwd,
+                claimed.argv,
+                env=claimed.env,
+            )
+            audit_store.record(
+                "governance",
+                claimed.agent_id,
+                "policy_evaluated",
+                f"approved launch: {policy_result.reason}",
+                metadata=_policy_evaluation_metadata(session.id, policy_result),
+            )
+            approved = approval_store.link_approved_session(
+                approval_id,
+                approved_session_id=session.id,
+            )
+            audit_store.record(
+                "governance",
+                claimed.agent_id,
+                "approval_approved",
+                f"approved {approval_id}",
+                metadata={
+                    "approval_id": approval_id,
+                    "source_session_id": claimed.source_session_id,
+                    "approved_session_id": session.id,
+                },
+            )
+            audit_store.record(
+                "governance",
+                claimed.agent_id,
+                "run_started_after_approval",
+                f"session {session.id} started after approval",
+                metadata={"approval_id": approval_id, "approved_session_id": session.id},
+            )
+            _wait_for_short_command(supervisor, session.id)
+            return _asdict(approved)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/approvals/{approval_id}/reject")
+    def reject_approval(approval_id: str, request: ApprovalRejectRequest) -> dict[str, Any]:
+        try:
+            rejected = approval_store.reject(approval_id, request.reason)
+            audit_store.record(
+                "governance",
+                rejected.agent_id,
+                "approval_rejected",
+                f"rejected {approval_id}",
+                metadata={
+                    "approval_id": approval_id,
+                    "source_session_id": rejected.source_session_id,
+                    "reason": request.reason,
+                },
+            )
+            return _asdict(rejected)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.post("/sessions/{session_id}/memory/summary")
     def create_session_memory_summary(session_id: str) -> dict[str, Any]:
         return _asdict(_build_and_store_summary(session_id))
@@ -387,11 +510,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.get("/skills")
     def list_skills() -> dict[str, object]:
+        _apply_sunset_with_audit()
         return {"skills": [_asdict(skill) for skill in control_plane.list_skills()]}
 
     @app.get("/skills/{skill_id}")
     def show_skill(skill_id: str) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             return _asdict(control_plane.get_skill(skill_id))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -401,6 +526,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/skills/{skill_id}")
     def upsert_skill(skill_id: str, request: SkillUpsertRequest) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             try:
                 previous = control_plane.get_skill(skill_id)
             except KeyError:
@@ -430,6 +556,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/skills/{skill_id}/disable")
     def disable_skill(skill_id: str) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             result = control_plane.disable_skill(skill_id)
             audit_store.record("skill", skill_id, "skill_disabled", f"disabled skill {skill_id}")
             return _asdict(result)
@@ -439,22 +566,60 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/skills/{skill_id}/deprecate")
-    def deprecate_skill(skill_id: str) -> dict[str, Any]:
+    def deprecate_skill(
+        skill_id: str,
+        request: DeprecationRequest | None = None,
+    ) -> dict[str, Any]:
         try:
-            control_plane.get_skill(skill_id)
+            _apply_sunset_with_audit()
+            previous = control_plane.get_skill(skill_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        result = control_plane.deprecate_skill(skill_id)
-        audit_store.record("skill", skill_id, "skill_deprecated", f"deprecated skill {skill_id}")
+        payload = request or DeprecationRequest()
+        result = control_plane.deprecate_skill(
+            skill_id,
+            reason=payload.reason,
+            replacement_id=payload.replacement_id,
+            sunset_at=payload.sunset_at,
+        )
+        audit_store.record(
+            "skill",
+            skill_id,
+            "skill_deprecated",
+            f"deprecated skill {skill_id}",
+            metadata=_lifecycle_metadata(previous, result),
+        )
+        _apply_sunset_with_audit()
         return _asdict(result)
+
+    @app.post("/skills/{skill_id}/undeprecate")
+    def undeprecate_skill(skill_id: str) -> dict[str, Any]:
+        try:
+            _apply_sunset_with_audit()
+            previous = control_plane.get_skill(skill_id)
+            result = control_plane.undeprecate_skill(skill_id)
+            audit_store.record(
+                "skill",
+                skill_id,
+                "skill_undeprecated",
+                f"undeprecated skill {skill_id}",
+                metadata=_lifecycle_metadata(previous, result),
+            )
+            return _asdict(result)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/mcp")
     def list_mcp_servers() -> dict[str, object]:
+        _apply_sunset_with_audit()
         return {"servers": [_asdict(server) for server in control_plane.list_mcp_servers()]}
 
     @app.get("/mcp/{server_id}")
     def show_mcp_server(server_id: str) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             return _asdict(control_plane.get_mcp_server(server_id))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -464,6 +629,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/mcp/{server_id}")
     def upsert_mcp_server(server_id: str, request: McpServerUpsertRequest) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             try:
                 previous = control_plane.get_mcp_server(server_id)
             except KeyError:
@@ -494,6 +660,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/mcp/{server_id}/disable")
     def disable_mcp_server(server_id: str) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             result = control_plane.disable_mcp_server(server_id)
             audit_store.record("mcp", server_id, "mcp_disabled", f"disabled mcp server {server_id}")
             return _asdict(result)
@@ -503,22 +670,60 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/mcp/{server_id}/deprecate")
-    def deprecate_mcp_server(server_id: str) -> dict[str, Any]:
+    def deprecate_mcp_server(
+        server_id: str,
+        request: DeprecationRequest | None = None,
+    ) -> dict[str, Any]:
         try:
-            control_plane.get_mcp_server(server_id)
+            _apply_sunset_with_audit()
+            previous = control_plane.get_mcp_server(server_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        result = control_plane.deprecate_mcp_server(server_id)
-        audit_store.record("mcp", server_id, "mcp_deprecated", f"deprecated mcp server {server_id}")
+        payload = request or DeprecationRequest()
+        result = control_plane.deprecate_mcp_server(
+            server_id,
+            reason=payload.reason,
+            replacement_id=payload.replacement_id,
+            sunset_at=payload.sunset_at,
+        )
+        audit_store.record(
+            "mcp",
+            server_id,
+            "mcp_deprecated",
+            f"deprecated mcp server {server_id}",
+            metadata=_lifecycle_metadata(previous, result),
+        )
+        _apply_sunset_with_audit()
         return _asdict(result)
+
+    @app.post("/mcp/{server_id}/undeprecate")
+    def undeprecate_mcp_server(server_id: str) -> dict[str, Any]:
+        try:
+            _apply_sunset_with_audit()
+            previous = control_plane.get_mcp_server(server_id)
+            result = control_plane.undeprecate_mcp_server(server_id)
+            audit_store.record(
+                "mcp",
+                server_id,
+                "mcp_undeprecated",
+                f"undeprecated mcp server {server_id}",
+                metadata=_lifecycle_metadata(previous, result),
+            )
+            return _asdict(result)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/policy")
     def list_policies() -> dict[str, object]:
+        _apply_sunset_with_audit()
         return {"policies": [_asdict(policy) for policy in control_plane.list_policies()]}
 
     @app.post("/policy/evaluate")
     def evaluate_policy(request: PolicyEvaluateRequest) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             return _asdict(
                 control_plane.evaluate_policy(
                     PolicyEvaluationRequest(
@@ -537,6 +742,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.get("/policy/{agent_id}")
     def show_policy(agent_id: str) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             return _asdict(control_plane.get_policy(agent_id))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -546,6 +752,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/policy/{agent_id}")
     def upsert_policy(agent_id: str, request: PolicyUpsertRequest) -> dict[str, Any]:
         try:
+            _apply_sunset_with_audit()
             try:
                 previous = control_plane.get_policy(agent_id)
             except KeyError:
@@ -576,16 +783,50 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/policy/{agent_id}/deprecate")
-    def deprecate_policy(agent_id: str) -> dict[str, Any]:
+    def deprecate_policy(
+        agent_id: str,
+        request: DeprecationRequest | None = None,
+    ) -> dict[str, Any]:
         try:
-            control_plane.get_policy(agent_id)
+            _apply_sunset_with_audit()
+            previous = control_plane.get_policy(agent_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        result = control_plane.deprecate_policy(agent_id)
-        audit_store.record(
-            "policy", agent_id, "policy_deprecated", f"deprecated policy for {agent_id}"
+        payload = request or DeprecationRequest()
+        result = control_plane.deprecate_policy(
+            agent_id,
+            reason=payload.reason,
+            replacement_id=payload.replacement_id,
+            sunset_at=payload.sunset_at,
         )
+        audit_store.record(
+            "policy",
+            agent_id,
+            "policy_deprecated",
+            f"deprecated policy for {agent_id}",
+            metadata=_lifecycle_metadata(previous, result),
+        )
+        _apply_sunset_with_audit()
         return _asdict(result)
+
+    @app.post("/policy/{agent_id}/undeprecate")
+    def undeprecate_policy(agent_id: str) -> dict[str, Any]:
+        try:
+            _apply_sunset_with_audit()
+            previous = control_plane.get_policy(agent_id)
+            result = control_plane.undeprecate_policy(agent_id)
+            audit_store.record(
+                "policy",
+                agent_id,
+                "policy_undeprecated",
+                f"undeprecated policy for {agent_id}",
+                metadata=_lifecycle_metadata(previous, result),
+            )
+            return _asdict(result)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/audit/events")
     def audit_events(
@@ -601,6 +842,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.get("/audit/policy-coverage")
     def audit_policy_coverage() -> dict[str, object]:
+        _apply_sunset_with_audit()
         agents = registry.list_agents()
         agent_ids = [a.id for a in agents]
         sessions = store.list_sessions()
@@ -650,6 +892,19 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         await prober.probe_all(probeable)
         return {"probed": len(probeable)}
 
+    @app.get("/diagnostics/resources")
+    def diagnostics_resources() -> dict[str, int]:
+        db_path = state_dir / "agentic-os.db"
+        snapshot = resource_snapshot(state_dir, db_path)
+        snapshot.update(
+            {
+                "session_count": _sqlite_count(db_path, "sessions"),
+                "audit_event_count": _sqlite_count(db_path, "audit_events"),
+                "fleet_event_count": _sqlite_count(db_path, "fleet_events"),
+            }
+        )
+        return snapshot
+
     def _get_session_or_404(session_id: str) -> SessionRecord:
         try:
             return store.get_session(session_id)
@@ -689,33 +944,110 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def _requires_session_start_approval(tool_names: list[str]) -> bool:
         return "*" in tool_names or SESSION_START_APPROVAL_TOOL in tool_names
 
+    def _record_sunset_changes(changes: list[SunsetChange]) -> None:
+        event_names = {
+            "skill": "skill_auto_disabled_after_sunset",
+            "mcp": "mcp_auto_disabled_after_sunset",
+            "policy": "policy_auto_disabled_after_sunset",
+        }
+        for change in changes:
+            audit_store.record(
+                change.domain,
+                change.entity_id,
+                event_names[change.domain],
+                f"auto disabled {change.entity_id} after sunset",
+                metadata={
+                    "sunset_at": change.sunset_at,
+                    "before": change.before,
+                    "after": change.after,
+                },
+            )
+
+    def _apply_sunset_with_audit() -> None:
+        _record_sunset_changes(control_plane.apply_sunset())
+
+    def _refresh_approval(approval: ApprovalRecord) -> ApprovalRecord:
+        if approval.status != ApprovalStatus.PENDING:
+            return approval
+        policy_result = _evaluate_session_policy(approval.agent_id, approval.cwd)
+        if policy_result is not None and policy_result.decision != "deny":
+            return approval
+        reason = (
+            policy_result.reason
+            if policy_result is not None
+            else f"no policy configured for {approval.agent_id}"
+        )
+        expired = approval_store.expire(approval.id, reason)
+        audit_store.record(
+            "governance",
+            approval.agent_id,
+            "approval_expired",
+            f"approval {approval.id} expired: {reason}",
+            metadata={
+                "approval_id": approval.id,
+                "source_session_id": approval.source_session_id,
+                "reason": reason,
+            },
+        )
+        return expired
+
     def _reject_session(rendered: RenderedRun, result: PolicyEvaluationResult) -> JSONResponse:
         session = supervisor.start_rejected(
             rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
         )
+        approval_id = None
+        metadata = _policy_evaluation_metadata(session.id, result)
+        if result.decision == "approval_required":
+            approval = approval_store.create(
+                ApprovalCreate(
+                    source_session_id=session.id,
+                    agent_id=rendered.agent.id,
+                    cwd=rendered.cwd,
+                    argv=rendered.argv,
+                    env=rendered.env,
+                    reason=result.reason,
+                )
+            )
+            approval_id = approval.id
+            metadata["approval_id"] = approval.id
+            audit_store.record(
+                "governance",
+                rendered.agent.id,
+                "approval_requested",
+                f"approval {approval.id} requested",
+                metadata={
+                    "approval_id": approval.id,
+                    "source_session_id": session.id,
+                    "reason": result.reason,
+                },
+            )
         audit_store.record(
             "governance",
             rendered.agent.id,
             "policy_evaluated",
             f"{result.decision}: {result.reason}",
-            metadata=_policy_evaluation_metadata(session.id, result),
+            metadata=metadata,
         )
         event_type = "policy_denied" if result.decision == "deny" else "policy_approval_required"
         store.record_event(
             session.id,
             event_type,
             result.reason,
-            {"decision": result.decision, "agent_id": result.agent_id},
-        )
-        status_code = 403 if result.decision == "deny" else 409
-        return JSONResponse(
-            status_code=status_code,
-            content={
-                "detail": result.reason,
+            {
                 "decision": result.decision,
-                "session_id": session.id,
+                "agent_id": result.agent_id,
+                **({"approval_id": approval_id} if approval_id is not None else {}),
             },
         )
+        status_code = 403 if result.decision == "deny" else 409
+        content: dict[str, object] = {
+            "detail": result.reason,
+            "decision": result.decision,
+            "session_id": session.id,
+        }
+        if approval_id is not None:
+            content["approval_id"] = approval_id
+        return JSONResponse(status_code=status_code, content=content)
 
     return app
 
@@ -760,10 +1092,18 @@ def _asdict(record: object) -> dict[str, Any]:
     return asdict(record)
 
 
-def _deprecated_reset_metadata(previous: object | None, current: object) -> dict[str, object] | None:
-    if bool(getattr(previous, "deprecated", False)) and not bool(getattr(current, "deprecated", False)):
+def _deprecated_reset_metadata(
+    previous: object | None, current: object
+) -> dict[str, object] | None:
+    if bool(getattr(previous, "deprecated", False)) and not bool(
+        getattr(current, "deprecated", False)
+    ):
         return {"field": "deprecated", "before": True, "after": False}
     return None
+
+
+def _lifecycle_metadata(previous: object, current: object) -> dict[str, object]:
+    return {"before": _asdict(previous), "after": _asdict(current)}
 
 
 def _policy_evaluation_metadata(
@@ -784,3 +1124,11 @@ def _wait_for_short_command(supervisor: ProcessSupervisor, session_id: str) -> N
         if session.status.value in {"succeeded", "failed", "stopped"}:
             return
         time.sleep(0.025)
+
+
+def _sqlite_count(db_path: Path, table: str) -> int:
+    if table not in {"sessions", "audit_events", "fleet_events"}:
+        raise ValueError(f"unsupported diagnostics table: {table}")
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+    return int(row[0])

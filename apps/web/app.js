@@ -24,6 +24,9 @@ const ENDPOINTS = Object.freeze({
   mcp: "/mcp",
   policySummary: "/policy",
   policyEvaluate: "/policy/evaluate",
+  approvals: "/approvals",
+  approvalApprove: "/approvals/{approval_id}/approve",
+  approvalReject: "/approvals/{approval_id}/reject",
   fleetHealth: "/fleet/health",
   fleetInstanceHealth: "/fleet/{agent_id}/health",
   fleetEvents: "/fleet/events",
@@ -190,6 +193,10 @@ function normalizeErrorDetail(detail) {
 
 async function postEmpty(path) {
   return apiFetch(path, { method: "POST", body: JSON.stringify({}) });
+}
+
+async function postJson(path, payload) {
+  return apiFetch(path, { method: "POST", body: JSON.stringify(payload) });
 }
 
 async function loadSessionDetail(sessionId) {
@@ -474,7 +481,7 @@ async function loadMemories(query = "") {
 }
 
 async function loadSkillsMcp() {
-  await Promise.allSettled([loadSkills(), loadMcpServers(), loadPolicies()]);
+  await Promise.allSettled([loadSkills(), loadMcpServers(), loadPolicies(), loadApprovals()]);
 }
 
 async function loadSkills() {
@@ -483,7 +490,7 @@ async function loadSkills() {
     const data = await apiFetch(buildEndpoint("skills"));
     const skills = asArray(data.skills);
     if (skills.length === 0) {
-      renderEmptyRow(body, 5, "No skills returned.");
+      renderEmptyRow(body, 8, "No skills returned.");
       return;
     }
     body.innerHTML = skills
@@ -495,12 +502,15 @@ async function loadSkills() {
             <td>${skill.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(skill.enabled !== false))}</td>
             <td>${escapeHtml(skill.source)}</td>
             <td>${escapeHtml(asArray(skill.tags).join(", "))}</td>
+            <td>${escapeHtml(skill.deprecation_reason)}</td>
+            <td class="cell-id">${escapeHtml(skill.replacement_id)}</td>
+            <td>${escapeHtml(skill.sunset_at)}</td>
           </tr>
         `,
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 5, error.message);
+    renderErrorRow(body, 8, error.message);
   }
 }
 
@@ -510,7 +520,7 @@ async function loadMcpServers() {
     const data = await apiFetch(buildEndpoint("mcp"));
     const servers = asArray(data.servers);
     if (servers.length === 0) {
-      renderEmptyRow(body, 5, "No MCP servers returned.");
+      renderEmptyRow(body, 8, "No MCP servers returned.");
       return;
     }
     body.innerHTML = servers
@@ -522,13 +532,55 @@ async function loadMcpServers() {
             <td>${server.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(server.enabled !== false))}</td>
             <td>${escapeHtml(server.transport)}</td>
             <td class="cell-code">${escapeHtml(asArray(server.command_preview).join(" "))}</td>
+            <td>${escapeHtml(server.deprecation_reason)}</td>
+            <td class="cell-id">${escapeHtml(server.replacement_id)}</td>
+            <td>${escapeHtml(server.sunset_at)}</td>
           </tr>
         `,
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 5, error.message);
+    renderErrorRow(body, 8, error.message);
   }
+}
+
+async function loadApprovals() {
+  const body = byId("approvals-body");
+  try {
+    const data = await apiFetch(buildEndpoint("approvals"));
+    const approvals = asArray(data.approvals);
+    if (approvals.length === 0) {
+      renderEmptyRow(body, 6, "No approvals returned.");
+      return;
+    }
+    body.innerHTML = approvals.map(renderApprovalRow).join("");
+  } catch (error) {
+    renderErrorRow(body, 6, error.message);
+  }
+}
+
+function renderApprovalRow(approval) {
+  const status = String(approval.status || "unknown");
+  const isPending = status === "pending";
+  return `
+    <tr>
+      <td class="cell-id">${escapeHtml(approval.id)}</td>
+      <td>${escapeHtml(approval.agent_id)}</td>
+      <td><span class="${statusPillClass(status)}">${escapeHtml(status)}</span></td>
+      <td class="cell-id">${escapeHtml(approval.source_session_id)}</td>
+      <td class="cell-code">${escapeHtml(approval.reason)}</td>
+      <td>
+        <div class="actions">
+          <button type="button" data-action="approve-approval" data-approval-id="${escapeHtml(approval.id)}" ${
+            isPending ? "" : "disabled"
+          }>approve</button>
+          <button type="button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}" ${
+            isPending ? "" : "disabled"
+          }>reject</button>
+        </div>
+      </td>
+    </tr>
+  `;
 }
 
 async function loadPolicies() {
@@ -537,7 +589,7 @@ async function loadPolicies() {
     const data = await apiFetch(buildEndpoint("policySummary"));
     const policies = asArray(data.policies);
     if (policies.length === 0) {
-      renderEmptyRow(body, 4, "No policies returned.");
+      renderEmptyRow(body, 7, "No policies returned.");
       return;
     }
     body.innerHTML = policies
@@ -548,12 +600,15 @@ async function loadPolicies() {
             <td>${policy.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(policy.enabled !== false))}</td>
             <td>${escapeHtml(policy.readonly ? "readonly" : "write")}</td>
             <td>${escapeHtml(policy.rate_limit_per_minute)}</td>
+            <td>${escapeHtml(policy.deprecation_reason)}</td>
+            <td class="cell-id">${escapeHtml(policy.replacement_id)}</td>
+            <td>${escapeHtml(policy.sunset_at)}</td>
           </tr>
         `,
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 4, error.message);
+    renderErrorRow(body, 7, error.message);
   }
 }
 
@@ -693,6 +748,7 @@ async function handleActionClick(event) {
   const sessionId = button.dataset.sessionId;
   const agentId = button.dataset.agentId;
   const itemId = button.dataset.itemId;
+  const approvalId = button.dataset.approvalId;
   button.disabled = true;
 
   try {
@@ -740,16 +796,35 @@ async function handleActionClick(event) {
       const summary = await loadSessionSummary(sessionId);
       renderSessionSummary(summary);
       setMessage("memory-message", `loaded summary for ${sessionId}`);
+    } else if (action === "approve-approval" && approvalId) {
+      await approveApproval(approvalId);
+    } else if (action === "reject-approval" && approvalId) {
+      await rejectApproval(approvalId);
     }
   } catch (error) {
     if (["approve-memory", "reject-memory", "view-summary"].includes(action)) {
       setMessage("memory-message", error.message, true);
+    } else if (["approve-approval", "reject-approval"].includes(action)) {
+      setMessage("agents-message", error.message, true);
     } else {
       setMessage("sessions-message", error.message, true);
     }
   } finally {
     button.disabled = false;
   }
+}
+
+async function approveApproval(approvalId) {
+  await postEmpty(buildEndpoint("approvalApprove", { approval_id: approvalId }));
+  setMessage("agents-message", `approved ${approvalId}`);
+  await Promise.allSettled([loadApprovals(), loadSessions()]);
+}
+
+async function rejectApproval(approvalId) {
+  const reason = window.prompt("Rejection reason", "") || "";
+  await postJson(buildEndpoint("approvalReject", { approval_id: approvalId }), { reason });
+  setMessage("agents-message", `rejected ${approvalId}`);
+  await loadApprovals();
 }
 
 async function loadFleet() {

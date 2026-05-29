@@ -48,6 +48,21 @@ class AgenticClient:
     def retry_session(self, session_id: str) -> dict[str, Any]:
         return self._post(f"/sessions/{_validate_path_id(session_id)}/retry", {})
 
+    def list_approvals(self) -> dict[str, Any]:
+        return self._get("/approvals")
+
+    def show_approval(self, approval_id: str) -> dict[str, Any]:
+        return self._get(f"/approvals/{_validate_path_id(approval_id)}")
+
+    def approve_approval(self, approval_id: str) -> dict[str, Any]:
+        return self._post(f"/approvals/{_validate_path_id(approval_id)}/approve", {})
+
+    def reject_approval(self, approval_id: str, reason: str = "") -> dict[str, Any]:
+        return self._post(
+            f"/approvals/{_validate_path_id(approval_id)}/reject",
+            {"reason": reason},
+        )
+
     def summarize_session(self, session_id: str) -> dict[str, Any]:
         return self._post(f"/sessions/{_validate_path_id(session_id)}/memory/summary", {})
 
@@ -132,14 +147,53 @@ class AgenticClient:
     def fleet_probe(self) -> dict[str, Any]:
         return self._post("/fleet/probe", {})
 
-    def deprecate_skill(self, skill_id: str) -> dict[str, Any]:
-        return self._post(f"/skills/{_validate_path_id(skill_id)}/deprecate", {})
+    def deprecate_skill(
+        self,
+        skill_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> dict[str, Any]:
+        return self._post(
+            f"/skills/{_validate_path_id(skill_id)}/deprecate",
+            _deprecation_payload(reason, replacement_id, sunset_at),
+        )
 
-    def deprecate_mcp_server(self, server_id: str) -> dict[str, Any]:
-        return self._post(f"/mcp/{_validate_path_id(server_id)}/deprecate", {})
+    def undeprecate_skill(self, skill_id: str) -> dict[str, Any]:
+        return self._post(f"/skills/{_validate_path_id(skill_id)}/undeprecate", {})
 
-    def deprecate_policy(self, agent_id: str) -> dict[str, Any]:
-        return self._post(f"/policy/{_validate_path_id(agent_id)}/deprecate", {})
+    def deprecate_mcp_server(
+        self,
+        server_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> dict[str, Any]:
+        return self._post(
+            f"/mcp/{_validate_path_id(server_id)}/deprecate",
+            _deprecation_payload(reason, replacement_id, sunset_at),
+        )
+
+    def undeprecate_mcp_server(self, server_id: str) -> dict[str, Any]:
+        return self._post(f"/mcp/{_validate_path_id(server_id)}/undeprecate", {})
+
+    def deprecate_policy(
+        self,
+        agent_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> dict[str, Any]:
+        return self._post(
+            f"/policy/{_validate_path_id(agent_id)}/deprecate",
+            _deprecation_payload(reason, replacement_id, sunset_at),
+        )
+
+    def undeprecate_policy(self, agent_id: str) -> dict[str, Any]:
+        return self._post(f"/policy/{_validate_path_id(agent_id)}/undeprecate", {})
 
     def audit_events(
         self,
@@ -160,6 +214,9 @@ class AgenticClient:
     def audit_policy_coverage(self) -> dict[str, Any]:
         return self._get("/audit/policy-coverage")
 
+    def diagnostics_resources(self) -> dict[str, Any]:
+        return self._get("/diagnostics/resources")
+
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
             response = client.get(path, params=params)
@@ -177,3 +234,18 @@ def _validate_path_id(value: str) -> str:
     if not _PATH_ID_PATTERN.fullmatch(value):
         raise ValueError("unsafe path id")
     return value
+
+
+def _deprecation_payload(
+    reason: str,
+    replacement_id: str | None,
+    sunset_at: str | None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    if reason:
+        payload["reason"] = reason
+    if replacement_id is not None:
+        payload["replacement_id"] = replacement_id
+    if sunset_at is not None:
+        payload["sunset_at"] = sunset_at
+    return payload

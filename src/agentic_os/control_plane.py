@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit, urlunsplit
@@ -108,6 +109,10 @@ class SkillRecord:
     tags: list[str]
     enabled: bool
     deprecated: bool
+    deprecated_at: str | None
+    deprecation_reason: str
+    replacement_id: str | None
+    sunset_at: str | None
     created_at: str
     updated_at: str
 
@@ -134,6 +139,10 @@ class McpServerRecord:
     env_keys: list[str]
     enabled: bool
     deprecated: bool
+    deprecated_at: str | None
+    deprecation_reason: str
+    replacement_id: str | None
+    sunset_at: str | None
     created_at: str
     updated_at: str
 
@@ -156,6 +165,10 @@ class PolicyRecord:
     agent_id: str
     enabled: bool
     deprecated: bool
+    deprecated_at: str | None
+    deprecation_reason: str
+    replacement_id: str | None
+    sunset_at: str | None
     readonly: bool
     allowed_skill_ids: list[str]
     allowed_mcp_server_ids: list[str]
@@ -188,6 +201,15 @@ class PolicyEvaluationResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class SunsetChange:
+    domain: str
+    entity_id: str
+    sunset_at: str
+    before: dict[str, object]
+    after: dict[str, object]
+
+
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column_sql: str) -> None:
     try:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_sql}")
@@ -204,8 +226,24 @@ class ControlPlaneStore:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
             _add_column_if_missing(conn, "skills", "deprecated INTEGER NOT NULL DEFAULT 0")
+            _add_column_if_missing(conn, "skills", "deprecated_at TEXT")
+            _add_column_if_missing(conn, "skills", "deprecation_reason TEXT NOT NULL DEFAULT ''")
+            _add_column_if_missing(conn, "skills", "replacement_id TEXT")
+            _add_column_if_missing(conn, "skills", "sunset_at TEXT")
             _add_column_if_missing(conn, "mcp_servers", "deprecated INTEGER NOT NULL DEFAULT 0")
+            _add_column_if_missing(conn, "mcp_servers", "deprecated_at TEXT")
+            _add_column_if_missing(
+                conn, "mcp_servers", "deprecation_reason TEXT NOT NULL DEFAULT ''"
+            )
+            _add_column_if_missing(conn, "mcp_servers", "replacement_id TEXT")
+            _add_column_if_missing(conn, "mcp_servers", "sunset_at TEXT")
             _add_column_if_missing(conn, "agent_policies", "deprecated INTEGER NOT NULL DEFAULT 0")
+            _add_column_if_missing(conn, "agent_policies", "deprecated_at TEXT")
+            _add_column_if_missing(
+                conn, "agent_policies", "deprecation_reason TEXT NOT NULL DEFAULT ''"
+            )
+            _add_column_if_missing(conn, "agent_policies", "replacement_id TEXT")
+            _add_column_if_missing(conn, "agent_policies", "sunset_at TEXT")
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -214,6 +252,7 @@ class ControlPlaneStore:
 
     def upsert_skill(self, skill_id: str, request: SkillUpsert) -> SkillRecord:
         _validate_id(skill_id)
+        self.apply_sunset()
         with self.connect() as conn:
             conn.execute(
                 """
@@ -229,6 +268,10 @@ class ControlPlaneStore:
                   tags_json = excluded.tags_json,
                   enabled = excluded.enabled,
                   deprecated = 0,
+                  deprecated_at = NULL,
+                  deprecation_reason = '',
+                  replacement_id = NULL,
+                  sunset_at = NULL,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -241,15 +284,24 @@ class ControlPlaneStore:
                     int(request.enabled),
                 ),
             )
-        return self.get_skill(skill_id)
+        return self._get_skill_raw(skill_id)
 
     def list_skills(self) -> list[SkillRecord]:
+        self.apply_sunset()
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM skills ORDER BY id ASC").fetchall()
         return [_skill_from_row(row) for row in rows]
 
     def get_skill(self, skill_id: str) -> SkillRecord:
         _validate_id(skill_id)
+        self.apply_sunset()
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if row is None:
+            raise KeyError(skill_id)
+        return _skill_from_row(row)
+
+    def _get_skill_raw(self, skill_id: str) -> SkillRecord:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
         if row is None:
@@ -258,6 +310,7 @@ class ControlPlaneStore:
 
     def disable_skill(self, skill_id: str) -> SkillRecord:
         _validate_id(skill_id)
+        self.apply_sunset()
         with self.connect() as conn:
             cursor = conn.execute(
                 """
@@ -269,13 +322,51 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(skill_id)
-        return self.get_skill(skill_id)
+        return self._get_skill_raw(skill_id)
 
-    def deprecate_skill(self, skill_id: str) -> SkillRecord:
+    def deprecate_skill(
+        self,
+        skill_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> SkillRecord:
         _validate_id(skill_id)
+        self.apply_sunset()
         with self.connect() as conn:
             cursor = conn.execute(
-                "UPDATE skills SET deprecated = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                """
+                UPDATE skills
+                SET deprecated = 1,
+                    deprecated_at = COALESCE(deprecated_at, CURRENT_TIMESTAMP),
+                    deprecation_reason = ?,
+                    replacement_id = ?,
+                    sunset_at = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (reason, replacement_id, sunset_at, skill_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(skill_id)
+        return self._get_skill_raw(skill_id)
+
+    def undeprecate_skill(self, skill_id: str) -> SkillRecord:
+        _validate_id(skill_id)
+        self.apply_sunset()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE skills
+                SET deprecated = 0,
+                    deprecated_at = NULL,
+                    deprecation_reason = '',
+                    replacement_id = NULL,
+                    sunset_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
                 (skill_id,),
             )
             if cursor.rowcount != 1:
@@ -284,6 +375,7 @@ class ControlPlaneStore:
 
     def upsert_mcp_server(self, server_id: str, request: McpServerUpsert) -> McpServerRecord:
         _validate_id(server_id)
+        self.apply_sunset()
         _validate_transport(request.transport)
         command_preview = _redact_command_preview(request.command_preview)
         url = _redact_url(request.url) if request.url else None
@@ -305,6 +397,10 @@ class ControlPlaneStore:
                   env_keys_json = excluded.env_keys_json,
                   enabled = excluded.enabled,
                   deprecated = 0,
+                  deprecated_at = NULL,
+                  deprecation_reason = '',
+                  replacement_id = NULL,
+                  sunset_at = NULL,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -318,15 +414,24 @@ class ControlPlaneStore:
                     int(request.enabled),
                 ),
             )
-        return self.get_mcp_server(server_id)
+        return self._get_mcp_server_raw(server_id)
 
     def list_mcp_servers(self) -> list[McpServerRecord]:
+        self.apply_sunset()
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM mcp_servers ORDER BY id ASC").fetchall()
         return [_mcp_from_row(row) for row in rows]
 
     def get_mcp_server(self, server_id: str) -> McpServerRecord:
         _validate_id(server_id)
+        self.apply_sunset()
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM mcp_servers WHERE id = ?", (server_id,)).fetchone()
+        if row is None:
+            raise KeyError(server_id)
+        return _mcp_from_row(row)
+
+    def _get_mcp_server_raw(self, server_id: str) -> McpServerRecord:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM mcp_servers WHERE id = ?", (server_id,)).fetchone()
         if row is None:
@@ -335,6 +440,7 @@ class ControlPlaneStore:
 
     def disable_mcp_server(self, server_id: str) -> McpServerRecord:
         _validate_id(server_id)
+        self.apply_sunset()
         with self.connect() as conn:
             cursor = conn.execute(
                 """
@@ -346,13 +452,51 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(server_id)
-        return self.get_mcp_server(server_id)
+        return self._get_mcp_server_raw(server_id)
 
-    def deprecate_mcp_server(self, server_id: str) -> McpServerRecord:
+    def deprecate_mcp_server(
+        self,
+        server_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> McpServerRecord:
         _validate_id(server_id)
+        self.apply_sunset()
         with self.connect() as conn:
             cursor = conn.execute(
-                "UPDATE mcp_servers SET deprecated = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                """
+                UPDATE mcp_servers
+                SET deprecated = 1,
+                    deprecated_at = COALESCE(deprecated_at, CURRENT_TIMESTAMP),
+                    deprecation_reason = ?,
+                    replacement_id = ?,
+                    sunset_at = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (reason, replacement_id, sunset_at, server_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(server_id)
+        return self._get_mcp_server_raw(server_id)
+
+    def undeprecate_mcp_server(self, server_id: str) -> McpServerRecord:
+        _validate_id(server_id)
+        self.apply_sunset()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE mcp_servers
+                SET deprecated = 0,
+                    deprecated_at = NULL,
+                    deprecation_reason = '',
+                    replacement_id = NULL,
+                    sunset_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
                 (server_id,),
             )
             if cursor.rowcount != 1:
@@ -361,6 +505,7 @@ class ControlPlaneStore:
 
     def upsert_policy(self, agent_id: str, request: PolicyUpsert) -> PolicyRecord:
         _validate_id(agent_id)
+        self.apply_sunset()
         with self.connect() as conn:
             conn.execute(
                 """
@@ -382,6 +527,10 @@ class ControlPlaneStore:
                   cwd_roots_json = excluded.cwd_roots_json,
                   rate_limit_per_minute = excluded.rate_limit_per_minute,
                   deprecated = 0,
+                  deprecated_at = NULL,
+                  deprecation_reason = '',
+                  replacement_id = NULL,
+                  sunset_at = NULL,
                   updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -397,15 +546,17 @@ class ControlPlaneStore:
                     request.rate_limit_per_minute,
                 ),
             )
-        return self.get_policy(agent_id)
+        return self._get_policy_raw(agent_id)
 
     def list_policies(self) -> list[PolicyRecord]:
+        self.apply_sunset()
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM agent_policies ORDER BY agent_id ASC").fetchall()
         return [_policy_from_row(row) for row in rows]
 
     def get_policy(self, agent_id: str) -> PolicyRecord:
         _validate_id(agent_id)
+        self.apply_sunset()
         with self.connect() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_policies WHERE agent_id = ?",
@@ -415,11 +566,59 @@ class ControlPlaneStore:
             raise KeyError(agent_id)
         return _policy_from_row(row)
 
-    def deprecate_policy(self, agent_id: str) -> PolicyRecord:
+    def _get_policy_raw(self, agent_id: str) -> PolicyRecord:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM agent_policies WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(agent_id)
+        return _policy_from_row(row)
+
+    def deprecate_policy(
+        self,
+        agent_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> PolicyRecord:
         _validate_id(agent_id)
+        self.apply_sunset()
         with self.connect() as conn:
             cursor = conn.execute(
-                "UPDATE agent_policies SET deprecated = 1, updated_at = CURRENT_TIMESTAMP WHERE agent_id = ?",
+                """
+                UPDATE agent_policies
+                SET deprecated = 1,
+                    deprecated_at = COALESCE(deprecated_at, CURRENT_TIMESTAMP),
+                    deprecation_reason = ?,
+                    replacement_id = ?,
+                    sunset_at = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+                """,
+                (reason, replacement_id, sunset_at, agent_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(agent_id)
+        return self._get_policy_raw(agent_id)
+
+    def undeprecate_policy(self, agent_id: str) -> PolicyRecord:
+        _validate_id(agent_id)
+        self.apply_sunset()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE agent_policies
+                SET deprecated = 0,
+                    deprecated_at = NULL,
+                    deprecation_reason = '',
+                    replacement_id = NULL,
+                    sunset_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+                """,
                 (agent_id,),
             )
             if cursor.rowcount != 1:
@@ -428,6 +627,7 @@ class ControlPlaneStore:
 
     def evaluate_policy(self, request: PolicyEvaluationRequest) -> PolicyEvaluationResult:
         _validate_id(request.agent_id)
+        self.apply_sunset()
         try:
             policy = self.get_policy(request.agent_id)
         except KeyError:
@@ -593,6 +793,52 @@ class ControlPlaneStore:
             warnings.append(f"mcp server {server_id} is deprecated")
         return None, warnings
 
+    def apply_sunset(self, now: datetime | None = None) -> list[SunsetChange]:
+        current = now or datetime.now(UTC)
+        changes: list[SunsetChange] = []
+        specs = [
+            ("skill", "skills", "id"),
+            ("mcp", "mcp_servers", "id"),
+            ("policy", "agent_policies", "agent_id"),
+        ]
+        with self.connect() as conn:
+            for domain, table, id_column in specs:
+                rows = conn.execute(
+                    f"""
+                    SELECT *
+                    FROM {table}
+                    WHERE deprecated = 1 AND enabled = 1 AND sunset_at IS NOT NULL
+                    """
+                ).fetchall()
+                for row in rows:
+                    entity_id = str(row[id_column])
+                    sunset_at = str(row["sunset_at"])
+                    if not _sunset_expired(sunset_at, current):
+                        continue
+                    before = asdict(_record_from_domain_row(domain, row))
+                    conn.execute(
+                        f"""
+                        UPDATE {table}
+                        SET enabled = 0, updated_at = CURRENT_TIMESTAMP
+                        WHERE {id_column} = ?
+                        """,
+                        (entity_id,),
+                    )
+                    after_row = conn.execute(
+                        f"SELECT * FROM {table} WHERE {id_column} = ?",
+                        (entity_id,),
+                    ).fetchone()
+                    changes.append(
+                        SunsetChange(
+                            domain=domain,
+                            entity_id=entity_id,
+                            sunset_at=sunset_at,
+                            before=before,
+                            after=asdict(_record_from_domain_row(domain, after_row)),
+                        )
+                    )
+        return changes
+
 
 def _decision(
     agent_id: str,
@@ -698,6 +944,26 @@ def _validate_transport(value: str) -> None:
         raise ValueError(f"unsupported MCP transport: {value}")
 
 
+def _sunset_expired(sunset_at: str, now: datetime) -> bool:
+    try:
+        parsed = datetime.fromisoformat(sunset_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed <= now
+
+
+def _record_from_domain_row(domain: str, row: sqlite3.Row) -> object:
+    if domain == "skill":
+        return _skill_from_row(row)
+    if domain == "mcp":
+        return _mcp_from_row(row)
+    if domain == "policy":
+        return _policy_from_row(row)
+    raise ValueError(f"unsupported sunset domain: {domain}")
+
+
 def _skill_from_row(row: sqlite3.Row) -> SkillRecord:
     return SkillRecord(
         id=row["id"],
@@ -708,6 +974,10 @@ def _skill_from_row(row: sqlite3.Row) -> SkillRecord:
         tags=_load_json_list(row["tags_json"]),
         enabled=bool(row["enabled"]),
         deprecated=bool(row["deprecated"]),
+        deprecated_at=row["deprecated_at"],
+        deprecation_reason=row["deprecation_reason"],
+        replacement_id=row["replacement_id"],
+        sunset_at=row["sunset_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -724,6 +994,10 @@ def _mcp_from_row(row: sqlite3.Row) -> McpServerRecord:
         env_keys=_load_json_list(row["env_keys_json"]),
         enabled=bool(row["enabled"]),
         deprecated=bool(row["deprecated"]),
+        deprecated_at=row["deprecated_at"],
+        deprecation_reason=row["deprecation_reason"],
+        replacement_id=row["replacement_id"],
+        sunset_at=row["sunset_at"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -734,6 +1008,10 @@ def _policy_from_row(row: sqlite3.Row) -> PolicyRecord:
         agent_id=row["agent_id"],
         enabled=bool(row["enabled"]),
         deprecated=bool(row["deprecated"]),
+        deprecated_at=row["deprecated_at"],
+        deprecation_reason=row["deprecation_reason"],
+        replacement_id=row["replacement_id"],
+        sunset_at=row["sunset_at"],
         readonly=bool(row["readonly"]),
         allowed_skill_ids=_load_json_list(row["allowed_skill_ids_json"]),
         allowed_mcp_server_ids=_load_json_list(row["allowed_mcp_server_ids_json"]),

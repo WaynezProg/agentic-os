@@ -94,12 +94,12 @@ When fixing a bug: write the failing test first against the relevant module's te
 - **State machine is enforced in `storage.py`.** Do not bypass `update_session_status`; add new transitions to `ALLOWED_TRANSITIONS` if genuinely needed.
 - **Secrets are redacted in `control_plane.py`.** Skills/MCP must reference secrets by env-var **name** (`MCP_TOKEN`), never values. URLs and command previews are redacted before storage/display — keep that invariant when adding new fields.
 - **No new daemons, supervisors, or process owners.** The single `agentd` process owns subprocesses, logs, DB, and state dir.
-- **No LLM calls, no embeddings, no vector DB, no cloud sync.** P1–P6 are intentionally deterministic; see "Limitations" in README.md before proposing additions.
+- **No LLM calls, no embeddings, no vector DB, no cloud sync.** P1-P9 are intentionally deterministic; see "Limitations" in README.md before proposing additions.
 - **`stop` only applies to `running` sessions.** The `shell` smoke exits immediately and cannot be stopped — use the `sleep` registry pattern in README.md for stop demos.
-- **Specs are authoritative for scope.** `specs/001-008*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
+- **Specs are authoritative for scope.** `specs/001-011*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
 - **README phase table is the canonical positioning.** When adding a phase or capability, update both the README phase table and the relevant spec — tests in `test_web.py` assert against this wording.
 
-## Reference: phase scope (P0–P6)
+## Reference: phase scope (P0-P9)
 
 | Phase | Owns | Does not own |
 |-------|------|--------------|
@@ -113,3 +113,6 @@ When fixing a bug: write the failing test first against the relevant module's te
 | P4 | fleet control plane goals, SLO, non-goals, governance principles | health probe implementation, drift detection, audit workflow |
 | P5 | fleet health probes, drift events, capacity 429, fleet API/CLI/UI | audit workflow, governance closed loop, deprecation workflow |
 | P6 | governance audit events, deprecation lifecycle, bounded log reads, policy coverage | multi-user RBAC, cloud sync, approval workflow UX |
+| P7 | approval requests, approve/reject API/CLI/UI, audit links | RBAC, notifications, live in-harness tool approval |
+| P8 | SLO benchmark command, diagnostics resource snapshot, JSON reports | hosted telemetry, continuous monitoring, automatic tuning |
+| P9 | deprecation reason/replacement/sunset metadata, un-deprecate, auto-disable | package management, delete/purge workflow, scheduler |

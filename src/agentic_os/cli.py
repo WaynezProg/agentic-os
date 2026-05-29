@@ -10,6 +10,7 @@ from typing import TypeVar
 import httpx
 import typer
 
+from agentic_os.bench import run_slo_benchmark
 from agentic_os.client import AgenticClient
 
 
@@ -18,17 +19,21 @@ DEFAULT_API = "http://127.0.0.1:8767"
 app = typer.Typer(help="Control local agentic-os sessions.")
 agents = typer.Typer(help="Inspect configured agents.")
 sessions = typer.Typer(help="Inspect local sessions.")
+approvals = typer.Typer(help="Inspect and decide pending approvals.")
 memory = typer.Typer(help="Inspect and promote session memory.")
 memory_review = typer.Typer(help="Inspect and manage memory review items.")
 skills = typer.Typer(help="Inspect and manage local skill registry records.")
 mcp = typer.Typer(help="Inspect and manage local MCP registry records.")
 policy = typer.Typer(help="Inspect and evaluate local capability policy.")
+bench = typer.Typer(help="Run local benchmark checks.")
 app.add_typer(agents, name="agents")
 app.add_typer(sessions, name="sessions")
+app.add_typer(approvals, name="approvals")
 app.add_typer(memory, name="memory")
 app.add_typer(skills, name="skills")
 app.add_typer(mcp, name="mcp")
 app.add_typer(policy, name="policy")
+app.add_typer(bench, name="bench")
 memory.add_typer(memory_review, name="review")
 fleet = typer.Typer(help="Inspect fleet health, events, and capacity.")
 app.add_typer(fleet, name="fleet")
@@ -69,6 +74,8 @@ def _http_error_detail(response: httpx.Response) -> str:
                 parts.append(str(payload["detail"]))
             if "session_id" in payload:
                 parts.append(f"session_id={payload['session_id']}")
+            if "approval_id" in payload:
+                parts.append(f"approval_id={payload['approval_id']}")
             return "  ".join(parts)
         if "detail" in payload:
             detail = payload["detail"]
@@ -169,6 +176,39 @@ def stop(session_id: str, api: str | None = _api_option()) -> None:
 def retry(session_id: str, api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).retry_session(session_id))
     typer.echo(f"{data['id']}\t{data['agent_id']}\t{data['status']}")
+
+
+@approvals.command("list")
+def approvals_list(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).list_approvals())
+    for approval in data["approvals"]:
+        typer.echo(
+            f"{approval['id']}\t{approval['agent_id']}\t{approval['status']}\t"
+            f"{approval['source_session_id']}\t"
+            f"{approval.get('approved_session_id') or '-'}\t{approval.get('reason', '')}"
+        )
+
+
+@approvals.command("show")
+def approvals_show(approval_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).show_approval(approval_id))
+    _echo_json(data)
+
+
+@approvals.command("approve")
+def approvals_approve(approval_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).approve_approval(approval_id))
+    _echo_json(data)
+
+
+@approvals.command("reject")
+def approvals_reject(
+    approval_id: str,
+    reason: str = typer.Option("", "--reason", help="Operator rejection reason."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(lambda: make_client(api).reject_approval(approval_id, reason))
+    _echo_json(data)
 
 
 @memory.command("summarize")
@@ -272,8 +312,27 @@ def skills_disable(skill_id: str, api: str | None = _api_option()) -> None:
 
 
 @skills.command("deprecate")
-def skills_deprecate(skill_id: str, api: str | None = _api_option()) -> None:
-    data = _run_api_call(lambda: make_client(api).deprecate_skill(skill_id))
+def skills_deprecate(
+    skill_id: str,
+    reason: str = typer.Option("", "--reason", help="Deprecation reason."),
+    replacement: str | None = typer.Option(None, "--replacement", help="Replacement record id."),
+    sunset: str | None = typer.Option(None, "--sunset", help="Sunset timestamp."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).deprecate_skill(
+            skill_id,
+            reason=reason,
+            replacement_id=replacement,
+            sunset_at=sunset,
+        )
+    )
+    _echo_json(data)
+
+
+@skills.command("undeprecate")
+def skills_undeprecate(skill_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).undeprecate_skill(skill_id))
     _echo_json(data)
 
 
@@ -340,8 +399,27 @@ def mcp_disable(server_id: str, api: str | None = _api_option()) -> None:
 
 
 @mcp.command("deprecate")
-def mcp_deprecate(server_id: str, api: str | None = _api_option()) -> None:
-    data = _run_api_call(lambda: make_client(api).deprecate_mcp_server(server_id))
+def mcp_deprecate(
+    server_id: str,
+    reason: str = typer.Option("", "--reason", help="Deprecation reason."),
+    replacement: str | None = typer.Option(None, "--replacement", help="Replacement record id."),
+    sunset: str | None = typer.Option(None, "--sunset", help="Sunset timestamp."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).deprecate_mcp_server(
+            server_id,
+            reason=reason,
+            replacement_id=replacement,
+            sunset_at=sunset,
+        )
+    )
+    _echo_json(data)
+
+
+@mcp.command("undeprecate")
+def mcp_undeprecate(server_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).undeprecate_mcp_server(server_id))
     _echo_json(data)
 
 
@@ -426,8 +504,27 @@ def policy_evaluate(
 
 
 @policy.command("deprecate")
-def policy_deprecate(agent_id: str, api: str | None = _api_option()) -> None:
-    data = _run_api_call(lambda: make_client(api).deprecate_policy(agent_id))
+def policy_deprecate(
+    agent_id: str,
+    reason: str = typer.Option("", "--reason", help="Deprecation reason."),
+    replacement: str | None = typer.Option(None, "--replacement", help="Replacement record id."),
+    sunset: str | None = typer.Option(None, "--sunset", help="Sunset timestamp."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).deprecate_policy(
+            agent_id,
+            reason=reason,
+            replacement_id=replacement,
+            sunset_at=sunset,
+        )
+    )
+    _echo_json(data)
+
+
+@policy.command("undeprecate")
+def policy_undeprecate(agent_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).undeprecate_policy(agent_id))
     _echo_json(data)
 
 
@@ -476,6 +573,30 @@ def fleet_capacity_cmd(api: str | None = _api_option()) -> None:
 def fleet_probe_cmd(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).fleet_probe())
     typer.echo(f"Probed {data['probed']} instances")
+
+
+@bench.command("slo")
+def bench_slo(
+    iterations: int = typer.Option(100, "--iterations", min=1, help="Iterations per operation."),
+    output: Path | None = typer.Option(None, "--output", help="Write full JSON report."),
+    api: str | None = typer.Option(None, "--api", help="Explicit test daemon API URL."),
+) -> None:
+    if api is None:
+        typer.echo("bench slo requires --api pointing at an explicit test daemon", err=True)
+        raise typer.Exit(1)
+    report = _run_api_call(lambda: run_slo_benchmark(make_client(api), iterations))
+    report["api"] = api
+    typer.echo(f"passed: {'yes' if report['passed'] else 'no'}")
+    for result in report["results"]:
+        typer.echo(
+            f"{result['name']}\tp99={result['p99_ms']}ms\t"
+            f"target={result['target_ms_p99']}ms\tpassed={result['passed']}"
+        )
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not report["passed"]:
+        raise typer.Exit(2)
 
 
 @audit.command("events")

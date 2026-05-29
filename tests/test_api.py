@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentic_os.api import create_app
+from agentic_os.control_plane import SkillUpsert
 from agentic_os.models import SessionCreate
 
 
@@ -679,6 +680,31 @@ def test_fleet_probe_trigger(tmp_app) -> None:
     assert response.json()["probed"] >= 0
 
 
+def test_diagnostics_resources_endpoint(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/sessions", json={"agent_id": "shell", "message": "diagnostics"})
+    client.post("/skills/reviewer", json={"label": "Reviewer"})
+
+    response = client.get("/diagnostics/resources")
+
+    assert response.status_code == 200
+    data = response.json()
+    for key in [
+        "pid",
+        "rss_bytes",
+        "state_dir_bytes",
+        "sqlite_db_bytes",
+        "sqlite_wal_bytes",
+        "session_count",
+        "audit_event_count",
+        "fleet_event_count",
+    ]:
+        assert key in data
+        assert isinstance(data[key], int)
+    assert data["session_count"] >= 1
+    assert data["audit_event_count"] >= 1
+
+
 def test_skill_upsert_and_deprecate_create_audit_events(tmp_app) -> None:
     client = TestClient(tmp_app)
     client.post("/skills/reviewer", json={"label": "Reviewer"})
@@ -720,6 +746,90 @@ def test_policy_upsert_and_deprecate_create_audit_events(tmp_app) -> None:
     types = [e["event_type"] for e in resp.json()["events"]]
     assert "policy_upserted" in types
     assert "policy_deprecated" in types
+
+
+def test_deprecation_api_accepts_metadata_and_undeprecates_all_domains(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/skills/reviewer", json={"label": "Reviewer"})
+    client.post("/mcp/filesystem", json={"label": "Filesystem"})
+    client.post("/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": ["/tmp"]})
+
+    skill = client.post(
+        "/skills/reviewer/deprecate",
+        json={
+            "reason": "use reviewer-v2",
+            "replacement_id": "reviewer-v2",
+            "sunset_at": "2026-06-30T00:00:00Z",
+        },
+    )
+    mcp = client.post("/mcp/filesystem/deprecate", json={"reason": "unsafe transport"})
+    policy = client.post("/policy/shell/deprecate", json={"sunset_at": "2026-06-30T00:00:00Z"})
+
+    assert skill.status_code == 200
+    assert skill.json()["deprecation_reason"] == "use reviewer-v2"
+    assert skill.json()["replacement_id"] == "reviewer-v2"
+    assert mcp.json()["deprecation_reason"] == "unsafe transport"
+    assert policy.json()["sunset_at"] == "2026-06-30T00:00:00Z"
+
+    assert client.post("/skills/reviewer/undeprecate").json()["deprecated"] is False
+    assert client.post("/mcp/filesystem/undeprecate").json()["deprecated"] is False
+    assert client.post("/policy/shell/undeprecate").json()["deprecated"] is False
+
+    events = client.get("/audit/events").json()["events"]
+    event_types = [event["event_type"] for event in events]
+    assert "skill_undeprecated" in event_types
+    assert "mcp_undeprecated" in event_types
+    assert "policy_undeprecated" in event_types
+
+
+def test_deprecation_sunset_auto_disable_records_audit_event(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/skills/reviewer", json={"label": "Reviewer"})
+    client.post(
+        "/skills/reviewer/deprecate",
+        json={"reason": "expired", "sunset_at": "2000-01-01T00:00:00Z"},
+    )
+
+    listed = client.get("/skills")
+
+    assert listed.json()["skills"][0]["enabled"] is False
+    events = client.get(
+        "/audit/events",
+        params={
+            "domain": "skill",
+            "entity_id": "reviewer",
+            "event_type": "skill_auto_disabled_after_sunset",
+        },
+    ).json()["events"]
+    assert events[0]["metadata"]["sunset_at"] == "2000-01-01T00:00:00Z"
+    assert events[0]["metadata"]["before"]["enabled"] is True
+    assert events[0]["metadata"]["after"]["enabled"] is False
+    assert events[0]["metadata"]["after"]["deprecated"] is True
+
+
+def test_mutation_records_sunset_auto_disable_audit_before_store_side_effect(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    tmp_app.state.control_plane.upsert_skill("expired", SkillUpsert(label="Expired"))
+    tmp_app.state.control_plane.deprecate_skill(
+        "expired",
+        reason="old",
+        sunset_at="2000-01-01T00:00:00Z",
+    )
+
+    response = client.post("/skills/fresh", json={"label": "Fresh"})
+
+    assert response.status_code == 200
+    events = client.get(
+        "/audit/events",
+        params={
+            "domain": "skill",
+            "entity_id": "expired",
+            "event_type": "skill_auto_disabled_after_sunset",
+        },
+    ).json()["events"]
+    assert len(events) == 1
+    assert events[0]["metadata"]["before"]["enabled"] is True
+    assert events[0]["metadata"]["after"]["enabled"] is False
 
 
 def test_run_without_policy_records_governance_audit(tmp_app) -> None:
@@ -775,7 +885,9 @@ def test_denied_run_policy_coverage_treats_rejected_session_as_evaluated(
     client = TestClient(tmp_app)
     allowed_root = tmp_path / "allowed"
     allowed_root.mkdir()
-    client.post("/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": [str(allowed_root)]})
+    client.post(
+        "/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": [str(allowed_root)]}
+    )
 
     denied = client.post(
         "/sessions",
@@ -786,6 +898,133 @@ def test_denied_run_policy_coverage_treats_rejected_session_as_evaluated(
     coverage = client.get("/audit/policy-coverage").json()["coverage"][0]
 
     assert denied.json()["session_id"] not in coverage["runs_without_policy_evaluation"]
+
+
+def test_approval_required_run_creates_durable_approval_and_approved_session(
+    tmp_app,
+    tmp_path: Path,
+) -> None:
+    client = TestClient(tmp_app)
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+
+    blocked = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "needs approval"},
+    )
+    assert blocked.status_code == 409
+    approval_id = blocked.json()["approval_id"]
+
+    listed = client.get("/approvals")
+    shown = client.get(f"/approvals/{approval_id}")
+    approved = client.post(f"/approvals/{approval_id}/approve")
+    sessions = client.get("/sessions").json()["sessions"]
+
+    assert [item["id"] for item in listed.json()["approvals"]] == [approval_id]
+    assert shown.json()["source_session_id"] == blocked.json()["session_id"]
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["approved_session_id"] != blocked.json()["session_id"]
+    assert any(session["id"] == approved.json()["approved_session_id"] for session in sessions)
+
+    events = client.get("/audit/events", params={"domain": "governance"}).json()["events"]
+    event_types = [event["event_type"] for event in events]
+    assert "approval_requested" in event_types
+    assert "approval_approved" in event_types
+    assert "run_started_after_approval" in event_types
+
+
+def test_approval_required_run_can_be_rejected_without_starting_followup_session(
+    tmp_app,
+    tmp_path: Path,
+) -> None:
+    client = TestClient(tmp_app)
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+    blocked = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "reject me"},
+    )
+    before_sessions = client.get("/sessions").json()["sessions"]
+
+    rejected = client.post(
+        f"/approvals/{blocked.json()['approval_id']}/reject",
+        json={"reason": "not needed"},
+    )
+    after_sessions = client.get("/sessions").json()["sessions"]
+
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert rejected.json()["decision_reason"] == "not needed"
+    assert len(after_sessions) == len(before_sessions)
+
+
+def test_pending_approval_expires_on_read_when_policy_now_denies(
+    tmp_app,
+    tmp_path: Path,
+) -> None:
+    client = TestClient(tmp_app)
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+    blocked = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "stale approval"},
+    )
+    approval_id = blocked.json()["approval_id"]
+    client.post(
+        "/policy/shell",
+        json={"enabled": False, "allowed_tool_names": ["*"], "cwd_roots": [str(tmp_path)]},
+    )
+
+    shown = client.get(f"/approvals/{approval_id}")
+
+    assert shown.status_code == 200
+    assert shown.json()["status"] == "expired"
+    assert shown.json()["decision_reason"] == "policy disabled for shell"
+
+
+def test_retry_uses_approval_request_path_when_policy_requires_approval(
+    tmp_app,
+    tmp_path: Path,
+) -> None:
+    client = TestClient(tmp_app)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "retry approval"},
+    )
+    assert run.status_code == 200
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+
+    retry = client.post(f"/sessions/{run.json()['id']}/retry")
+
+    assert retry.status_code == 409
+    assert retry.json()["decision"] == "approval_required"
+    assert retry.json()["approval_id"].startswith("ap_")
 
 
 def test_audit_events_query_endpoint(tmp_app) -> None:

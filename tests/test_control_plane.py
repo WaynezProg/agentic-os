@@ -437,3 +437,63 @@ def test_policy_evaluation_no_warnings_when_not_deprecated(tmp_path: Path) -> No
     )
     assert result.decision == "allow"
     assert result.warnings == []
+
+
+def test_deprecation_metadata_round_trips_and_undeprecate_clears_it(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+    store.upsert_mcp_server("filesystem", McpServerUpsert(label="Filesystem"))
+    store.upsert_policy("shell", PolicyUpsert())
+
+    skill = store.deprecate_skill(
+        "reviewer",
+        reason="use reviewer-v2",
+        replacement_id="reviewer-v2",
+        sunset_at="2026-06-30T00:00:00Z",
+    )
+    mcp = store.deprecate_mcp_server("filesystem", reason="unsafe transport")
+    policy = store.deprecate_policy("shell", sunset_at="2026-06-30T00:00:00Z")
+
+    assert skill.deprecated is True
+    assert skill.deprecated_at is not None
+    assert skill.deprecation_reason == "use reviewer-v2"
+    assert skill.replacement_id == "reviewer-v2"
+    assert skill.sunset_at == "2026-06-30T00:00:00Z"
+    assert mcp.deprecation_reason == "unsafe transport"
+    assert policy.sunset_at == "2026-06-30T00:00:00Z"
+
+    restored = store.undeprecate_skill("reviewer")
+
+    assert restored.deprecated is False
+    assert restored.deprecated_at is None
+    assert restored.deprecation_reason == ""
+    assert restored.replacement_id is None
+    assert restored.sunset_at is None
+
+
+def test_sunset_auto_disables_deprecated_records_on_read_and_evaluate(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+    store.upsert_mcp_server("filesystem", McpServerUpsert(label="Filesystem"))
+    store.upsert_policy(
+        "shell",
+        PolicyUpsert(
+            allowed_skill_ids=["reviewer"],
+            allowed_mcp_server_ids=["filesystem"],
+            allowed_tool_names=["*"],
+            cwd_roots=[str(tmp_path)],
+        ),
+    )
+    store.deprecate_skill("reviewer", sunset_at="2000-01-01T00:00:00Z")
+    store.deprecate_mcp_server("filesystem", sunset_at="2000-01-01T00:00:00Z")
+    store.deprecate_policy("shell", sunset_at="2000-01-01T00:00:00Z")
+
+    assert store.list_skills()[0].enabled is False
+    assert store.list_mcp_servers()[0].enabled is False
+    result = store.evaluate_policy(
+        PolicyEvaluationRequest(agent_id="shell", skill_id="reviewer", cwd=str(tmp_path))
+    )
+
+    assert store.get_policy("shell").enabled is False
+    assert result.decision == "deny"
+    assert result.reason == "policy disabled for shell"

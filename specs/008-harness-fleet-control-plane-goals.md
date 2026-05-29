@@ -192,6 +192,9 @@ must satisfy but does not implement them.
 | P4 | This spec: goals, SLO, non-goals, governance principles | Defines the contract |
 | P5 | Fleet inventory, health probes, version/config drift, launch/attach/log observability | Implements G1, G2, G3, G4 (implemented) |
 | P6 | Governance closed loop: auditable workflow across memory/MCP/skill/session/policy, performance gate, failure isolation enforcement, operation audit | Implements G1–G6 end-to-end (implemented) |
+| P7 | Human approval workflow | Implements approval-required launch decisions |
+| P8 | SLO benchmark harness | Implements measurement for P4 latency/resource targets |
+| P9 | Deprecation lifecycle completion | Implements structured sunset and un-deprecate workflow |
 
 ## Compatibility
 

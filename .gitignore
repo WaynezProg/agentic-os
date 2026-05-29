@@ -3,6 +3,8 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+.codegraph/
+.cursor/
 dist/
 build/
 *.egg-info/

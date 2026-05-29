@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,40 @@ class FakeClient:
     def retry_session(self, session_id: str) -> dict[str, object]:
         self.calls.append(("retry_session", (session_id,), {}))
         return {"id": "s_2", "agent_id": "shell", "status": "queued"}
+
+    def list_approvals(self) -> dict[str, object]:
+        self.calls.append(("list_approvals", (), {}))
+        return {
+            "approvals": [
+                {
+                    "id": "ap_1",
+                    "source_session_id": "s_blocked",
+                    "approved_session_id": None,
+                    "agent_id": "shell",
+                    "cwd": "/tmp/project",
+                    "reason": "session.start requires approval",
+                    "status": "pending",
+                    "created_at": "2026-05-29 00:00:00",
+                }
+            ]
+        }
+
+    def show_approval(self, approval_id: str) -> dict[str, object]:
+        self.calls.append(("show_approval", (approval_id,), {}))
+        return {"id": approval_id, "agent_id": "shell", "status": "pending"}
+
+    def approve_approval(self, approval_id: str) -> dict[str, object]:
+        self.calls.append(("approve_approval", (approval_id,), {}))
+        return {
+            "id": approval_id,
+            "agent_id": "shell",
+            "status": "approved",
+            "approved_session_id": "s_approved",
+        }
+
+    def reject_approval(self, approval_id: str, reason: str) -> dict[str, object]:
+        self.calls.append(("reject_approval", (approval_id, reason), {}))
+        return {"id": approval_id, "agent_id": "shell", "status": "rejected"}
 
     def summarize_session(self, session_id: str) -> dict[str, object]:
         self.calls.append(("summarize_session", (session_id,), {}))
@@ -296,17 +331,98 @@ class FakeClient:
         self.calls.append(("fleet_probe", (), {}))
         return {"probed": 3}
 
-    def deprecate_skill(self, skill_id: str) -> dict[str, object]:
-        self.calls.append(("deprecate_skill", (skill_id,), {}))
-        return {"id": skill_id, "label": "Reviewer", "enabled": True, "deprecated": True}
+    def diagnostics_resources(self) -> dict[str, object]:
+        self.calls.append(("diagnostics_resources", (), {}))
+        return {
+            "rss_bytes": 1024,
+            "sqlite_wal_bytes": 0,
+            "session_count": 1,
+            "audit_event_count": 1,
+            "fleet_event_count": 0,
+        }
 
-    def deprecate_mcp_server(self, server_id: str) -> dict[str, object]:
-        self.calls.append(("deprecate_mcp_server", (server_id,), {}))
-        return {"id": server_id, "label": "FS", "enabled": True, "deprecated": True}
+    def deprecate_skill(
+        self,
+        skill_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "deprecate_skill",
+                (skill_id,),
+                {"reason": reason, "replacement_id": replacement_id, "sunset_at": sunset_at},
+            )
+        )
+        return {
+            "id": skill_id,
+            "label": "Reviewer",
+            "enabled": True,
+            "deprecated": True,
+            "deprecation_reason": reason,
+            "replacement_id": replacement_id,
+            "sunset_at": sunset_at,
+        }
 
-    def deprecate_policy(self, agent_id: str) -> dict[str, object]:
-        self.calls.append(("deprecate_policy", (agent_id,), {}))
-        return {"agent_id": agent_id, "enabled": True, "deprecated": True}
+    def undeprecate_skill(self, skill_id: str) -> dict[str, object]:
+        self.calls.append(("undeprecate_skill", (skill_id,), {}))
+        return {"id": skill_id, "label": "Reviewer", "enabled": True, "deprecated": False}
+
+    def deprecate_mcp_server(
+        self,
+        server_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "deprecate_mcp_server",
+                (server_id,),
+                {"reason": reason, "replacement_id": replacement_id, "sunset_at": sunset_at},
+            )
+        )
+        return {
+            "id": server_id,
+            "label": "FS",
+            "enabled": True,
+            "deprecated": True,
+            "deprecation_reason": reason,
+        }
+
+    def undeprecate_mcp_server(self, server_id: str) -> dict[str, object]:
+        self.calls.append(("undeprecate_mcp_server", (server_id,), {}))
+        return {"id": server_id, "label": "FS", "enabled": True, "deprecated": False}
+
+    def deprecate_policy(
+        self,
+        agent_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "deprecate_policy",
+                (agent_id,),
+                {"reason": reason, "replacement_id": replacement_id, "sunset_at": sunset_at},
+            )
+        )
+        return {
+            "agent_id": agent_id,
+            "enabled": True,
+            "deprecated": True,
+            "deprecation_reason": reason,
+            "sunset_at": sunset_at,
+        }
+
+    def undeprecate_policy(self, agent_id: str) -> dict[str, object]:
+        self.calls.append(("undeprecate_policy", (agent_id,), {}))
+        return {"agent_id": agent_id, "enabled": True, "deprecated": False}
 
     def audit_events(
         self,
@@ -475,6 +591,53 @@ def test_retry_prints_tab_separated_row(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert result.output == "s_2\tshell\tqueued\n"
     assert fake.calls == [("retry_session", ("s_1",), {})]
+
+
+def test_approvals_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["approvals", "list"])
+
+    assert result.exit_code == 0
+    assert result.output == "ap_1\tshell\tpending\ts_blocked\t-\tsession.start requires approval\n"
+    assert fake.calls == [("list_approvals", (), {})]
+
+
+def test_approvals_show_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["approvals", "show", "ap_1"])
+
+    assert result.exit_code == 0
+    assert '"id": "ap_1"' in result.output
+    assert fake.calls == [("show_approval", ("ap_1",), {})]
+
+
+def test_approvals_approve_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["approvals", "approve", "ap_1"])
+
+    assert result.exit_code == 0
+    assert '"approved_session_id": "s_approved"' in result.output
+    assert fake.calls == [("approve_approval", ("ap_1",), {})]
+
+
+def test_approvals_reject_sends_reason(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["approvals", "reject", "ap_1", "--reason", "not needed"],
+    )
+
+    assert result.exit_code == 0
+    assert '"status": "rejected"' in result.output
+    assert fake.calls == [("reject_approval", ("ap_1", "not needed"), {})]
 
 
 def test_memory_summarize_prints_summary_detail(monkeypatch: Any) -> None:
@@ -1022,6 +1185,13 @@ def test_client_control_plane_methods_build_expected_requests(monkeypatch: Any) 
     client.show_policy("shell")
     client.upsert_policy("shell", {"allowed_tool_names": ["read"]})
     client.evaluate_policy({"agent_id": "shell", "tool_name": "read"})
+    client.deprecate_skill("reviewer", reason="use v2", replacement_id="reviewer-v2")
+    client.undeprecate_skill("reviewer")
+    client.deprecate_mcp_server("filesystem", sunset_at="2026-06-30T00:00:00Z")
+    client.undeprecate_mcp_server("filesystem")
+    client.deprecate_policy("shell", reason="retire")
+    client.undeprecate_policy("shell")
+    client.diagnostics_resources()
 
     assert RecordingHttpxClient.requests == [
         {"method": "GET", "base_url": "http://api.example", "path": "/skills", "params": None},
@@ -1081,6 +1251,48 @@ def test_client_control_plane_methods_build_expected_requests(monkeypatch: Any) 
             "path": "/policy/evaluate",
             "json": {"agent_id": "shell", "tool_name": "read"},
         },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/skills/reviewer/deprecate",
+            "json": {"reason": "use v2", "replacement_id": "reviewer-v2"},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/skills/reviewer/undeprecate",
+            "json": {},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/mcp/filesystem/deprecate",
+            "json": {"sunset_at": "2026-06-30T00:00:00Z"},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/mcp/filesystem/undeprecate",
+            "json": {},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/policy/shell/deprecate",
+            "json": {"reason": "retire"},
+        },
+        {
+            "method": "POST",
+            "base_url": "http://api.example",
+            "path": "/policy/shell/undeprecate",
+            "json": {},
+        },
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/diagnostics/resources",
+            "params": None,
+        },
     ]
 
 
@@ -1105,6 +1317,9 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.get_logs(unsafe_id),
         lambda: client.stop_session(unsafe_id),
         lambda: client.retry_session(unsafe_id),
+        lambda: client.show_approval(unsafe_id),
+        lambda: client.approve_approval(unsafe_id),
+        lambda: client.reject_approval(unsafe_id, "no"),
         lambda: client.summarize_session(unsafe_id),
         lambda: client.show_session_summary(unsafe_id),
         lambda: client.create_memory_review(unsafe_id),
@@ -1120,8 +1335,11 @@ def test_client_rejects_unsafe_path_ids_before_http_request(
         lambda: client.upsert_policy(unsafe_id, {}),
         lambda: client.fleet_instance_health(unsafe_id),
         lambda: client.deprecate_skill(unsafe_id),
+        lambda: client.undeprecate_skill(unsafe_id),
         lambda: client.deprecate_mcp_server(unsafe_id),
+        lambda: client.undeprecate_mcp_server(unsafe_id),
         lambda: client.deprecate_policy(unsafe_id),
+        lambda: client.undeprecate_policy(unsafe_id),
     ]
 
     for call in calls:
@@ -1266,10 +1484,12 @@ def test_help_commands_import_successfully() -> None:
     assert runner.invoke(cli.app, ["--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["agents", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["sessions", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["approvals", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["memory", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["skills", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["mcp", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["policy", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["bench", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["fleet", "--help"]).exit_code == 0
     assert runner.invoke(cli.app, ["audit", "--help"]).exit_code == 0
 
@@ -1332,13 +1552,93 @@ def test_fleet_probe_prints_count(monkeypatch: Any) -> None:
     assert fake.calls == [("fleet_probe", (), {})]
 
 
+def test_bench_slo_prints_summary_and_writes_report(monkeypatch: Any, tmp_path: Path) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    output = tmp_path / "report.json"
+    test_api = "http://127.0.0.1:9876"
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["bench", "slo", "--api", test_api, "--iterations", "2", "--output", str(output)],
+    )
+
+    assert result.exit_code == 0
+    assert "passed: yes" in result.output
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["api"] == test_api
+    assert report["passed"] is True
+    assert report["iterations"] == 2
+    assert any(call[0] == "diagnostics_resources" for call in fake.calls)
+
+
+def test_bench_slo_requires_explicit_test_daemon_api(monkeypatch: Any, tmp_path: Path) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    output = tmp_path / "report.json"
+
+    result = CliRunner().invoke(cli.app, ["bench", "slo", "--output", str(output)])
+
+    assert result.exit_code == 1
+    assert "requires --api pointing at an explicit test daemon" in result.output
+    assert output.exists() is False
+    assert fake.calls == []
+
+
 def test_skills_deprecate_prints_detail(monkeypatch: Any) -> None:
     fake = FakeClient()
     install_fake_client(monkeypatch, fake)
     result = CliRunner().invoke(cli.app, ["skills", "deprecate", "reviewer"])
     assert result.exit_code == 0
     assert '"deprecated": true' in result.output
-    assert fake.calls == [("deprecate_skill", ("reviewer",), {})]
+    assert fake.calls == [
+        (
+            "deprecate_skill",
+            ("reviewer",),
+            {"reason": "", "replacement_id": None, "sunset_at": None},
+        )
+    ]
+
+
+def test_skills_deprecate_sends_metadata_flags(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "skills",
+            "deprecate",
+            "reviewer",
+            "--reason",
+            "use reviewer-v2",
+            "--replacement",
+            "reviewer-v2",
+            "--sunset",
+            "2026-06-30T00:00:00Z",
+        ],
+    )
+    assert result.exit_code == 0
+    assert '"deprecation_reason": "use reviewer-v2"' in result.output
+    assert fake.calls == [
+        (
+            "deprecate_skill",
+            ("reviewer",),
+            {
+                "reason": "use reviewer-v2",
+                "replacement_id": "reviewer-v2",
+                "sunset_at": "2026-06-30T00:00:00Z",
+            },
+        )
+    ]
+
+
+def test_skills_undeprecate_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["skills", "undeprecate", "reviewer"])
+    assert result.exit_code == 0
+    assert '"deprecated": false' in result.output
+    assert fake.calls == [("undeprecate_skill", ("reviewer",), {})]
 
 
 def test_mcp_deprecate_prints_detail(monkeypatch: Any) -> None:
@@ -1347,7 +1647,22 @@ def test_mcp_deprecate_prints_detail(monkeypatch: Any) -> None:
     result = CliRunner().invoke(cli.app, ["mcp", "deprecate", "filesystem"])
     assert result.exit_code == 0
     assert '"deprecated": true' in result.output
-    assert fake.calls == [("deprecate_mcp_server", ("filesystem",), {})]
+    assert fake.calls == [
+        (
+            "deprecate_mcp_server",
+            ("filesystem",),
+            {"reason": "", "replacement_id": None, "sunset_at": None},
+        )
+    ]
+
+
+def test_mcp_undeprecate_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["mcp", "undeprecate", "filesystem"])
+    assert result.exit_code == 0
+    assert '"deprecated": false' in result.output
+    assert fake.calls == [("undeprecate_mcp_server", ("filesystem",), {})]
 
 
 def test_policy_deprecate_prints_detail(monkeypatch: Any) -> None:
@@ -1356,7 +1671,22 @@ def test_policy_deprecate_prints_detail(monkeypatch: Any) -> None:
     result = CliRunner().invoke(cli.app, ["policy", "deprecate", "shell"])
     assert result.exit_code == 0
     assert '"deprecated": true' in result.output
-    assert fake.calls == [("deprecate_policy", ("shell",), {})]
+    assert fake.calls == [
+        (
+            "deprecate_policy",
+            ("shell",),
+            {"reason": "", "replacement_id": None, "sunset_at": None},
+        )
+    ]
+
+
+def test_policy_undeprecate_prints_detail(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["policy", "undeprecate", "shell"])
+    assert result.exit_code == 0
+    assert '"deprecated": false' in result.output
+    assert fake.calls == [("undeprecate_policy", ("shell",), {})]
 
 
 def test_audit_events_prints_tab_separated_rows(monkeypatch: Any) -> None:

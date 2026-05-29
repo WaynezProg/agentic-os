@@ -35,6 +35,9 @@ Phase positioning:
 | P4 | fleet control plane goals spec | performance-first single-machine fleet control plane charter | goals, SLO, non-goals, governance principles | health probe implementation, drift detection, audit workflow |
 | P5 | fleet inventory and health | fleet health monitoring, capacity enforcement, config drift detection | health probes, drift events, capacity 429, fleet API/CLI/UI | audit workflow, governance closed loop |
 | P6 | governance closed loop | auditable workflow across all domains, deprecation lifecycle, bounded log reads, policy coverage | audit events, deprecation, log reader isolation, policy bypass verification | multi-user RBAC, cloud sync, approval workflow UX |
+| P7 | human approval workflow | local operator approval for launch-policy decisions | approval requests, approve/reject API/CLI/UI, audit links | RBAC, notifications, live in-harness tool approval |
+| P8 | SLO benchmark harness | measurable local control-plane performance targets | latency benchmark, diagnostics resource snapshot, JSON report | hosted telemetry, continuous monitoring, automatic tuning |
+| P9 | deprecation lifecycle completion | structured sunset governance for catalog and policy records | reason/replacement/sunset metadata, un-deprecate, opportunistic auto-disable | package management, delete/purge workflow, scheduler |
 
 ## P0 Scope
 
@@ -332,9 +335,27 @@ P6 closes the governance loop declared in P4 (specs/008):
 - G6: every run records whether it started with or without a policy evaluation;
   `audit coverage` reports uncovered runs
 
-## P1/P2/P3/P3.5/P3.6/P5/P6 Limitations
+## Run P8 SLO Benchmark
 
-P1-P6 intentionally do not include:
+Start a dedicated test daemon; do not point the benchmark at live operator
+state:
+
+```bash
+rtk uv run agentd serve --port 8797 --state-dir .agentic-os-bench --registry examples/agents.toml
+```
+
+Run the benchmark with an explicit test daemon API:
+
+```bash
+rtk uv run agentctl bench slo --api http://127.0.0.1:8797 --iterations 100 --output .agentic-os-bench/slo-report.json
+curl http://127.0.0.1:8797/diagnostics/resources
+```
+
+`bench slo` fails fast when `--api` is omitted.
+
+## P1/P2/P3/P3.5/P3.6/P5/P6/P7/P8/P9 Limitations
+
+P1-P9 intentionally do not include:
 
 - LLM-generated summaries; summaries are deterministic from session metadata
   and stdout/stderr logs.

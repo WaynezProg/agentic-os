@@ -98,6 +98,8 @@ def test_skills_mcp_placeholder_panels_exist() -> None:
     assert 'id="skills-body"' in html
     assert 'id="mcp-table"' in html
     assert 'id="mcp-body"' in html
+    assert 'id="approvals-table"' in html
+    assert 'id="approvals-body"' in html
 
 
 def test_skills_mcp_p3_registry_tables_exist() -> None:
@@ -145,6 +147,9 @@ def test_javascript_references_required_daemon_endpoints() -> None:
         "/mcp",
         "/policy",
         "/policy/evaluate",
+        "/approvals",
+        "/approvals/{approval_id}/approve",
+        "/approvals/{approval_id}/reject",
         "/fleet/health",
         "/fleet/events",
         "/fleet/capacity",
@@ -295,6 +300,26 @@ def test_javascript_renders_deprecated_badges() -> None:
     js = APP_JS.read_text(encoding="utf-8")
     assert "is-deprecated" in js
     assert ".deprecated" in js
+
+
+def test_javascript_renders_deprecation_metadata() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    for token in ["deprecation_reason", "replacement_id", "sunset_at"]:
+        assert token in js
+    for header in ["Reason", "Replacement", "Sunset"]:
+        assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
+
+
+def test_javascript_has_approval_workflow_handlers() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert "loadApprovals" in js
+    assert "approveApproval" in js
+    assert "rejectApproval" in js
+    assert 'data-action="approve-approval"' in js
+    assert 'data-action="reject-approval"' in js
 
 
 def test_readme_documents_p3_usage_and_limits() -> None:
