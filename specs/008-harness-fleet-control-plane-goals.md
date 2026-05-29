@@ -31,8 +31,10 @@ join the fleet.
    processes.
 
 2. **Performance-first contract** — API reads ≤ 50 ms p99, writes ≤ 200 ms
-   p99, full health probe round ≤ 5 s for up to 50 instances. The daemon stays under
-   a fixed resource budget regardless of fleet size.
+   p99, health probe round ≤ 5 s for responsive instances in a fleet of up to
+   50. Instances whose health command exceeds the per-probe timeout (G2) are
+   recorded as DOWN but excluded from the round-time SLO. The daemon stays
+   under a fixed resource budget regardless of fleet size.
 
 3. **Fleet inventory with health** — each harness instance has a profile
    (launch, health, attach, log commands), and the daemon probes health on a
@@ -69,7 +71,7 @@ implementation will benchmark and may tighten or relax specific numbers.
 | GET /sessions/{id}, /sessions/{id}/events | p99 ≤ 50 ms | wall-clock |
 | POST /sessions (run creation + policy eval) | p99 ≤ 200 ms | wall-clock, policy rule set ≤ 50 rules |
 | POST /sessions/{id}/retry | p99 ≤ 200 ms | wall-clock |
-| Health probe round (all instances) | ≤ 5 s total | wall-clock, ≤ 50 instances |
+| Health probe round (responsive instances) | ≤ 5 s | wall-clock, ≤ 50 instances, excludes probes that exceed per-probe timeout (see G2: default 10 s) |
 
 ### Parallelism
 
