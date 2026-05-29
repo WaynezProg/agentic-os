@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from agentic_os.audit import AuditEvent, AuditStore
 from agentic_os.control_plane import (
     ControlPlaneStore,
     McpServerUpsert,
@@ -91,6 +92,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     control_plane.init()
     fleet_store = FleetStore(state_dir / "agentic-os.db")
     fleet_store.init()
+    audit_store = AuditStore(state_dir / "agentic-os.db")
+    audit_store.init()
     prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
     supervisor = ProcessSupervisor(store=store, logs=logs, state_dir=state_dir)
@@ -99,6 +102,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     app = FastAPI(title="agentic-os")
     app.state.store = store
     app.state.fleet_store = fleet_store
+    app.state.audit_store = audit_store
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
@@ -153,12 +157,58 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         policy_result = _evaluate_session_policy(rendered.agent.id, rendered.cwd)
-        if policy_result is not None and policy_result.decision != "allow":
-            return _reject_session(rendered, policy_result)
-
-        session = supervisor.start(rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env)
-        _wait_for_short_command(supervisor, session.id)
-        return supervisor.store.get_session(session.id).model_dump()
+        if policy_result is not None:
+            if policy_result.decision != "allow":
+                audit_store.record(
+                    "governance",
+                    rendered.agent.id,
+                    "policy_evaluated",
+                    f"{policy_result.decision}: {policy_result.reason}",
+                    metadata={"decision": policy_result.decision, "reason": policy_result.reason},
+                )
+                return _reject_session(rendered, policy_result)
+            session = supervisor.start(
+                rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
+            )
+            audit_store.record(
+                "governance",
+                rendered.agent.id,
+                "policy_evaluated",
+                f"allow: {policy_result.reason}",
+                metadata={
+                    "session_id": session.id,
+                    "decision": "allow",
+                    "reason": policy_result.reason,
+                },
+            )
+            audit_store.record(
+                "governance",
+                rendered.agent.id,
+                "run_started_with_policy",
+                f"session {session.id} started with policy",
+                metadata={"session_id": session.id},
+            )
+            _wait_for_short_command(supervisor, session.id)
+            return supervisor.store.get_session(session.id).model_dump()
+        else:
+            audit_store.record(
+                "governance",
+                rendered.agent.id,
+                "policy_missing_at_run_start",
+                f"no policy configured for {rendered.agent.id}",
+            )
+            session = supervisor.start(
+                rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
+            )
+            audit_store.record(
+                "governance",
+                rendered.agent.id,
+                "run_started_without_policy",
+                f"session {session.id} started without policy",
+                metadata={"session_id": session.id},
+            )
+            _wait_for_short_command(supervisor, session.id)
+            return supervisor.store.get_session(session.id).model_dump()
 
     @app.get("/sessions")
     def list_sessions() -> dict[str, object]:
@@ -218,18 +268,64 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         policy_result = _evaluate_session_policy(previous.agent_id, previous.cwd)
-        if policy_result is not None and policy_result.decision != "allow":
-            rendered = RenderedRun(
-                agent=registry.get(previous.agent_id),
-                cwd=previous.cwd,
-                argv=previous.argv,
-                env=previous.env,
+        if policy_result is not None:
+            if policy_result.decision != "allow":
+                rendered = RenderedRun(
+                    agent=registry.get(previous.agent_id),
+                    cwd=previous.cwd,
+                    argv=previous.argv,
+                    env=previous.env,
+                )
+                audit_store.record(
+                    "governance",
+                    previous.agent_id,
+                    "policy_evaluated",
+                    f"{policy_result.decision}: {policy_result.reason}",
+                    metadata={"decision": policy_result.decision, "reason": policy_result.reason},
+                )
+                return _reject_session(rendered, policy_result)
+            session = supervisor.start(
+                previous.agent_id, previous.cwd, previous.argv, env=previous.env
             )
-            return _reject_session(rendered, policy_result)
-
-        session = supervisor.start(previous.agent_id, previous.cwd, previous.argv, env=previous.env)
-        _wait_for_short_command(supervisor, session.id)
-        return supervisor.store.get_session(session.id).model_dump()
+            audit_store.record(
+                "governance",
+                previous.agent_id,
+                "policy_evaluated",
+                f"allow: {policy_result.reason}",
+                metadata={
+                    "session_id": session.id,
+                    "decision": "allow",
+                    "reason": policy_result.reason,
+                },
+            )
+            audit_store.record(
+                "governance",
+                previous.agent_id,
+                "run_started_with_policy",
+                f"session {session.id} started with policy",
+                metadata={"session_id": session.id},
+            )
+            _wait_for_short_command(supervisor, session.id)
+            return supervisor.store.get_session(session.id).model_dump()
+        else:
+            audit_store.record(
+                "governance",
+                previous.agent_id,
+                "policy_missing_at_run_start",
+                f"no policy configured for {previous.agent_id}",
+            )
+            session = supervisor.start(
+                previous.agent_id, previous.cwd, previous.argv, env=previous.env
+            )
+            audit_store.record(
+                "governance",
+                previous.agent_id,
+                "run_started_without_policy",
+                f"session {session.id} started without policy",
+                metadata={"session_id": session.id},
+            )
+            _wait_for_short_command(supervisor, session.id)
+            return supervisor.store.get_session(session.id).model_dump()
 
     @app.post("/sessions/{session_id}/memory/summary")
     def create_session_memory_summary(session_id: str) -> dict[str, Any]:
@@ -294,30 +390,44 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/skills/{skill_id}")
     def upsert_skill(skill_id: str, request: SkillUpsertRequest) -> dict[str, Any]:
         try:
-            return _asdict(
-                control_plane.upsert_skill(
-                    skill_id,
-                    SkillUpsert(
-                        label=request.label,
-                        description=request.description,
-                        source=request.source,
-                        entrypoint=request.entrypoint,
-                        tags=request.tags,
-                        enabled=request.enabled,
-                    ),
-                )
+            result = control_plane.upsert_skill(
+                skill_id,
+                SkillUpsert(
+                    label=request.label,
+                    description=request.description,
+                    source=request.source,
+                    entrypoint=request.entrypoint,
+                    tags=request.tags,
+                    enabled=request.enabled,
+                ),
             )
+            audit_store.record("skill", skill_id, "skill_upserted", f"upserted skill {skill_id}")
+            return _asdict(result)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/skills/{skill_id}/disable")
     def disable_skill(skill_id: str) -> dict[str, Any]:
         try:
-            return _asdict(control_plane.disable_skill(skill_id))
+            result = control_plane.disable_skill(skill_id)
+            audit_store.record("skill", skill_id, "skill_disabled", f"disabled skill {skill_id}")
+            return _asdict(result)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/skills/{skill_id}/deprecate")
+    def deprecate_skill(skill_id: str) -> dict[str, Any]:
+        try:
+            control_plane.get_skill(skill_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        result = control_plane.deprecate_skill(skill_id)
+        audit_store.record(
+            "skill", skill_id, "skill_deprecated", f"deprecated skill {skill_id}"
+        )
+        return _asdict(result)
 
     @app.get("/mcp")
     def list_mcp_servers() -> dict[str, object]:
@@ -335,31 +445,45 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/mcp/{server_id}")
     def upsert_mcp_server(server_id: str, request: McpServerUpsertRequest) -> dict[str, Any]:
         try:
-            return _asdict(
-                control_plane.upsert_mcp_server(
-                    server_id,
-                    McpServerUpsert(
-                        label=request.label,
-                        description=request.description,
-                        transport=request.transport,
-                        command_preview=request.command_preview,
-                        url=request.url,
-                        env_keys=request.env_keys,
-                        enabled=request.enabled,
-                    ),
-                )
+            result = control_plane.upsert_mcp_server(
+                server_id,
+                McpServerUpsert(
+                    label=request.label,
+                    description=request.description,
+                    transport=request.transport,
+                    command_preview=request.command_preview,
+                    url=request.url,
+                    env_keys=request.env_keys,
+                    enabled=request.enabled,
+                ),
             )
+            audit_store.record("mcp", server_id, "mcp_upserted", f"upserted mcp server {server_id}")
+            return _asdict(result)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/mcp/{server_id}/disable")
     def disable_mcp_server(server_id: str) -> dict[str, Any]:
         try:
-            return _asdict(control_plane.disable_mcp_server(server_id))
+            result = control_plane.disable_mcp_server(server_id)
+            audit_store.record("mcp", server_id, "mcp_disabled", f"disabled mcp server {server_id}")
+            return _asdict(result)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/mcp/{server_id}/deprecate")
+    def deprecate_mcp_server(server_id: str) -> dict[str, Any]:
+        try:
+            control_plane.get_mcp_server(server_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        result = control_plane.deprecate_mcp_server(server_id)
+        audit_store.record(
+            "mcp", server_id, "mcp_deprecated", f"deprecated mcp server {server_id}"
+        )
+        return _asdict(result)
 
     @app.get("/policy")
     def list_policies() -> dict[str, object]:
@@ -395,24 +519,61 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.post("/policy/{agent_id}")
     def upsert_policy(agent_id: str, request: PolicyUpsertRequest) -> dict[str, Any]:
         try:
-            return _asdict(
-                control_plane.upsert_policy(
-                    agent_id,
-                    PolicyUpsert(
-                        enabled=request.enabled,
-                        readonly=request.readonly,
-                        allowed_skill_ids=request.allowed_skill_ids,
-                        allowed_mcp_server_ids=request.allowed_mcp_server_ids,
-                        allowed_tool_names=request.allowed_tool_names,
-                        approval_required_tool_names=request.approval_required_tool_names,
-                        allowed_model_ids=request.allowed_model_ids,
-                        cwd_roots=request.cwd_roots,
-                        rate_limit_per_minute=request.rate_limit_per_minute,
-                    ),
-                )
+            result = control_plane.upsert_policy(
+                agent_id,
+                PolicyUpsert(
+                    enabled=request.enabled,
+                    readonly=request.readonly,
+                    allowed_skill_ids=request.allowed_skill_ids,
+                    allowed_mcp_server_ids=request.allowed_mcp_server_ids,
+                    allowed_tool_names=request.allowed_tool_names,
+                    approval_required_tool_names=request.approval_required_tool_names,
+                    allowed_model_ids=request.allowed_model_ids,
+                    cwd_roots=request.cwd_roots,
+                    rate_limit_per_minute=request.rate_limit_per_minute,
+                ),
             )
+            audit_store.record(
+                "policy", agent_id, "policy_upserted", f"upserted policy for {agent_id}"
+            )
+            return _asdict(result)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/policy/{agent_id}/deprecate")
+    def deprecate_policy(agent_id: str) -> dict[str, Any]:
+        try:
+            control_plane.get_policy(agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        result = control_plane.deprecate_policy(agent_id)
+        audit_store.record(
+            "policy", agent_id, "policy_deprecated", f"deprecated policy for {agent_id}"
+        )
+        return _asdict(result)
+
+    @app.get("/audit/events")
+    def audit_events(
+        domain: str | None = Query(default=None),
+        entity_id: str | None = Query(default=None),
+        event_type: str | None = Query(default=None),
+        limit: int = Query(default=500, ge=1, le=5000),
+    ) -> dict[str, object]:
+        events = audit_store.list_events(
+            domain=domain, entity_id=entity_id, event_type=event_type, limit=limit
+        )
+        return {"events": [_audit_event_dict(e) for e in events]}
+
+    @app.get("/audit/policy-coverage")
+    def audit_policy_coverage() -> dict[str, object]:
+        agents = registry.list_agents()
+        agent_ids = [a.id for a in agents]
+        sessions = store.list_sessions()
+        session_ids_by_agent: dict[str, list[str]] = {}
+        for s in sessions:
+            session_ids_by_agent.setdefault(s.agent_id, []).append(s.id)
+        coverage = audit_store.policy_coverage(agent_ids, session_ids_by_agent)
+        return {"coverage": coverage}
 
     @app.get("/fleet/health")
     def fleet_health() -> dict[str, object]:
@@ -514,6 +675,18 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         )
 
     return app
+
+
+def _audit_event_dict(event: AuditEvent) -> dict[str, object]:
+    return {
+        "id": event.id,
+        "domain": event.domain,
+        "entity_id": event.entity_id,
+        "event_type": event.event_type,
+        "message": event.message,
+        "metadata": event.metadata,
+        "created_at": event.created_at,
+    }
 
 
 def _fleet_health_dict(record: HealthRecord) -> dict[str, object]:

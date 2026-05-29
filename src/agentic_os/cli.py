@@ -431,12 +431,8 @@ def fleet_events_cmd(
 @fleet.command("capacity")
 def fleet_capacity_cmd(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).fleet_capacity())
-    typer.echo(
-        f"sessions: {data['running_sessions']}/{data['max_running_sessions']}"
-    )
-    typer.echo(
-        f"instances: {data['registered_instances']}/{data['max_registered_instances']}"
-    )
+    typer.echo(f"sessions: {data['running_sessions']}/{data['max_running_sessions']}")
+    typer.echo(f"instances: {data['registered_instances']}/{data['max_registered_instances']}")
 
 
 @fleet.command("probe")

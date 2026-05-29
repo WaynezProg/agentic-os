@@ -630,3 +630,112 @@ def test_fleet_probe_trigger(tmp_app) -> None:
     response = client.post("/fleet/probe")
     assert response.status_code == 200
     assert response.json()["probed"] >= 0
+
+
+def test_skill_upsert_and_deprecate_create_audit_events(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/skills/reviewer", json={"label": "Reviewer"})
+    client.post("/skills/reviewer/disable")
+    resp = client.post("/skills/reviewer/deprecate")
+    assert resp.status_code == 200
+    assert resp.json()["deprecated"] is True
+
+    resp = client.get("/audit/events", params={"domain": "skill"})
+    assert resp.status_code == 200
+    events = resp.json()["events"]
+    types = [e["event_type"] for e in events]
+    assert "skill_upserted" in types
+    assert "skill_disabled" in types
+    assert "skill_deprecated" in types
+
+
+def test_mcp_upsert_and_deprecate_create_audit_events(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/mcp/filesystem", json={"label": "FS"})
+    client.post("/mcp/filesystem/disable")
+    resp = client.post("/mcp/filesystem/deprecate")
+    assert resp.status_code == 200
+
+    resp = client.get("/audit/events", params={"domain": "mcp"})
+    types = [e["event_type"] for e in resp.json()["events"]]
+    assert "mcp_upserted" in types
+    assert "mcp_disabled" in types
+    assert "mcp_deprecated" in types
+
+
+def test_policy_upsert_and_deprecate_create_audit_events(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": ["/tmp"]})
+    resp = client.post("/policy/shell/deprecate")
+    assert resp.status_code == 200
+
+    resp = client.get("/audit/events", params={"domain": "policy"})
+    types = [e["event_type"] for e in resp.json()["events"]]
+    assert "policy_upserted" in types
+    assert "policy_deprecated" in types
+
+
+def test_run_without_policy_records_governance_audit(tmp_app) -> None:
+    """A run with no policy configured records policy_missing and run_started_without_policy."""
+    client = TestClient(tmp_app)
+    resp = client.post("/sessions", json={"agent_id": "shell", "message": "test"})
+    assert resp.status_code == 200
+
+    resp = client.get("/audit/events", params={"domain": "governance"})
+    types = [e["event_type"] for e in resp.json()["events"]]
+    assert "policy_missing_at_run_start" in types
+    assert "run_started_without_policy" in types
+
+
+def test_run_with_policy_records_evaluation_and_start(tmp_app, tmp_path) -> None:
+    """A run with an allow policy records policy_evaluated and run_started_with_policy."""
+    client = TestClient(tmp_app)
+    client.post("/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": [str(tmp_path)]})
+    resp = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "test"}
+    )
+    assert resp.status_code == 200
+
+    resp = client.get("/audit/events", params={"domain": "governance"})
+    types = [e["event_type"] for e in resp.json()["events"]]
+    assert "policy_evaluated" in types
+    assert "run_started_with_policy" in types
+
+
+def test_denied_run_records_policy_evaluated_audit(tmp_app, tmp_path) -> None:
+    """A denied run records policy_evaluated but not run_started."""
+    client = TestClient(tmp_app)
+    # Use tmp_path as allowed root, then run from /tmp which is outside that root
+    allowed_root = str(tmp_path / "allowed")
+    (tmp_path / "allowed").mkdir()
+    client.post("/policy/shell", json={"allowed_tool_names": ["*"], "cwd_roots": [allowed_root]})
+    resp = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "test"}
+    )
+    assert resp.status_code == 403
+
+    resp = client.get("/audit/events", params={"domain": "governance"})
+    types = [e["event_type"] for e in resp.json()["events"]]
+    assert "policy_evaluated" in types
+    assert "run_started_with_policy" not in types
+    assert "run_started_without_policy" not in types
+
+
+def test_audit_events_query_endpoint(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    client.post("/skills/a", json={"label": "A"})
+    client.post("/skills/b", json={"label": "B"})
+
+    resp = client.get("/audit/events")
+    assert resp.status_code == 200
+    assert len(resp.json()["events"]) >= 2
+
+    resp = client.get("/audit/events", params={"entity_id": "a"})
+    assert all(e["entity_id"] == "a" for e in resp.json()["events"])
+
+
+def test_audit_policy_coverage_endpoint(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    resp = client.get("/audit/policy-coverage")
+    assert resp.status_code == 200
+    assert "coverage" in resp.json()
