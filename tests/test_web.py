@@ -232,9 +232,6 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
         assert token not in combined.lower()
 
 
-def test_readme_documents_p3_usage_and_limits() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-
 def test_fleet_tab_and_panel_exist() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
     assert 'data-tab="fleet"' in html

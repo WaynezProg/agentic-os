@@ -188,7 +188,7 @@ must satisfy but does not implement them.
 | Phase | Scope | Relationship to P4 |
 |-------|-------|--------------------|
 | P4 | This spec: goals, SLO, non-goals, governance principles | Defines the contract |
-| P5 | Fleet inventory, health probes, version/config drift, launch/attach/log observability | Implements G1, G2, G3, G4 |
+| P5 | Fleet inventory, health probes, version/config drift, launch/attach/log observability | Implements G1, G2, G3, G4 (implemented) |
 | P6 | Governance closed loop: auditable workflow across memory/MCP/skill/session/policy, performance gate, failure isolation enforcement, operation audit | Implements G1–G6 end-to-end |
 
 ## Compatibility

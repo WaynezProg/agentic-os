@@ -33,6 +33,7 @@ Phase positioning:
 | P3.6 | retry bypass closure and clearer policy errors | all run-start paths share the same launch gate | retry policy audit, CLI/UI error display | approval workflow or harness-internal enforcement |
 | P3.7 | harness instance profile schema | management metadata for each harness instance | config path, workspace roots, launch/health/attach/log commands, default provider | harness internals, planning, tool execution |
 | P4 | fleet control plane goals spec | performance-first single-machine fleet control plane charter | goals, SLO, non-goals, governance principles | health probe implementation, drift detection, audit workflow |
+| P5 | fleet inventory and health | fleet health monitoring, capacity enforcement, config drift detection | health probes, drift events, capacity 429, fleet API/CLI/UI | audit workflow, governance closed loop |
 
 ## P0 Scope
 
@@ -250,9 +251,48 @@ The UI Run button (Agents tab) and Retry button (Sessions tab) show
 `decision / reason / session_id` on 403/409.  The Logs tab shows session events
 in a collapsible panel below the log output.
 
-## P1/P2/P3/P3.5/P3.6 Limitations
+## Run P5 Fleet Inventory + Health
 
-P1-P3.6 intentionally do not include:
+Start the daemon:
+
+```bash
+rtk uv run agentd serve --state-dir .agentic-os --registry examples/agents.toml
+```
+
+Query fleet health, capacity, and events:
+
+```bash
+rtk uv run agentctl fleet health
+rtk uv run agentctl fleet health shell
+rtk uv run agentctl fleet capacity
+rtk uv run agentctl fleet events
+rtk uv run agentctl fleet events --agent shell --type config_drift_detected
+rtk uv run agentctl fleet probe
+```
+
+Use the daemon API path:
+
+```bash
+curl http://127.0.0.1:8767/fleet/health
+curl http://127.0.0.1:8767/fleet/capacity
+curl http://127.0.0.1:8767/fleet/events
+curl -X POST http://127.0.0.1:8767/fleet/probe
+```
+
+Use the UI path by starting `apps/web` as in P2 and opening the Fleet tab.
+The tab shows instance health, capacity utilization, and fleet events. The
+Probe Now button triggers an on-demand health probe cycle.
+
+P5 implements G1 (audit-everything: health state changes and config drift
+produce fleet events), G2 (failure isolation: probe timeouts do not block other
+probes), G3 (config drift as first-class signal: version/fingerprint changes
+recorded as drift events), and G4 (capacity bounded and visible: 429 on session
+limit, queryable utilization). P5 does not implement G5 (deprecation workflow)
+or G6 (governance closed loop) — those are P6.
+
+## P1/P2/P3/P3.5/P3.6/P5 Limitations
+
+P1-P5 intentionally do not include:
 
 - LLM-generated summaries; summaries are deterministic from session metadata
   and stdout/stderr logs.
