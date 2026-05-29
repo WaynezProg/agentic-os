@@ -48,6 +48,9 @@
       <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
         Skills / MCP
       </button>
+      <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
+        Fleet
+      </button>
     </nav>
 
     <main class="workspace">
@@ -325,6 +328,63 @@
             <pre id="policy-eval-result" class="summary-output" aria-live="polite"></pre>
           </section>
         </div>
+      </section>
+
+      <section id="panel-fleet" class="panel" role="tabpanel" aria-labelledby="tab-fleet" hidden>
+        <div class="panel-head">
+          <h2>Fleet Health</h2>
+          <div class="actions">
+            <button id="fleet-probe-btn" type="button">Probe Now</button>
+            <button id="refresh-fleet" type="button">Refresh fleet</button>
+          </div>
+        </div>
+        <p id="fleet-message" class="message" aria-live="polite"></p>
+
+        <section class="subpanel">
+          <h3>Instance Health</h3>
+          <div class="table-shell">
+            <table id="fleet-health-table">
+              <thead>
+                <tr>
+                  <th>Instance</th>
+                  <th>State</th>
+                  <th>Version</th>
+                  <th>Config FP</th>
+                  <th>Message</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="fleet-health-body">
+                <tr><td colspan="6">No data loaded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="subpanel">
+          <h3>Capacity</h3>
+          <div id="fleet-capacity-display"></div>
+        </section>
+
+        <section class="subpanel">
+          <h3>Fleet Events</h3>
+          <div class="table-shell">
+            <table id="fleet-events-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Instance</th>
+                  <th>Type</th>
+                  <th>Message</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="fleet-events-body">
+                <tr><td colspan="5">No data loaded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
   </body>

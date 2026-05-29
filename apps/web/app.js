@@ -24,6 +24,11 @@ const ENDPOINTS = Object.freeze({
   mcp: "/mcp",
   policySummary: "/policy",
   policyEvaluate: "/policy/evaluate",
+  fleetHealth: "/fleet/health",
+  fleetInstanceHealth: "/fleet/{agent_id}/health",
+  fleetEvents: "/fleet/events",
+  fleetCapacity: "/fleet/capacity",
+  fleetProbe: "/fleet/probe",
 });
 
 const HTML_ENTITIES = Object.freeze({
@@ -73,6 +78,8 @@ function bindControls() {
   byId("refresh-memory").addEventListener("click", loadMemory);
   byId("refresh-skills").addEventListener("click", loadSkillsMcp);
   byId("run-policy-eval").addEventListener("click", evaluatePolicy);
+  byId("refresh-fleet").addEventListener("click", loadFleet);
+  byId("fleet-probe-btn").addEventListener("click", triggerFleetProbe);
   byId("run-submit").addEventListener("click", submitRunForm);
   byId("run-cancel").addEventListener("click", hideRunForm);
   byId("search-memory").addEventListener("click", () => {
@@ -117,12 +124,14 @@ function loadActiveTab() {
     loadMemory();
   } else if (state.activeTab === "skills") {
     loadSkillsMcp();
+  } else if (state.activeTab === "fleet") {
+    loadFleet();
   }
 }
 
 async function refreshAll() {
   await loadHealth();
-  await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp()]);
+  await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp(), loadFleet()]);
   if (state.activeTab === "logs" && byId("log-session-id").value.trim()) {
     await loadLogs();
   }
@@ -738,6 +747,100 @@ async function handleActionClick(event) {
   } finally {
     button.disabled = false;
   }
+}
+
+async function loadFleet() {
+  await Promise.allSettled([loadFleetHealth(), loadFleetCapacity(), loadFleetEvents()]);
+}
+
+async function loadFleetHealth() {
+  const body = byId("fleet-health-body");
+  try {
+    const data = await apiFetch(buildEndpoint("fleetHealth"));
+    const instances = asArray(data.instances);
+    if (instances.length === 0) {
+      renderEmptyRow(body, 6, "No fleet health data. Click Probe Now.");
+      return;
+    }
+    body.innerHTML = instances
+      .map(
+        (inst) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(inst.agent_id)}</td>
+            <td><span class="${healthPillClass(inst.state)}">${escapeHtml(inst.state)}</span></td>
+            <td>${escapeHtml(inst.version)}</td>
+            <td class="cell-code">${escapeHtml(inst.config_fingerprint)}</td>
+            <td>${escapeHtml(inst.message)}</td>
+            <td>${escapeHtml(inst.updated_at)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(body, 6, error.message);
+  }
+}
+
+async function loadFleetCapacity() {
+  const el = byId("fleet-capacity-display");
+  try {
+    const data = await apiFetch(buildEndpoint("fleetCapacity"));
+    el.innerHTML =
+      `<p>Sessions: ${escapeHtml(data.running_sessions)}/${escapeHtml(data.max_running_sessions)}` +
+      ` | Instances: ${escapeHtml(data.registered_instances)}/${escapeHtml(data.max_registered_instances)}</p>`;
+  } catch (error) {
+    el.innerHTML = `<p class="message is-error">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function loadFleetEvents() {
+  const body = byId("fleet-events-body");
+  try {
+    const data = await apiFetch(buildEndpoint("fleetEvents"));
+    const events = asArray(data.events);
+    if (events.length === 0) {
+      renderEmptyRow(body, 5, "No fleet events.");
+      return;
+    }
+    body.innerHTML = events
+      .map(
+        (evt) => `
+          <tr>
+            <td>${escapeHtml(evt.id)}</td>
+            <td class="cell-id">${escapeHtml(evt.agent_id)}</td>
+            <td>${escapeHtml(evt.event_type)}</td>
+            <td class="cell-code">${escapeHtml(evt.message)}</td>
+            <td>${escapeHtml(evt.created_at)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(body, 5, error.message);
+  }
+}
+
+async function triggerFleetProbe() {
+  const btn = byId("fleet-probe-btn");
+  btn.disabled = true;
+  btn.textContent = "Probing...";
+  try {
+    const data = await postEmpty(buildEndpoint("fleetProbe"));
+    setMessage("fleet-message", `Probed ${data.probed} instances`);
+    await loadFleet();
+  } catch (error) {
+    setMessage("fleet-message", error.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Probe Now";
+  }
+}
+
+function healthPillClass(state) {
+  const safe = String(state || "unknown")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+  return `pill is-${safe}`;
 }
 
 function renderEmptyRow(body, colspan, message) {

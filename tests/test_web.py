@@ -20,8 +20,8 @@ def test_static_web_files_exist() -> None:
 def test_five_tabs_are_present() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert html.count('role="tab"') == 5
-    for tab in ["Agents", "Sessions", "Logs", "Memory", "Skills / MCP"]:
+    assert html.count('role="tab"') == 6
+    for tab in ["Agents", "Sessions", "Logs", "Memory", "Skills / MCP", "Fleet"]:
         assert re.search(rf">\s*{re.escape(tab)}\s*<", html)
 
 
@@ -145,6 +145,10 @@ def test_javascript_references_required_daemon_endpoints() -> None:
         "/mcp",
         "/policy",
         "/policy/evaluate",
+        "/fleet/health",
+        "/fleet/events",
+        "/fleet/capacity",
+        "/fleet/probe",
     ]:
         assert endpoint in js
 
@@ -226,6 +230,46 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
     combined = INDEX_HTML.read_text(encoding="utf-8") + APP_JS.read_text(encoding="utf-8")
     for token in ["vite", "webpack", "parcel", "npm install", "node_modules"]:
         assert token not in combined.lower()
+
+
+def test_readme_documents_p3_usage_and_limits() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+def test_fleet_tab_and_panel_exist() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'data-tab="fleet"' in html
+    assert 'id="panel-fleet"' in html
+    assert 'id="fleet-health-table"' in html
+    assert 'id="fleet-health-body"' in html
+    assert 'id="fleet-events-table"' in html
+    assert 'id="fleet-events-body"' in html
+    assert 'id="fleet-capacity-display"' in html
+    assert 'id="fleet-probe-btn"' in html
+
+
+def test_fleet_javascript_references_fleet_endpoints() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+    for endpoint in [
+        "/fleet/health",
+        "/fleet/{agent_id}/health",
+        "/fleet/events",
+        "/fleet/capacity",
+        "/fleet/probe",
+    ]:
+        assert endpoint in js
+
+
+def test_fleet_javascript_has_required_functions() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+    for fn in [
+        "loadFleet",
+        "loadFleetHealth",
+        "loadFleetCapacity",
+        "loadFleetEvents",
+        "triggerFleetProbe",
+        "healthPillClass",
+    ]:
+        assert fn in js
 
 
 def test_readme_documents_p3_usage_and_limits() -> None:
