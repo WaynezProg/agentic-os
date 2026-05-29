@@ -150,6 +150,8 @@ def logs(
         for entry in entries:
             typer.echo(f"{entry['stream']}\t{entry['line']}")
             after = max(after, entry["index"])
+        if data.get("truncated"):
+            typer.echo(f"(truncated at {len(entries)} lines)", err=True)
         if not follow:
             return
         time.sleep(1)

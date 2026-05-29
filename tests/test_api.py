@@ -739,3 +739,13 @@ def test_audit_policy_coverage_endpoint(tmp_app) -> None:
     resp = client.get("/audit/policy-coverage")
     assert resp.status_code == 200
     assert "coverage" in resp.json()
+
+
+def test_logs_endpoint_returns_truncated_flag(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    resp = client.post("/sessions", json={"agent_id": "shell", "message": "hello"})
+    session_id = resp.json()["id"]
+    resp = client.get(f"/sessions/{session_id}/logs")
+    assert resp.status_code == 200
+    assert "truncated" in resp.json()
+    assert isinstance(resp.json()["truncated"], bool)

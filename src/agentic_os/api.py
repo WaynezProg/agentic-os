@@ -235,18 +235,23 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         session_id: str,
         stream: StreamName | None = None,
         after: int = Query(default=0, ge=0),
+        max_lines: int = Query(default=5000, ge=1, le=50000),
     ) -> dict[str, object]:
         try:
             session = store.get_session(session_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        entries = logs.read_merged(
+        result = logs.read_merged(
             Path(session.stdout_log),
             Path(session.stderr_log),
             stream=stream,
             after=after,
+            max_lines=max_lines,
         )
-        return {"entries": [entry.model_dump() for entry in entries]}
+        return {
+            "entries": [entry.model_dump() for entry in result.entries],
+            "truncated": result.truncated,
+        }
 
     @app.post("/sessions/{session_id}/stop")
     def stop_session(session_id: str) -> dict[str, object]:
@@ -424,9 +429,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         result = control_plane.deprecate_skill(skill_id)
-        audit_store.record(
-            "skill", skill_id, "skill_deprecated", f"deprecated skill {skill_id}"
-        )
+        audit_store.record("skill", skill_id, "skill_deprecated", f"deprecated skill {skill_id}")
         return _asdict(result)
 
     @app.get("/mcp")
@@ -480,9 +483,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         result = control_plane.deprecate_mcp_server(server_id)
-        audit_store.record(
-            "mcp", server_id, "mcp_deprecated", f"deprecated mcp server {server_id}"
-        )
+        audit_store.record("mcp", server_id, "mcp_deprecated", f"deprecated mcp server {server_id}")
         return _asdict(result)
 
     @app.get("/policy")
@@ -622,8 +623,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     def _build_and_store_summary(session_id: str) -> SessionSummaryRecord:
         session = _get_session_or_404(session_id)
-        entries = logs.read_merged(Path(session.stdout_log), Path(session.stderr_log))
-        return memory_store.upsert_summary(session, build_session_summary(session, entries))
+        result = logs.read_merged(Path(session.stdout_log), Path(session.stderr_log))
+        return memory_store.upsert_summary(session, build_session_summary(session, result.entries))
 
     def _get_or_create_summary(session_id: str) -> SessionSummaryRecord:
         _get_session_or_404(session_id)

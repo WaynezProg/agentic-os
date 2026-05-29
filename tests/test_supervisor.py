@@ -270,7 +270,7 @@ def test_supervisor_runs_successful_command(tmp_path: Path) -> None:
     assert finished.status == SessionStatus.SUCCEEDED
     assert finished.exit_code == 0
     assert Path(finished.artifact_dir).exists()
-    assert supervisor.logs.read(Path(finished.stdout_log))[0].line == "OK"
+    assert supervisor.logs.read(Path(finished.stdout_log)).entries[0].line == "OK"
 
 
 def test_supervisor_marks_failed_command(tmp_path: Path) -> None:
@@ -286,7 +286,7 @@ def test_supervisor_marks_failed_command(tmp_path: Path) -> None:
     finished = supervisor.store.get_session(session.id)
     assert finished.status == SessionStatus.FAILED
     assert finished.exit_code == 7
-    assert supervisor.logs.read(Path(finished.stderr_log))[0].line == "nope"
+    assert supervisor.logs.read(Path(finished.stderr_log)).entries[0].line == "nope"
 
 
 def test_supervisor_records_launch_failure_for_empty_argv(tmp_path: Path) -> None:
@@ -296,7 +296,7 @@ def test_supervisor_records_launch_failure_for_empty_argv(tmp_path: Path) -> Non
 
     finished = supervisor.store.get_session(session.id)
     events = supervisor.store.list_events(session.id)
-    stderr = supervisor.logs.read(Path(finished.stderr_log))
+    stderr = supervisor.logs.read(Path(finished.stderr_log)).entries
     sessions = supervisor.store.list_sessions()
 
     assert finished.status == SessionStatus.FAILED
@@ -349,7 +349,7 @@ def test_supervisor_retries_session_with_same_command(tmp_path: Path) -> None:
     assert finished.cwd == session.cwd
     assert finished.argv == session.argv
     assert finished.status == SessionStatus.SUCCEEDED
-    assert supervisor.logs.read(Path(finished.stdout_log))[0].line == "retry"
+    assert supervisor.logs.read(Path(finished.stdout_log)).entries[0].line == "retry"
 
 
 def test_supervisor_rejects_retry_for_active_sessions(tmp_path: Path) -> None:

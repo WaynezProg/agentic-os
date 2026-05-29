@@ -58,7 +58,8 @@ class FakeClient:
         return {
             "entries": [
                 {"stream": "stdout", "line": "OK", "index": after + 1},
-            ]
+            ],
+            "truncated": False,
         }
 
     def stop_session(self, session_id: str) -> dict[str, object]:
