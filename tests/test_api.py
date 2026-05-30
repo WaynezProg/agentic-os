@@ -1209,7 +1209,7 @@ def test_harness_show_harness_404(tmp_path: Path) -> None:
 
 
 def test_harness_health_runs_command(tmp_path: Path) -> None:
-    """GET /harnesses/{id}/health executes health_command and returns state."""
+    """GET /harnesses/{id}/health executes health_command and returns structured result."""
     registry = tmp_path / "agents.toml"
     registry.write_text(
         f"""
@@ -1232,7 +1232,11 @@ health_command = [{sys.executable!r}, "-c", "print('healthy')"]
     assert data["id"] == "shell"
     assert data["state"] == "up"
     assert "healthy" in data["message"]
-    assert "command" not in data
+    assert data["exit_code"] == 0
+    assert isinstance(data["duration_ms"], int)
+    assert "stdout_preview" in data
+    assert "stderr_preview" in data
+    assert data["truncated"] is False
 
 
 def test_harness_health_no_command(tmp_path: Path) -> None:
@@ -1279,6 +1283,58 @@ health_command = ["/usr/bin/false"]
     assert response.status_code == 200
     data = response.json()
     assert data["state"] == "down"
+    assert data["exit_code"] != 0
+    assert data["truncated"] is False
+
+
+def test_harness_health_truncates_large_output(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/health truncates stdout/stderr exceeding 2KB."""
+    long_output = "x" * 5000
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        f"""
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "OK"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = [{sys.executable!r}, "-c", "print('{long_output}')"]
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses/shell/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["truncated"] is True
+    assert len(data["stdout_preview"].encode("utf-8")) <= 2048
+
+
+def test_harness_health_records_fleet_event(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/health records requested/completed fleet events."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        f"""
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "OK"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+health_command = [{sys.executable!r}, "-c", "print('healthy')"]
+""",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    client.get("/harnesses/shell/health")
+    events = client.get("/fleet/events", params={"agent_id": "shell"}).json()["events"]
+    event_types = [e["event_type"] for e in events]
+    assert "health_probe_requested" in event_types
+    assert "health_probe_completed" in event_types
 
 
 def test_harness_logs_returns_paths(tmp_path: Path) -> None:
