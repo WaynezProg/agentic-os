@@ -72,7 +72,12 @@ class JsonlLogStore:
         start_index = len(lines) - len(tail_lines)
         entries: list[LogEntry] = []
         for offset, line in enumerate(tail_lines):
-            raw = json.loads(line)
+            if not line.strip():
+                continue
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                continue
             entries.append(
                 LogEntry(
                     ts=raw["ts"],
