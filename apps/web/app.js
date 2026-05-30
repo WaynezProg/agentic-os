@@ -55,6 +55,7 @@ const HTML_ENTITIES = Object.freeze({
 
 const state = {
   activeTab: "agents",
+  agentsById: {},
   logEntries: [],
   logSessionId: "",
   logStream: "",
@@ -97,6 +98,8 @@ function bindControls() {
   byId("load-audit-events").addEventListener("click", loadAuditEvents);
   byId("run-submit").addEventListener("click", submitRunForm);
   byId("run-cancel").addEventListener("click", hideRunForm);
+  byId("run-message").addEventListener("input", updateRunCommandPreview);
+  byId("run-cwd").addEventListener("input", updateRunCommandPreview);
   byId("search-memory").addEventListener("click", () => {
     loadMemories(byId("memory-search").value.trim());
   });
@@ -237,15 +240,17 @@ async function loadSessionSummary(sessionId) {
 async function loadHealth() {
   const status = byId("api-status");
   status.className = "status is-unknown";
-  status.textContent = "checking";
+  status.textContent = t("statusChecking");
   try {
     const health = await apiFetch(buildEndpoint("health"));
     status.className = "status is-ok";
-    status.textContent = health.status || "ok";
+    status.textContent = t("statusConnected");
+    status.removeAttribute("title");
     return true;
   } catch (error) {
     status.className = "status is-error";
-    status.textContent = `offline: ${error.message}`;
+    status.textContent = t("statusOffline");
+    status.title = error.message;
     return false;
   }
 }
@@ -255,8 +260,12 @@ async function loadAgents() {
   try {
     const data = await apiFetch(buildEndpoint("agents"));
     const agents = asArray(data.agents);
+    state.agentsById = {};
+    agents.forEach((agent) => {
+      state.agentsById[agent.id] = agent;
+    });
     if (agents.length === 0) {
-      renderEmptyRow(body, 7, "No agents returned.");
+      renderEmptyRow(body, 7, t("emptyNoAgents"));
       return;
     }
     body.innerHTML = agents
@@ -268,11 +277,11 @@ async function loadAgents() {
             <td>${escapeHtml(String(agent.enabled !== false))}</td>
             <td>${escapeHtml(agent.cwd_mode)}</td>
             <td>${escapeHtml(agent.stop_policy)}</td>
-            <td class="cell-code">${escapeHtml(commandPreview(agent.command))}</td>
+            <td class="cell-code">${escapeHtml(formatCommandTemplate(agent.command))}</td>
             <td>
               <button type="button" data-action="run-agent" data-agent-id="${escapeHtml(agent.id)}" ${
                 agent.enabled === false ? "disabled" : ""
-              }>Run</button>
+              }>${t("btnRun")}</button>
             </td>
           </tr>
         `,
@@ -289,7 +298,7 @@ async function loadSessions() {
     const data = await apiFetch(buildEndpoint("sessions"));
     const sessions = asArray(data.sessions);
     if (sessions.length === 0) {
-      renderEmptyRow(body, 7, "No sessions returned.");
+      renderEmptyRow(body, 7, t("emptyNoSessions"));
       return;
     }
     body.innerHTML = sessions.map(renderSessionRow).join("");
@@ -314,31 +323,31 @@ function renderSessionRow(session) {
       <td>
         <div class="actions">
           <button type="button" data-action="select-session" data-session-id="${escapeHtml(session.id)}">
-            open
+            ${t("btnOpen")}
           </button>
           <button type="button" data-action="logs" data-session-id="${escapeHtml(session.id)}">
-            logs
+            ${t("btnLogs")}
           </button>
           <button type="button" data-action="attach-preview" data-session-id="${escapeHtml(session.id)}" ${
             canAttach ? "" : "disabled"
           }>
-            attach
+            ${t("btnAttach")}
           </button>
           <button type="button" data-action="summarize" data-session-id="${escapeHtml(session.id)}">
-            summarize
+            ${t("btnSummarize")}
           </button>
           <button type="button" data-action="review-create" data-session-id="${escapeHtml(session.id)}">
-            review create
+            ${t("btnReviewCreate")}
           </button>
           <button type="button" data-action="retry" data-session-id="${escapeHtml(session.id)}" ${
             canRetry ? "" : "disabled"
           }>
-            retry
+            ${t("btnRetry")}
           </button>
           <button type="button" data-action="stop" data-session-id="${escapeHtml(session.id)}" ${
             canStop ? "" : "disabled"
           }>
-            stop
+            ${t("btnStop")}
           </button>
         </div>
       </td>
@@ -351,7 +360,7 @@ async function selectSession(sessionId) {
     return;
   }
   byId("log-session-id").value = sessionId;
-  byId("runs-selected-session").textContent = `Selected: ${sessionId}`;
+  byId("runs-selected-session").textContent = t("selectedSession", { id: sessionId });
   showTab("sessions", { skipLoad: true });
   resetLogState();
   await Promise.allSettled([loadSessionTimeline(sessionId), loadLogs()]);
@@ -360,14 +369,14 @@ async function selectSession(sessionId) {
 async function loadSessionTimeline(sessionId) {
   const container = byId("session-timeline");
   if (!sessionId) {
-    container.innerHTML = '<p class="message">Select a session from the list.</p>';
+    container.innerHTML = `<p class="message">${escapeHtml(t("emptySelectSession"))}</p>`;
     return;
   }
   try {
     const data = await apiFetch(buildEndpoint("sessionTimeline", { session_id: sessionId }));
     const timeline = asArray(data.timeline);
     if (timeline.length === 0) {
-      container.innerHTML = '<p class="message">No timeline entries.</p>';
+      container.innerHTML = `<p class="message">${escapeHtml(t("emptyNoTimeline"))}</p>`;
       return;
     }
     container.innerHTML = timeline.map(renderTimelineEntry).join("");
@@ -401,7 +410,7 @@ async function loadLogs() {
     byId("log-output").textContent = "";
     renderSessionDetail(null);
     loadSessionEvents(null);
-    setMessage("logs-message", "Enter a session id.");
+    setMessage("logs-message", t("enterSessionId"));
     return;
   }
 
@@ -436,7 +445,7 @@ async function loadLogs() {
     renderLogs();
     setMessage(
       "logs-message",
-      `loaded ${entries.length} entries, showing last ${state.logEntries.length}`,
+      t("logsLoaded", { count: entries.length, shown: state.logEntries.length }),
     );
   } catch (error) {
     setMessage("logs-message", error.message, true);
@@ -451,14 +460,18 @@ function renderSessionDetail(session) {
   const target = byId("log-session-detail");
   const detail = session || {};
   target.innerHTML = `
-    <dt>Session</dt>
+    <dt>${t("detailSession")}</dt>
     <dd class="cell-id">${escapeHtml(detail.id)}</dd>
-    <dt>Agent</dt>
+    <dt>${t("detailAgent")}</dt>
     <dd>${escapeHtml(detail.agent_id)}</dd>
-    <dt>Status</dt>
+    <dt>${t("detailStatus")}</dt>
     <dd>${escapeHtml(detail.status)}</dd>
-    <dt>Updated</dt>
+    <dt>${t("detailUpdated")}</dt>
     <dd>${escapeHtml(detail.updated_at)}</dd>
+    <dt>工作目錄</dt>
+    <dd class="cell-code">${escapeHtml(valueOrDash(detail.cwd))}</dd>
+    <dt>啟動指令</dt>
+    <dd class="cell-code">${escapeHtml(formatArgv(detail.argv))}</dd>
   `;
 }
 
@@ -490,7 +503,7 @@ async function loadMemoryReview() {
     const data = await apiFetch(buildEndpoint("memoryReview"));
     const items = asArray(data.items);
     if (items.length === 0) {
-      renderEmptyRow(body, 6, "No review items returned.");
+      renderEmptyRow(body, 6, t("emptyNoReview"));
       return;
     }
     body.innerHTML = items.map(renderReviewRow).join("");
@@ -513,17 +526,17 @@ function renderReviewRow(item) {
       <td>
         <div class="actions">
           <button type="button" data-action="view-summary" data-session-id="${escapeHtml(item.session_id)}">
-            summary
+            ${t("btnSummary")}
           </button>
           <button type="button" data-action="approve-memory" data-item-id="${escapeHtml(item.id)}" ${
             isPending ? "" : "disabled"
           }>
-            approve
+            ${t("btnApprove")}
           </button>
           <button type="button" data-action="reject-memory" data-item-id="${escapeHtml(item.id)}" ${
             isPending ? "" : "disabled"
           }>
-            reject
+            ${t("btnReject")}
           </button>
         </div>
       </td>
@@ -541,7 +554,7 @@ async function loadMemories(query = "") {
     const data = await apiFetch(path);
     const memories = asArray(data.memories);
     if (memories.length === 0) {
-      renderEmptyRow(body, 4, "No approved memory returned.");
+      renderEmptyRow(body, 4, t("emptyNoMemory"));
       return;
     }
     body.innerHTML = memories
@@ -571,7 +584,7 @@ async function loadSkills() {
     const data = await apiFetch(buildEndpoint("skills"));
     const skills = asArray(data.skills);
     if (skills.length === 0) {
-      renderEmptyRow(body, 8, "No skills returned.");
+      renderEmptyRow(body, 8, t("emptyNoSkills"));
       return;
     }
     body.innerHTML = skills
@@ -580,7 +593,7 @@ async function loadSkills() {
           <tr>
             <td class="cell-id">${escapeHtml(skill.id)}</td>
             <td>${escapeHtml(skill.label)}</td>
-            <td>${skill.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(skill.enabled !== false))}</td>
+            <td>${skill.deprecated ? `<span class="pill is-deprecated">${escapeHtml(t("deprecated"))}</span>` : escapeHtml(String(skill.enabled !== false))}</td>
             <td>${escapeHtml(skill.source)}</td>
             <td>${escapeHtml(asArray(skill.tags).join(", "))}</td>
             <td>${escapeHtml(skill.deprecation_reason)}</td>
@@ -601,7 +614,7 @@ async function loadMcpServers() {
     const data = await apiFetch(buildEndpoint("mcp"));
     const servers = asArray(data.servers);
     if (servers.length === 0) {
-      renderEmptyRow(body, 8, "No MCP servers returned.");
+      renderEmptyRow(body, 8, t("emptyNoMcp"));
       return;
     }
     body.innerHTML = servers
@@ -610,7 +623,7 @@ async function loadMcpServers() {
           <tr>
             <td class="cell-id">${escapeHtml(server.id)}</td>
             <td>${escapeHtml(server.label)}</td>
-            <td>${server.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(server.enabled !== false))}</td>
+            <td>${server.deprecated ? `<span class="pill is-deprecated">${escapeHtml(t("deprecated"))}</span>` : escapeHtml(String(server.enabled !== false))}</td>
             <td>${escapeHtml(server.transport)}</td>
             <td class="cell-code">${escapeHtml(asArray(server.command_preview).join(" "))}</td>
             <td>${escapeHtml(server.deprecation_reason)}</td>
@@ -631,7 +644,7 @@ async function loadApprovals() {
     const data = await apiFetch(buildEndpoint("approvals"));
     const approvals = asArray(data.approvals);
     if (approvals.length === 0) {
-      renderEmptyRow(body, 6, "No approvals returned.");
+      renderEmptyRow(body, 6, t("emptyNoApprovals"));
       return;
     }
     body.innerHTML = approvals.map(renderApprovalRow).join("");
@@ -654,10 +667,10 @@ function renderApprovalRow(approval) {
         <div class="actions">
           <button type="button" data-action="approve-approval" data-approval-id="${escapeHtml(approval.id)}" ${
             isPending ? "" : "disabled"
-          }>approve</button>
+          }>${t("btnApprove")}</button>
           <button type="button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}" ${
             isPending ? "" : "disabled"
-          }>reject</button>
+          }>${t("btnReject")}</button>
         </div>
       </td>
     </tr>
@@ -670,7 +683,7 @@ async function loadPolicies() {
     const data = await apiFetch(buildEndpoint("policySummary"));
     const policies = asArray(data.policies);
     if (policies.length === 0) {
-      renderEmptyRow(body, 7, "No policies returned.");
+      renderEmptyRow(body, 7, t("emptyNoPolicies"));
       return;
     }
     body.innerHTML = policies
@@ -678,8 +691,8 @@ async function loadPolicies() {
         (policy) => `
           <tr>
             <td class="cell-id">${escapeHtml(policy.agent_id)}</td>
-            <td>${policy.deprecated ? '<span class="pill is-deprecated">deprecated</span>' : escapeHtml(String(policy.enabled !== false))}</td>
-            <td>${escapeHtml(policy.readonly ? "readonly" : "write")}</td>
+            <td>${policy.deprecated ? `<span class="pill is-deprecated">${escapeHtml(t("deprecated"))}</span>` : escapeHtml(String(policy.enabled !== false))}</td>
+            <td>${escapeHtml(policy.readonly ? t("policyReadonly") : t("policyWrite"))}</td>
             <td>${escapeHtml(policy.rate_limit_per_minute)}</td>
             <td>${escapeHtml(policy.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(policy.replacement_id)}</td>
@@ -697,7 +710,7 @@ async function evaluatePolicy() {
   const result = byId("policy-eval-result");
   const agentId = byId("policy-eval-agent").value.trim();
   if (!agentId) {
-    result.textContent = "agent_id is required";
+    result.textContent = t("agentIdRequired");
     return;
   }
   try {
@@ -752,6 +765,7 @@ function showRunForm(agentId) {
   byId("run-message").value = "";
   byId("run-result").textContent = "";
   byId("run-form-section").hidden = false;
+  updateRunCommandPreview();
   byId("run-message").focus();
 }
 
@@ -766,7 +780,7 @@ async function submitRunForm() {
   const result = byId("run-result");
 
   if (!agentId || !message) {
-    result.textContent = "agent and message are required";
+    result.textContent = t("agentMessageRequired");
     return;
   }
 
@@ -776,7 +790,15 @@ async function submitRunForm() {
       method: "POST",
       body: JSON.stringify({ agent_id: agentId, cwd: cwd, message: message }),
     });
-    result.textContent = `session created: ${data.id}  status: ${data.status}`;
+    const argvText = formatArgv(data.argv);
+    result.textContent =
+      argvText === "-"
+        ? t("sessionCreated", { id: data.id, status: data.status })
+        : t("sessionCreatedWithArgv", {
+            id: data.id,
+            status: data.status,
+            argv: argvText,
+          });
     setMessage("agents-message", `started session ${data.id}`);
     await loadSessions();
   } catch (error) {
@@ -790,7 +812,7 @@ async function submitRunForm() {
 async function loadSessionEvents(sessionId) {
   const body = byId("events-body");
   if (!sessionId) {
-    renderEmptyRow(body, 4, "Load a session to see events.");
+    renderEmptyRow(body, 4, t("emptyLoadSessionEvents"));
     return;
   }
   try {
@@ -799,7 +821,7 @@ async function loadSessionEvents(sessionId) {
     );
     const events = asArray(data.events);
     if (events.length === 0) {
-      renderEmptyRow(body, 4, "No events for this session.");
+      renderEmptyRow(body, 4, t("emptyNoEvents"));
       return;
     }
     body.innerHTML = events
@@ -907,7 +929,7 @@ async function approveApproval(approvalId) {
 }
 
 async function rejectApproval(approvalId) {
-  const reason = window.prompt("Rejection reason", "") || "";
+  const reason = window.prompt(t("rejectionPrompt"), "") || "";
   await postJson(buildEndpoint("approvalReject", { approval_id: approvalId }), { reason });
   setMessage("agents-message", `rejected ${approvalId}`);
   await Promise.allSettled([loadApprovals(), loadApprovalsTab()]);
@@ -923,7 +945,7 @@ async function loadFleetHealth() {
     const data = await apiFetch(buildEndpoint("fleetHealth"));
     const instances = asArray(data.instances);
     if (instances.length === 0) {
-      renderEmptyRow(body, 6, "No fleet health data. Click Probe Now.");
+      renderEmptyRow(body, 6, t("emptyNoFleetHealth"));
       return;
     }
     body.innerHTML = instances
@@ -963,7 +985,7 @@ async function loadFleetEvents() {
     const data = await apiFetch(buildEndpoint("fleetEvents"));
     const events = asArray(data.events);
     if (events.length === 0) {
-      renderEmptyRow(body, 5, "No fleet events.");
+      renderEmptyRow(body, 5, t("emptyNoFleetEvents"));
       return;
     }
     body.innerHTML = events
@@ -987,16 +1009,16 @@ async function loadFleetEvents() {
 async function triggerFleetProbe() {
   const btn = byId("fleet-probe-btn");
   btn.disabled = true;
-  btn.textContent = "Probing...";
+  btn.textContent = t("probing");
   try {
     const data = await postEmpty(buildEndpoint("fleetProbe"));
-    setMessage("fleet-message", `Probed ${data.probed} instances`);
+    setMessage("fleet-message", t("fleetProbed", { count: data.probed }));
     await loadFleet();
   } catch (error) {
     setMessage("fleet-message", error.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Probe Now";
+    btn.textContent = t("probeNow");
   }
 }
 
@@ -1011,7 +1033,7 @@ async function loadAuditEvents() {
     const data = await apiFetch(`${buildEndpoint("auditEvents")}?${query}`);
     const events = asArray(data.events);
     if (events.length === 0) {
-      renderEmptyRow(body, 6, "No audit events.");
+      renderEmptyRow(body, 6, t("emptyNoAudit"));
       return;
     }
     body.innerHTML = events
@@ -1036,7 +1058,7 @@ async function loadAuditEvents() {
 async function loadHarnessNativeConfig() {
   const harnessId = byId("harness-config-id").value;
   const snippet = byId("harness-config-snippet");
-  snippet.textContent = "Loading…";
+  snippet.textContent = t("loading");
   try {
     const data = await apiFetch(buildEndpoint("harnessConfigEffective", { harness_id: harnessId }));
     const payload = {
@@ -1045,7 +1067,7 @@ async function loadHarnessNativeConfig() {
       entries: data.entries,
     };
     const text = JSON.stringify(payload, null, 2);
-    snippet.textContent = text.length > 4096 ? `${text.slice(0, 4096)}\n… (truncated)` : text;
+    snippet.textContent = text.length > 4096 ? `${text.slice(0, 4096)}\n${t("truncated")}` : text;
   } catch (error) {
     snippet.textContent = error.message;
   }
@@ -1057,7 +1079,7 @@ async function loadHarnesses() {
     const body = byId("harnesses-body");
     const rows = asArray(data.harnesses);
     if (!rows.length) {
-      renderEmptyRow(body, 6, "No harness instances configured.");
+      renderEmptyRow(body, 6, t("emptyNoHarnesses"));
       return;
     }
     body.innerHTML = rows
@@ -1070,7 +1092,7 @@ async function loadHarnesses() {
             <td><span class="${healthPillClass('unknown')}">unknown</span></td>
             <td>${(h.log_paths || []).length || "-"}</td>
             <td>
-              <button class="btn" onclick="loadHarnessHealth('${escapeHtml(h.id)}')">Check</button>
+              <button class="btn" onclick="loadHarnessHealth('${escapeHtml(h.id)}')">${t("btnCheck")}</button>
             </td>
           </tr>
         `,
@@ -1102,7 +1124,7 @@ async function loadHarnessHealth(harnessId) {
       const body = byId("harness-health-body");
       const harnesses = asArray(allData.harnesses);
       if (!harnesses.length) {
-        renderEmptyRow(body, 4, "No harness instances.");
+        renderEmptyRow(body, 4, t("emptyNoHarnessHealth"));
         return;
       }
       const results = await Promise.allSettled(
@@ -1143,7 +1165,7 @@ async function loadCatalog() {
     const data = await apiFetch(path);
     const surfaces = asArray(data.surfaces);
     if (!surfaces.length) {
-      renderEmptyRow(body, 8, "No surfaces found.");
+      renderEmptyRow(body, 8, t("emptyNoSurfaces"));
       return;
     }
     body.innerHTML = surfaces
@@ -1179,7 +1201,7 @@ async function loadApprovalsTab() {
     const body = byId("approvals-tab-body");
     const approvals = asArray(data.approvals);
     if (!approvals.length) {
-      renderEmptyRow(body, 7, "No approvals.");
+      renderEmptyRow(body, 7, t("emptyNoApprovalsTab"));
       return;
     }
     body.innerHTML = approvals.map(renderApprovalTabRow).join("");
@@ -1213,10 +1235,10 @@ function renderApprovalTabRow(approval) {
         <div class="actions">
           <button type="button" data-action="approve-approval" data-approval-id="${escapeHtml(approval.id)}" ${
             isPending ? "" : "disabled"
-          }>approve</button>
+          }>${t("btnApprove")}</button>
           <button type="button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}" ${
             isPending ? "" : "disabled"
-          }>reject</button>
+          }>${t("btnReject")}</button>
         </div>
       </td>
     </tr>
@@ -1234,7 +1256,7 @@ async function loadAuditStandalone() {
     const body = byId("audit-standalone-body");
     const events = asArray(data.events);
     if (!events.length) {
-      renderEmptyRow(body, 6, "No audit events.");
+      renderEmptyRow(body, 6, t("emptyNoAudit"));
       return;
     }
     body.innerHTML = events
@@ -1263,17 +1285,24 @@ async function loadOverview() {
     const instances = asArray(healthData.instances);
     const upCount = instances.filter((i) => i.state === "up").length;
     const downCount = instances.filter((i) => i.state === "down").length;
-    byId("overview-health-body").innerHTML = `${upCount} up, ${downCount} down, ${instances.length} total`;
+    byId("overview-health-body").innerHTML = t("overviewHealth", {
+      up: upCount,
+      down: downCount,
+      total: instances.length,
+    });
   } catch {
-    byId("overview-health-body").textContent = "error";
+    byId("overview-health-body").textContent = t("overviewError");
   }
 
   // Load capacity
   try {
     const capData = await apiFetch(buildEndpoint("fleetCapacity"));
-    byId("overview-capacity-body").textContent = `${capData.running_sessions}/${capData.max_running_sessions} sessions`;
+    byId("overview-capacity-body").textContent = t("overviewCapacity", {
+      running: capData.running_sessions,
+      max: capData.max_running_sessions,
+    });
   } catch {
-    byId("overview-capacity-body").textContent = "error";
+    byId("overview-capacity-body").textContent = t("overviewError");
   }
 
   // Load sessions count
@@ -1282,18 +1311,18 @@ async function loadOverview() {
     const sessions = asArray(sessData.sessions);
     const running = sessions.filter((s) => s.status === "running").length;
     const total = sessions.length;
-    byId("overview-sessions-body").textContent = `${running} running, ${total} total`;
+    byId("overview-sessions-body").textContent = t("overviewSessions", { running, total });
   } catch {
-    byId("overview-sessions-body").textContent = "error";
+    byId("overview-sessions-body").textContent = t("overviewError");
   }
 
   // Load pending approvals count
   try {
     const appData = await apiFetch(`${buildEndpoint("approvals")}?status=pending`);
     const pending = asArray(appData.approvals).length;
-    byId("overview-approvals-body").textContent = `${pending} pending`;
+    byId("overview-approvals-body").textContent = t("overviewApprovalsPending", { pending });
   } catch {
-    byId("overview-approvals-body").textContent = "error";
+    byId("overview-approvals-body").textContent = t("overviewError");
   }
 }
 
@@ -1328,7 +1357,49 @@ function statusPillClass(status) {
 }
 
 function commandPreview(command) {
-  return Array.isArray(command) ? command.join(" ") : valueOrDash(command);
+  return formatArgv(command);
+}
+
+function formatCommandTemplate(command) {
+  if (!Array.isArray(command)) {
+    return valueOrDash(command);
+  }
+  return command.map((part) => part.replace(/\{\{message\}\}/g, "…")).join(" ");
+}
+
+function renderCommandArgv(command, message) {
+  if (!Array.isArray(command)) {
+    return [];
+  }
+  return command.map((part) => part.replace(/\{\{message\}\}/g, message));
+}
+
+function formatArgv(argv) {
+  return Array.isArray(argv) && argv.length > 0 ? argv.join(" ") : "-";
+}
+
+function updateRunCommandPreview() {
+  const target = byId("run-command-preview");
+  const agentId = byId("run-agent-id").value.trim();
+  const agent = state.agentsById[agentId];
+  if (!agent) {
+    target.textContent = "—";
+    return;
+  }
+  const message = byId("run-message").value;
+  const cwd = byId("run-cwd").value.trim();
+  const cwdLine = cwd
+    ? t("runPreviewCwd", { cwd })
+    : t("runPreviewCwdEmpty");
+  if (!message.trim()) {
+    target.textContent = `${cwdLine}\n${t("runPreviewWaitingMessage")}\n${t("runPreviewArgv", {
+      argv: formatCommandTemplate(agent.command),
+    })}`;
+    return;
+  }
+  target.textContent = `${cwdLine}\n${t("runPreviewArgv", {
+    argv: formatArgv(renderCommandArgv(agent.command, message)),
+  })}`;
 }
 
 function asArray(value) {

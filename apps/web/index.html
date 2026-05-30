@@ -1,78 +1,135 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>agentic-os control panel</title>
-    <link rel="stylesheet" href="styles.css" />
+    <title>agentic-os · Harness 管理</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Lora:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css?v=zh-hant" />
+    <script src="i18n.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark">AO</span>
-        <div>
-          <h1>agentic-os</h1>
-          <p>daemon control panel</p>
+    <div class="app-shell">
+      <aside class="shell-sidebar" aria-label="導覽">
+        <div class="sidebar-brand">
+          <span class="brand-mark" aria-hidden="true">✦</span>
+          <div class="brand-copy">
+            <h1>agentic-os</h1>
+            <p>你的 harness 小書房</p>
+          </div>
         </div>
-      </div>
-      <div class="api-controls" aria-label="Daemon API controls">
-        <label for="api-url">Daemon API</label>
-        <input
-          id="api-url"
-          name="api-url"
-          type="url"
-          value="http://127.0.0.1:8767"
-          spellcheck="false"
-        />
-        <button id="refresh-all" type="button">Refresh</button>
-        <span id="api-status" class="status is-unknown" role="status" aria-live="polite">
-          not checked
-        </span>
-      </div>
-    </header>
 
-    <nav class="tabs" role="tablist" aria-label="Control panel sections">
-      <button id="tab-agents" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="agents">
-        Agents
-      </button>
-      <button id="tab-sessions" class="tab" type="button" role="tab" aria-selected="false" data-tab="sessions">
-        Runs
-      </button>
-      <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
-        Logs
-      </button>
-      <button id="tab-memory" class="tab" type="button" role="tab" aria-selected="false" data-tab="memory">
-        Memory
-      </button>
-      <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
-        Skills / MCP
-      </button>
-      <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
-        Fleet
-      </button>
-      <button id="tab-harnesses" class="tab" type="button" role="tab" aria-selected="false" data-tab="harnesses">
-        Harnesses
-      </button>
-      <button id="tab-catalog" class="tab" type="button" role="tab" aria-selected="false" data-tab="catalog">
-        Surfaces
-      </button>
-      <button id="tab-approvals" class="tab" type="button" role="tab" aria-selected="false" data-tab="approvals">
-        Approvals
-      </button>
-      <button id="tab-audit" class="tab" type="button" role="tab" aria-selected="false" data-tab="audit">
-        Audit
-      </button>
-      <button id="tab-overview" class="tab" type="button" role="tab" aria-selected="false" data-tab="overview">
-        Overview
-      </button>
-    </nav>
+        <nav class="sidebar-nav tabs" role="tablist" aria-label="控制面板區塊">
+          <button
+            id="tab-agents"
+            class="tab is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-tab="agents"
+          >
+            <span class="tab-glyph" aria-hidden="true">🎛️</span>
+            <span class="tab-label">代理</span>
+          </button>
+          <button
+            id="tab-sessions"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-tab="sessions"
+          >
+            <span class="tab-glyph" aria-hidden="true">🚀</span>
+            <span class="tab-label">執行</span>
+          </button>
+          <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
+            <span class="tab-glyph" aria-hidden="true">📜</span>
+            <span class="tab-label">日誌</span>
+          </button>
+          <button id="tab-memory" class="tab" type="button" role="tab" aria-selected="false" data-tab="memory">
+            <span class="tab-glyph" aria-hidden="true">💭</span>
+            <span class="tab-label">記憶</span>
+          </button>
+          <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
+            <span class="tab-glyph" aria-hidden="true">✨</span>
+            <span class="tab-label">技能 / MCP</span>
+          </button>
+          <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
+            <span class="tab-glyph" aria-hidden="true">🌿</span>
+            <span class="tab-label">機群</span>
+          </button>
+          <button
+            id="tab-harnesses"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-tab="harnesses"
+          >
+            <span class="tab-glyph" aria-hidden="true">🔌</span>
+            <span class="tab-label">Harness</span>
+          </button>
+          <button id="tab-catalog" class="tab" type="button" role="tab" aria-selected="false" data-tab="catalog">
+            <span class="tab-glyph" aria-hidden="true">🧩</span>
+            <span class="tab-label">介面</span>
+          </button>
+          <button
+            id="tab-approvals"
+            class="tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-tab="approvals"
+          >
+            <span class="tab-glyph" aria-hidden="true">👋</span>
+            <span class="tab-label">核准</span>
+          </button>
+          <button id="tab-audit" class="tab" type="button" role="tab" aria-selected="false" data-tab="audit">
+            <span class="tab-glyph" aria-hidden="true">📋</span>
+            <span class="tab-label">稽核</span>
+          </button>
+          <button id="tab-overview" class="tab" type="button" role="tab" aria-selected="false" data-tab="overview">
+            <span class="tab-glyph" aria-hidden="true">☀️</span>
+            <span class="tab-label">總覽</span>
+          </button>
+        </nav>
 
-    <main class="workspace">
+      </aside>
+
+      <div class="shell-main">
+        <header class="shell-topbar">
+          <div class="topbar-actions">
+            <span id="api-status" class="status is-unknown" role="status" aria-live="polite">
+              尚未檢查
+            </span>
+            <button id="refresh-all" type="button" class="btn-primary">更新</button>
+          </div>
+          <details class="topbar-advanced">
+            <summary>進階</summary>
+            <div class="api-controls" aria-label="Daemon API 連線">
+              <label for="api-url">Daemon 位址</label>
+              <input
+                id="api-url"
+                name="api-url"
+                type="url"
+                value="http://127.0.0.1:8767"
+                spellcheck="false"
+              />
+            </div>
+          </details>
+        </header>
+
+        <main class="workspace">
       <section id="panel-agents" class="panel is-active" role="tabpanel" aria-labelledby="tab-agents">
         <div class="panel-head">
-          <h2>Agents</h2>
-          <button id="refresh-agents" type="button">Refresh agents</button>
+          <h2>代理</h2>
+          <button id="refresh-agents" type="button">重新整理代理</button>
         </div>
         <p id="agents-message" class="message" aria-live="polite"></p>
         <div class="table-shell">
@@ -80,34 +137,36 @@
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Label</th>
-                <th>Enabled</th>
-                <th>CWD mode</th>
-                <th>Stop policy</th>
-                <th>Command preview</th>
-                <th>Actions</th>
+                <th>名稱</th>
+                <th>啟用</th>
+                <th>工作目錄模式</th>
+                <th>停止策略</th>
+                <th>啟動範本</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody id="agents-body">
               <tr>
-                <td colspan="7">No data loaded.</td>
+                <td colspan="7">尚無資料。</td>
               </tr>
             </tbody>
           </table>
         </div>
         <section id="run-form-section" class="subpanel" hidden>
-          <h3>Run session</h3>
+          <h3>執行 session</h3>
           <div class="eval-grid">
-            <label for="run-agent-id">Agent</label>
+            <label for="run-agent-id">代理</label>
             <input id="run-agent-id" type="text" spellcheck="false" readonly />
-            <label for="run-cwd">Working directory</label>
+            <label for="run-cwd">工作目錄</label>
             <input id="run-cwd" type="text" spellcheck="false" />
-            <label for="run-message">Message</label>
+            <label for="run-message">訊息</label>
             <textarea id="run-message" rows="3" spellcheck="false"></textarea>
+            <label for="run-command-preview">將執行的指令</label>
+            <pre id="run-command-preview" class="command-preview" aria-live="polite">—</pre>
           </div>
           <div class="actions" style="margin-top:0.5rem">
-            <button id="run-submit" type="button">Run</button>
-            <button id="run-cancel" type="button">Cancel</button>
+            <button id="run-submit" type="button">執行</button>
+            <button id="run-cancel" type="button">取消</button>
           </div>
           <pre id="run-result" class="summary-output" aria-live="polite"></pre>
         </section>
@@ -115,8 +174,8 @@
 
       <section id="panel-sessions" class="panel" role="tabpanel" aria-labelledby="tab-sessions" hidden>
         <div class="panel-head">
-          <h2>Runs</h2>
-          <button id="refresh-sessions" type="button">Refresh runs</button>
+          <h2>執行</h2>
+          <button id="refresh-sessions" type="button">重新整理執行</button>
         </div>
         <p id="sessions-message" class="message" aria-live="polite"></p>
         <div class="runs-layout">
@@ -126,46 +185,50 @@
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Agent</th>
-                    <th>CWD</th>
-                    <th>Status</th>
-                    <th>Exit</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
+                    <th>代理</th>
+                    <th>工作目錄</th>
+                    <th>狀態</th>
+                    <th>結束碼</th>
+                    <th>更新時間</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody id="sessions-body">
                   <tr>
-                    <td colspan="7">No data loaded.</td>
+                    <td colspan="7">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
           <aside class="runs-detail card">
-            <h3>Timeline &amp; logs</h3>
-            <p id="runs-selected-session" class="message">Select a session from the list.</p>
+            <h3>時間軸與日誌</h3>
+            <p id="runs-selected-session" class="message">從列表選一個 session。</p>
             <div id="session-timeline" class="timeline-panel" aria-live="polite"></div>
             <div class="control-row runs-log-controls">
               <label for="log-session-id">Session ID</label>
               <input id="log-session-id" type="text" spellcheck="false" />
-              <label for="log-stream">Stream</label>
+              <label for="log-stream">串流</label>
               <select id="log-stream">
                 <option value="">merged</option>
                 <option value="stdout">stdout</option>
                 <option value="stderr">stderr</option>
               </select>
-              <button id="load-logs" type="button" class="btn-primary">Load logs</button>
+              <button id="load-logs" type="button" class="btn-primary">載入日誌</button>
             </div>
             <dl id="log-session-detail" class="detail-grid" aria-live="polite">
               <dt>Session</dt>
               <dd>-</dd>
-              <dt>Agent</dt>
+              <dt>代理</dt>
               <dd>-</dd>
-              <dt>Status</dt>
+              <dt>狀態</dt>
               <dd>-</dd>
-              <dt>Updated</dt>
+              <dt>更新時間</dt>
               <dd>-</dd>
+              <dt>工作目錄</dt>
+              <dd>-</dd>
+              <dt>啟動指令</dt>
+              <dd class="cell-code">-</dd>
             </dl>
             <pre id="log-output" class="log-output" aria-live="polite"></pre>
             <pre id="attach-preview-output" class="summary-output" hidden aria-live="polite"></pre>
@@ -175,29 +238,29 @@
 
       <section id="panel-logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
         <div class="panel-head">
-          <h2>Logs</h2>
-          <p class="message">Use the Runs tab for timeline + logs. This tab keeps full event history.</p>
+          <h2>日誌</h2>
+          <p class="message">時間軸與即時日誌請到「執行」分頁；這裡保留完整事件紀錄。</p>
         </div>
         <div class="control-row">
-          <label for="log-after">After cursor</label>
+          <label for="log-after">游標之後</label>
           <input id="log-after" type="number" min="0" step="1" value="0" />
         </div>
         <p id="logs-message" class="message" aria-live="polite"></p>
         <details id="events-details" class="subpanel">
-          <summary>Session events</summary>
+          <summary>Session 事件</summary>
           <div class="table-shell">
             <table id="events-table">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Type</th>
-                  <th>Message</th>
-                  <th>Time</th>
+                  <th>類型</th>
+                  <th>訊息</th>
+                  <th>時間</th>
                 </tr>
               </thead>
               <tbody id="events-body">
                 <tr>
-                  <td colspan="4">Load a session to see events.</td>
+                  <td colspan="4">先選 session 才能看事件。</td>
                 </tr>
               </tbody>
             </table>
@@ -207,28 +270,28 @@
 
       <section id="panel-memory" class="panel" role="tabpanel" aria-labelledby="tab-memory" hidden>
         <div class="panel-head">
-          <h2>Memory</h2>
-          <button id="refresh-memory" type="button">Refresh memory</button>
+          <h2>記憶</h2>
+          <button id="refresh-memory" type="button">重新整理記憶</button>
         </div>
         <pre id="memory-summary-output" class="summary-output" aria-live="polite"></pre>
         <div class="split">
           <section class="subpanel">
-            <h3>Review queue</h3>
+            <h3>審核佇列</h3>
             <div class="table-shell">
               <table id="memory-review-table">
                 <thead>
                   <tr>
                     <th>ID</th>
                     <th>Session</th>
-                    <th>Status</th>
-                    <th>Title</th>
-                    <th>Source</th>
-                    <th>Actions</th>
+                    <th>狀態</th>
+                    <th>標題</th>
+                    <th>來源</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody id="memory-review-body">
                   <tr>
-                    <td colspan="6">No data loaded.</td>
+                    <td colspan="6">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -236,10 +299,10 @@
           </section>
           <section class="subpanel">
             <div class="subpanel-head">
-              <h3>Approved memory</h3>
+              <h3>已核准記憶</h3>
               <div class="search">
-                <input id="memory-search" type="search" placeholder="Search approved memory" />
-                <button id="search-memory" type="button">Search</button>
+                <input id="memory-search" type="search" placeholder="搜尋已核准記憶" />
+                <button id="search-memory" type="button">搜尋</button>
               </div>
             </div>
             <div class="table-shell">
@@ -247,14 +310,14 @@
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Kind</th>
-                    <th>Title</th>
-                    <th>Source</th>
+                    <th>類型</th>
+                    <th>標題</th>
+                    <th>來源</th>
                   </tr>
                 </thead>
                 <tbody id="memories-body">
                   <tr>
-                    <td colspan="4">No data loaded.</td>
+                    <td colspan="4">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -266,75 +329,75 @@
 
       <section id="panel-skills" class="panel" role="tabpanel" aria-labelledby="tab-skills" hidden>
         <div class="panel-head">
-          <h2>Skills / MCP</h2>
-          <button id="refresh-skills" type="button">Refresh registry</button>
+          <h2>技能 / MCP</h2>
+          <button id="refresh-skills" type="button">重新整理目錄</button>
         </div>
         <div class="split">
           <section class="subpanel">
-            <h3>Skills</h3>
+            <h3>技能</h3>
             <div class="table-shell">
               <table id="skills-table">
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Label</th>
-                    <th>Enabled</th>
-                    <th>Source</th>
-                    <th>Tags</th>
-                    <th>Reason</th>
-                    <th>Replacement</th>
-                    <th>Sunset</th>
+                    <th>名稱</th>
+                    <th>啟用</th>
+                    <th>來源</th>
+                    <th>標籤</th>
+                    <th>原因</th>
+                    <th>替代</th>
+                    <th>下架</th>
                   </tr>
                 </thead>
                 <tbody id="skills-body">
                   <tr>
-                    <td colspan="8">No data loaded.</td>
+                    <td colspan="8">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </section>
           <section class="subpanel">
-            <h3>MCP servers</h3>
+            <h3>MCP 伺服器</h3>
             <div class="table-shell">
               <table id="mcp-table">
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Label</th>
-                    <th>Enabled</th>
-                    <th>Transport</th>
-                    <th>Command preview</th>
-                    <th>Reason</th>
-                    <th>Replacement</th>
-                    <th>Sunset</th>
+                    <th>名稱</th>
+                    <th>啟用</th>
+                    <th>傳輸</th>
+                    <th>指令預覽</th>
+                    <th>原因</th>
+                    <th>替代</th>
+                    <th>下架</th>
                   </tr>
                 </thead>
                 <tbody id="mcp-body">
                   <tr>
-                    <td colspan="8">No data loaded.</td>
+                    <td colspan="8">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </section>
           <section class="subpanel">
-            <h3>Approvals</h3>
+            <h3>核准</h3>
             <div class="table-shell">
               <table id="approvals-table">
                 <thead>
                   <tr>
                     <th>ID</th>
-                    <th>Agent</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>Reason</th>
-                    <th>Actions</th>
+                    <th>代理</th>
+                    <th>狀態</th>
+                    <th>來源</th>
+                    <th>原因</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody id="approvals-embed-body">
                   <tr>
-                    <td colspan="6">No data loaded.</td>
+                    <td colspan="6">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -343,23 +406,23 @@
         </div>
         <div class="split policy-surface">
           <section class="subpanel">
-            <h3>Policy summary</h3>
+            <h3>政策摘要</h3>
             <div class="table-shell">
               <table id="policy-summary-table">
                 <thead>
                   <tr>
-                    <th>Agent</th>
-                    <th>Enabled</th>
-                    <th>Mode</th>
-                    <th>Rate limit</th>
-                    <th>Reason</th>
-                    <th>Replacement</th>
-                    <th>Sunset</th>
+                    <th>代理</th>
+                    <th>啟用</th>
+                    <th>模式</th>
+                    <th>速率限制</th>
+                    <th>原因</th>
+                    <th>替代</th>
+                    <th>下架</th>
                   </tr>
                 </thead>
                 <tbody id="policy-summary-body">
                   <tr>
-                    <td colspan="7">No data loaded.</td>
+                    <td colspan="7">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -367,21 +430,21 @@
           </section>
           <section class="subpanel">
             <div class="subpanel-head">
-              <h3>Policy evaluation</h3>
-              <button id="run-policy-eval" type="button">Evaluate</button>
+              <h3>政策評估</h3>
+              <button id="run-policy-eval" type="button">評估</button>
             </div>
             <div class="eval-grid">
-              <label for="policy-eval-agent">Agent</label>
+              <label for="policy-eval-agent">代理</label>
               <input id="policy-eval-agent" type="text" spellcheck="false" />
-              <label for="policy-eval-skill">Skill</label>
+              <label for="policy-eval-skill">技能</label>
               <input id="policy-eval-skill" type="text" spellcheck="false" />
               <label for="policy-eval-mcp">MCP</label>
               <input id="policy-eval-mcp" type="text" spellcheck="false" />
-              <label for="policy-eval-tool">Tool</label>
+              <label for="policy-eval-tool">工具</label>
               <input id="policy-eval-tool" type="text" spellcheck="false" />
-              <label for="policy-eval-model">Model</label>
+              <label for="policy-eval-model">模型</label>
               <input id="policy-eval-model" type="text" spellcheck="false" />
-              <label for="policy-eval-cwd">CWD</label>
+              <label for="policy-eval-cwd">工作目錄</label>
               <input id="policy-eval-cwd" type="text" spellcheck="false" />
             </div>
             <pre id="policy-eval-result" class="summary-output" aria-live="polite"></pre>
@@ -391,66 +454,66 @@
 
       <section id="panel-fleet" class="panel" role="tabpanel" aria-labelledby="tab-fleet" hidden>
         <div class="panel-head">
-          <h2>Fleet Health</h2>
+          <h2>機群健康</h2>
           <div class="actions">
-            <button id="fleet-probe-btn" type="button">Probe Now</button>
-            <button id="refresh-fleet" type="button">Refresh fleet</button>
+            <button id="fleet-probe-btn" type="button">立即探測</button>
+            <button id="refresh-fleet" type="button">重新整理機群</button>
           </div>
         </div>
         <p id="fleet-message" class="message" aria-live="polite"></p>
 
         <section class="subpanel">
-          <h3>Instance Health</h3>
+          <h3>實例健康</h3>
           <div class="table-shell">
             <table id="fleet-health-table">
               <thead>
                 <tr>
-                  <th>Instance</th>
-                  <th>State</th>
-                  <th>Version</th>
-                  <th>Config FP</th>
-                  <th>Message</th>
-                  <th>Updated</th>
+                  <th>實例</th>
+                  <th>狀態</th>
+                  <th>版本</th>
+                  <th>設定指紋</th>
+                  <th>訊息</th>
+                  <th>更新時間</th>
                 </tr>
               </thead>
               <tbody id="fleet-health-body">
-                <tr><td colspan="6">No data loaded.</td></tr>
+                <tr><td colspan="6">尚無資料。</td></tr>
               </tbody>
             </table>
           </div>
         </section>
 
         <section class="subpanel">
-          <h3>Capacity</h3>
+          <h3>容量</h3>
           <div id="fleet-capacity-display"></div>
         </section>
 
         <section class="subpanel">
-          <h3>Fleet Events</h3>
+          <h3>機群事件</h3>
           <div class="table-shell">
             <table id="fleet-events-table">
               <thead>
                 <tr>
                   <th>ID</th>
                   <th>Instance</th>
-                  <th>Type</th>
-                  <th>Message</th>
-                  <th>Time</th>
+                  <th>類型</th>
+                  <th>訊息</th>
+                  <th>時間</th>
                 </tr>
               </thead>
               <tbody id="fleet-events-body">
-                <tr><td colspan="5">No data loaded.</td></tr>
+                <tr><td colspan="5">尚無資料。</td></tr>
               </tbody>
             </table>
           </div>
         </section>
 
         <section class="subpanel">
-          <h3>Audit Trail</h3>
+          <h3>稽核紀錄</h3>
           <div class="control-row">
-            <label for="audit-domain">Domain</label>
+            <label for="audit-domain">領域</label>
             <select id="audit-domain">
-              <option value="">all</option>
+              <option value="">全部</option>
               <option value="skill">skill</option>
               <option value="mcp">mcp</option>
               <option value="policy">policy</option>
@@ -458,22 +521,22 @@
               <option value="session">session</option>
               <option value="fleet">fleet</option>
             </select>
-            <button id="load-audit-events" type="button">Load</button>
+            <button id="load-audit-events" type="button">載入</button>
           </div>
           <div class="table-shell">
             <table id="audit-events-table">
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Domain</th>
-                  <th>Entity</th>
-                  <th>Type</th>
-                  <th>Message</th>
-                  <th>Time</th>
+                  <th>領域</th>
+                  <th>實體</th>
+                  <th>類型</th>
+                  <th>訊息</th>
+                  <th>時間</th>
                 </tr>
               </thead>
               <tbody id="audit-events-body">
-                <tr><td colspan="6">Click Load to view audit events.</td></tr>
+                <tr><td colspan="6">按「載入」查看稽核事件。</td></tr>
               </tbody>
             </table>
           </div>
@@ -481,29 +544,29 @@
       </section>
 
       <section id="panel-harnesses" class="panel" role="tabpanel" aria-labelledby="tab-harnesses">
-        <h2>Harness Instances</h2>
+        <h2>Harness 實例</h2>
         <div class="table-shell">
-          <table aria-label="Harness instances">
+          <table aria-label="Harness 實例">
             <thead>
-              <tr><th>id</th><th>name</th><th>provider</th><th>health</th><th>log paths</th><th>Actions</th></tr>
+              <tr><th>id</th><th>名稱</th><th>提供者</th><th>健康</th><th>日誌路徑</th><th>操作</th></tr>
             </thead>
             <tbody id="harnesses-body">
-              <tr><td colspan="6">Loading harnesses…</td></tr>
+              <tr><td colspan="6">載入 Harness…</td></tr>
             </tbody>
           </table>
         </div>
-        <h3>Harness Health</h3>
+        <h3>Harness 健康</h3>
         <div class="table-shell">
-          <table aria-label="Harness instance health">
+          <table aria-label="Harness 實例健康">
             <thead>
-              <tr><th>id</th><th>state</th><th>message</th><th>Actions</th></tr>
+              <tr><th>id</th><th>狀態</th><th>訊息</th><th>操作</th></tr>
             </thead>
             <tbody id="harness-health-body">
-              <tr><td colspan="4">Loading health…</td></tr>
+              <tr><td colspan="4">載入健康狀態…</td></tr>
             </tbody>
           </table>
         </div>
-        <h3>Native config</h3>
+        <h3>原生設定</h3>
         <div class="row">
           <label for="harness-config-id">Harness</label>
           <select id="harness-config-id">
@@ -514,13 +577,13 @@
             <option value="openclaw">OpenClaw</option>
             <option value="hermes">Hermes</option>
           </select>
-          <button id="harness-config-load" type="button">Load effective</button>
+          <button id="harness-config-load" type="button">載入有效設定</button>
         </div>
-        <pre id="harness-config-snippet" class="log-preview">Select a harness and load effective native config.</pre>
+        <pre id="harness-config-snippet" class="log-preview">選 Harness 並載入有效原生設定。</pre>
       </section>
 
       <section id="panel-catalog" class="panel" role="tabpanel" aria-labelledby="tab-catalog">
-        <h2>Workflow Surfaces</h2>
+        <h2>工作流介面</h2>
         <div class="row">
           <label for="catalog-harness">Harness</label>
           <select id="catalog-harness">
@@ -531,9 +594,9 @@
             <option value="openclaw">OpenClaw</option>
             <option value="hermes">Hermes</option>
           </select>
-          <label for="catalog-type">Type</label>
+          <label for="catalog-type">類型</label>
           <select id="catalog-type">
-            <option value="">All</option>
+            <option value="">全部</option>
             <option value="hook">Hooks</option>
             <option value="command">Commands</option>
             <option value="skill">Skills</option>
@@ -541,51 +604,51 @@
             <option value="mcp_server">MCP Servers</option>
             <option value="permission">Permissions</option>
           </select>
-          <button id="catalog-load" type="button">Load</button>
+          <button id="catalog-load" type="button">載入</button>
         </div>
         <div class="table-shell">
-          <table aria-label="Workflow surfaces">
+          <table aria-label="工作流介面">
             <thead>
-              <tr><th>id</th><th>type</th><th>name</th><th>scope</th><th>source</th><th>status</th><th>overridden_by</th><th>overrides</th></tr>
+              <tr><th>id</th><th>類型</th><th>名稱</th><th>範圍</th><th>來源</th><th>狀態</th><th>覆寫者</th><th>覆寫</th></tr>
             </thead>
             <tbody id="catalog-body">
-              <tr><td colspan="8">Select a harness and click Load.</td></tr>
+              <tr><td colspan="8">選 Harness 後按「載入」。</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
       <section id="panel-approvals" class="panel" role="tabpanel" aria-labelledby="tab-approvals">
-        <h2>Approval Queue</h2>
+        <h2>核准佇列</h2>
         <div class="row">
-          <label for="approval-status-filter">Status</label>
+          <label for="approval-status-filter">狀態</label>
           <select id="approval-status-filter">
-            <option value="">All</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="expired">Expired</option>
+            <option value="">全部</option>
+            <option value="pending">待處理</option>
+            <option value="approved">已核准</option>
+            <option value="rejected">已拒絕</option>
+            <option value="expired">已過期</option>
           </select>
-          <button id="approval-load" type="button">Load</button>
+          <button id="approval-load" type="button">載入</button>
         </div>
         <div class="table-shell">
-          <table aria-label="Approval queue">
+          <table aria-label="核准佇列">
             <thead>
-              <tr><th>id</th><th>harness</th><th>status</th><th>source session</th><th>approved session</th><th>reason</th><th>Actions</th></tr>
+              <tr><th>id</th><th>harness</th><th>狀態</th><th>來源 session</th><th>核准 session</th><th>原因</th><th>操作</th></tr>
             </thead>
             <tbody id="approvals-tab-body">
-              <tr><td colspan="7">Click Load to view approvals.</td></tr>
+              <tr><td colspan="7">按「載入」查看核准。</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
       <section id="panel-audit" class="panel" role="tabpanel" aria-labelledby="tab-audit">
-        <h2>Audit Trail</h2>
+        <h2>稽核紀錄</h2>
         <div class="row">
-          <label for="audit-domain">Domain</label>
+          <label for="audit-domain">領域</label>
           <select id="audit-domain">
-            <option value="">All</option>
+            <option value="">全部</option>
             <option value="skill">Skill</option>
             <option value="mcp">MCP</option>
             <option value="policy">Policy</option>
@@ -593,43 +656,45 @@
             <option value="session">Session</option>
             <option value="fleet">Fleet</option>
           </select>
-          <label for="audit-limit">Limit</label>
+          <label for="audit-limit">筆數上限</label>
           <input id="audit-limit" type="number" value="500" min="1" max="5000" style="width:80px" />
-          <button id="load-audit" type="button">Load</button>
+          <button id="load-audit" type="button">載入</button>
         </div>
         <div class="table-shell">
-          <table aria-label="Audit events">
+          <table aria-label="稽核事件">
             <thead>
-              <tr><th>id</th><th>domain</th><th>entity</th><th>type</th><th>message</th><th>timestamp</th></tr>
+              <tr><th>id</th><th>領域</th><th>實體</th><th>類型</th><th>訊息</th><th>時間</th></tr>
             </thead>
             <tbody id="audit-standalone-body">
-              <tr><td colspan="6">Click Load to view audit events.</td></tr>
+              <tr><td colspan="6">按「載入」查看稽核事件。</td></tr>
             </tbody>
           </table>
         </div>
       </section>
 
       <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
-        <h2>Overview</h2>
+        <h2>總覽</h2>
         <div class="overview-grid">
           <div id="overview-health" class="card stat-card">
-            <h3>Fleet Health</h3>
-            <div id="overview-health-body" class="card-body">Loading…</div>
+            <h3>機群健康</h3>
+            <div id="overview-health-body" class="card-body">載入中…</div>
           </div>
           <div id="overview-capacity" class="card stat-card">
-            <h3>Capacity</h3>
-            <div id="overview-capacity-body" class="card-body">Loading…</div>
+            <h3>容量</h3>
+            <div id="overview-capacity-body" class="card-body">載入中…</div>
           </div>
           <div id="overview-sessions" class="card stat-card">
-            <h3>Runs</h3>
-            <div id="overview-sessions-body" class="card-body">Loading…</div>
+            <h3>執行</h3>
+            <div id="overview-sessions-body" class="card-body">載入中…</div>
           </div>
           <div id="overview-approvals" class="card stat-card">
-            <h3>Pending Approvals</h3>
-            <div id="overview-approvals-body" class="card-body">Loading…</div>
+            <h3>待核准</h3>
+            <div id="overview-approvals-body" class="card-body">載入中…</div>
           </div>
         </div>
       </section>
-    </main>
+        </main>
+      </div>
+    </div>
   </body>
 </html>

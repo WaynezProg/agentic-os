@@ -15,6 +15,7 @@ def test_static_web_files_exist() -> None:
     assert INDEX_HTML.is_file()
     assert STYLES_CSS.is_file()
     assert APP_JS.is_file()
+    assert (WEB_DIR / "i18n.js").is_file()
 
 
 def test_five_tabs_are_present() -> None:
@@ -22,17 +23,17 @@ def test_five_tabs_are_present() -> None:
 
     assert html.count('role="tab"') == 11
     for tab in [
-        "Agents",
-        "Runs",
-        "Logs",
-        "Memory",
-        "Skills / MCP",
-        "Fleet",
-        "Harnesses",
-        "Surfaces",
-        "Approvals",
-        "Audit",
-        "Overview",
+        "代理",
+        "執行",
+        "日誌",
+        "記憶",
+        "技能 / MCP",
+        "機群",
+        "Harness",
+        "介面",
+        "核准",
+        "稽核",
+        "總覽",
     ]:
         assert re.search(rf">\s*{re.escape(tab)}\s*<", html)
 
@@ -58,10 +59,14 @@ def test_first_screen_is_control_panel_not_marketing_page() -> None:
 
 def test_agents_table_contract_exists() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
 
     assert 'id="agents-table"' in html
     assert 'id="agents-body"' in html
-    for header in ["ID", "Label", "Enabled", "CWD mode", "Stop policy", "Command preview"]:
+    assert 'id="run-command-preview"' in html
+    assert "updateRunCommandPreview" in js
+    assert "formatArgv" in js
+    for header in ["ID", "名稱", "啟用", "工作目錄模式", "停止策略", "啟動範本"]:
         assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
 
 
@@ -136,9 +141,9 @@ def test_skills_mcp_placeholder_panels_exist() -> None:
 def test_skills_mcp_p3_registry_tables_exist() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    for header in ["ID", "Label", "Enabled", "Source", "Tags"]:
+    for header in ["ID", "名稱", "啟用", "來源", "標籤"]:
         assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
-    for header in ["ID", "Label", "Enabled", "Transport", "Command preview"]:
+    for header in ["ID", "名稱", "啟用", "傳輸", "指令預覽"]:
         assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
 
 
@@ -263,7 +268,11 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
     ]:
         assert not path.exists()
 
-    combined = INDEX_HTML.read_text(encoding="utf-8") + APP_JS.read_text(encoding="utf-8")
+    combined = (
+        INDEX_HTML.read_text(encoding="utf-8")
+        + APP_JS.read_text(encoding="utf-8")
+        + (WEB_DIR / "i18n.js").read_text(encoding="utf-8")
+    )
     for token in ["vite", "webpack", "parcel", "npm install", "node_modules"]:
         assert token not in combined.lower()
 
@@ -359,7 +368,7 @@ def test_javascript_renders_deprecation_metadata() -> None:
 
     for token in ["deprecation_reason", "replacement_id", "sunset_at"]:
         assert token in js
-    for header in ["Reason", "Replacement", "Sunset"]:
+    for header in ["原因", "替代", "下架"]:
         assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
 
 
