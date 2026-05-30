@@ -82,6 +82,26 @@ def show_profile(name: str, cwd: str | Path | None) -> RunProfileInput | None:
     return list_profiles(cwd).get(name)
 
 
+def upsert_run_profile(
+    profile: RunProfileInput,
+    *,
+    scope: str = "local",
+    cwd: str | Path | None = None,
+) -> RunProfileInput:
+    if scope not in {"local", "global"}:
+        raise ValueError(f"unsupported profile scope: {scope}")
+
+    profile_path = global_profile_path() if scope == "global" else local_profile_path(cwd)
+    bundle = _read_bundle(profile_path)
+    run_profiles = dict(bundle.run_profiles)
+    run_profiles[profile.name] = profile
+    _write_bundle(
+        profile_path,
+        ProfileFileBundle(run_profiles=run_profiles, project_bindings=bundle.project_bindings),
+    )
+    return profile
+
+
 def bind_project_profile(
     project_path: str,
     run_profile: str,

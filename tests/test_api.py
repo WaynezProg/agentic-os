@@ -1881,25 +1881,37 @@ def test_config_explain_returns_valid(tmp_path: Path) -> None:
 
 
 def test_harness_contracts_list_and_show(tmp_path: Path) -> None:
-    client = make_client(tmp_path)
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
 
     response = client.get("/harness-contracts")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["count"] >= 1
+    harness_ids = {item["harness_id"] for item in payload["contracts"]}
+    assert "cursor" in harness_ids
+    assert payload["count"] >= 7
     assert all(item["contract_version"] == "v1" for item in payload["contracts"])
 
-    show = client.get("/harness-contracts/shell")
+    show = client.get("/harness-contracts/cursor")
     assert show.status_code == 200
-    assert show.json()["harness_id"] == "shell"
+    assert show.json()["launch"]["supported"] is True
+
+    shell = client.get("/harness-contracts/shell")
+    assert shell.status_code == 200
+    assert shell.json()["harness_id"] == "shell"
 
 
 def test_harness_contracts_show_unknown(tmp_path: Path) -> None:
-    client = make_client(tmp_path)
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
 
     response = client.get("/harness-contracts/missing")
     assert response.status_code == 400
-    assert "supported" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert "supported" in detail
+    assert "cursor" in detail["supported"]
+    assert "shell" in detail["supported"]
+    assert len(detail["supported"]) >= 8
 
 
 def test_usage_session_not_found_returns_na(tmp_path: Path) -> None:
@@ -1921,11 +1933,38 @@ def test_usage_summary_and_quotas(tmp_path: Path) -> None:
 
     quotas = client.get("/usage/quotas", params={"scope": "daily"})
     assert quotas.status_code == 200
-    assert quotas.json()["scope"] == "daily"
+    body = quotas.json()
+    assert body["scope"] == "daily"
+    assert "quotas" in body
+    assert isinstance(body["quotas"], list)
 
     bad_scope = client.get("/usage/quotas", params={"scope": "weekly"})
     assert bad_scope.status_code == 400
     assert "supported" in bad_scope.json()["detail"]
+
+
+def test_post_profiles_upsert_local(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    response = client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo)},
+        json={
+            "name": "cursor-dev",
+            "harness_id": "cursor",
+            "provider": "cursor",
+            "model": "default",
+            "max_tokens_budget": 5000,
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["name"] == "cursor-dev"
+
+    listed = client.get("/profiles", params={"cwd": str(repo)})
+    names = {item["name"] for item in listed.json()["run_profiles"]}
+    assert "cursor-dev" in names
 
 
 def test_session_record_stores_resolved_profile_metadata(tmp_path: Path, monkeypatch) -> None:

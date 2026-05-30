@@ -94,3 +94,18 @@ workspace_roots = ["~/bootstrap", "~/work"]
 log_paths = ["~/.hermes/logs"]
 default_provider = "openai"
 attach_command = ["hermes", "--resume"]
+
+[[agents]]
+id = "cursor"
+label = "Cursor Agent"
+command = ["cursor", "agent", "--print", "--trust", "--output-format", "text", "{{message}}"]
+cwd_mode = "required"
+stop_policy = "process_group"
+health_command = ["cursor", "agent", "-v"]
+version_command = ["cursor", "agent", "-v"]
+config_fingerprint_command = ["cursor", "agent", "-v"]
+config_path = "~/.cursor"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.cursor/projects"]
+default_provider = "cursor"
+attach_command = ["cursor", "agent", "--resume"]

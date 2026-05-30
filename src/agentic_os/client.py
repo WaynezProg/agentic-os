@@ -293,6 +293,18 @@ class AgenticClient:
     def show_profile(self, name: str) -> dict[str, Any]:
         return self._get(f"/profiles/{_validate_path_id(name)}")
 
+    def upsert_profile(
+        self,
+        profile: dict[str, Any],
+        *,
+        scope: str = "local",
+        cwd: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope": scope}
+        if cwd is not None:
+            params["cwd"] = cwd
+        return self._post("/profiles", profile, params=params)
+
     def bind_project_profile(self, project_path: str, run_profile: str) -> dict[str, Any]:
         encoded_path = quote(project_path, safe="")
         return self._post(
@@ -323,8 +335,11 @@ class AgenticClient:
     def usage_session(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/usage/sessions/{_validate_path_id(session_id)}")
 
-    def usage_quotas(self, scope: str = "daily") -> dict[str, Any]:
-        return self._get("/usage/quotas", {"scope": scope})
+    def usage_quotas(self, scope: str = "daily", *, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {"scope": scope}
+        if cwd is not None:
+            params["cwd"] = cwd
+        return self._get("/usage/quotas", params=params)
 
     def catalog_surfaces(
         self,
@@ -430,9 +445,17 @@ class AgenticClient:
             response.raise_for_status()
             return response.json()
 
-    def _post(self, path: str, payload: dict[str, object]) -> dict[str, Any]:
+    def _post(
+        self,
+        path: str,
+        payload: dict[str, object],
+        params: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
-            response = client.post(path, json=payload)
+            post_kwargs: dict[str, object] = {"json": payload}
+            if params is not None:
+                post_kwargs["params"] = params
+            response = client.post(path, **post_kwargs)
             response.raise_for_status()
             return response.json()
 

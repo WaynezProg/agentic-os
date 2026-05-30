@@ -68,6 +68,36 @@ def test_stale_project_binding_raises_unknown_profile(tmp_path: Path) -> None:
         raise AssertionError("expected stale binding to raise")
 
 
+def test_upsert_run_profile_local_and_global(tmp_path: Path, monkeypatch) -> None:
+    global_root = tmp_path / "global-home"
+    monkeypatch.setattr(profiles, "global_profile_path", lambda: global_root / ".agentic-os" / "profiles.toml")
+
+    local_repo = tmp_path / "repo"
+    local_repo.mkdir()
+    profile = profiles.RunProfileInput(
+        name="dev",
+        harness_id="cursor",
+        provider="cursor",
+        model="default",
+        max_tokens_budget=1000,
+    )
+    profiles.upsert_run_profile(profile, scope="local", cwd=local_repo)
+    loaded = profiles.show_profile("dev", cwd=local_repo)
+    assert loaded is not None
+    assert loaded.harness_id == "cursor"
+
+    profiles.upsert_run_profile(
+        profiles.RunProfileInput(
+            name="global-default",
+            harness_id="shell",
+            provider="local",
+            model="local",
+        ),
+        scope="global",
+    )
+    assert profiles.show_profile("global-default", cwd=local_repo) is not None
+
+
 def test_bind_project_profile_preserves_local_profiles(tmp_path: Path) -> None:
     cwd = tmp_path / "repo"
     cwd.mkdir()

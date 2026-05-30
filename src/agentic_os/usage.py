@@ -10,6 +10,10 @@ from typing import Any, Protocol
 
 USAGE_PARSER_SOURCE_FALLBACK = "fallback"
 USAGE_PARSER_SOURCE_OPENCLAW = "openclaw"
+USAGE_PARSER_SOURCE_CLAUDE = "claude"
+USAGE_PARSER_SOURCE_CODEX = "codex"
+USAGE_PARSER_SOURCE_OPENCODE = "opencode"
+USAGE_PARSER_SOURCE_CURSOR = "cursor"
 
 
 @dataclass(frozen=True)
@@ -49,49 +53,84 @@ class UsageParser(Protocol):
     def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord: ...
 
 
+def _extract_json_line_usage(
+    *,
+    session_id: str,
+    harness_id: str,
+    source: str,
+    lines: list[_ParsedLogLine],
+) -> UsageRecord:
+    input_tokens = 0
+    output_tokens = 0
+    cost_usd = 0.0
+
+    for entry in lines:
+        raw = _parse_json_line(entry.line)
+        if raw is None:
+            continue
+
+        usage = raw.get("usage", {})
+        if isinstance(usage, dict):
+            input_tokens += _int_or_zero(usage.get("input_tokens"))
+            output_tokens += _int_or_zero(usage.get("output_tokens"))
+
+        if not cost_usd:
+            cost_usd = _float_or_zero(raw.get("cost"))
+        payload_cost = raw.get("cost")
+        if isinstance(payload_cost, dict):
+            cost_usd += _float_or_zero(payload_cost.get("usd"))
+
+    total_tokens = input_tokens + output_tokens
+    if total_tokens == 0:
+        for entry in lines:
+            match = _TOKEN_PATTERN.search(entry.line)
+            if match:
+                total_tokens += int(match.group("tokens"))
+
+    evidence = _evidence_hash(lines)
+
+    return UsageRecord(
+        session_id=session_id,
+        harness_id=harness_id,
+        provider=_extract_field(lines, ["provider", "resolved_provider"]),
+        model=_extract_field(lines, ["model", "resolved_model"]),
+        run_profile=_extract_field(lines, ["run_profile", "resolved_profile", "profile"]),
+        cwd=_extract_field(lines, ["cwd"]),
+        started_at=_extract_field(lines, ["started_at"]),
+        ended_at=_extract_field(lines, ["ended_at"]),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens or input_tokens + output_tokens,
+        cost_usd=round(cost_usd, 4),
+        raw_evidence=evidence,
+        source=source,
+    )
+
+
 class OpenclawUsageParser:
     harness_id = "openclaw"
     source = USAGE_PARSER_SOURCE_OPENCLAW
 
     def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord:
-        input_tokens = 0
-        output_tokens = 0
-        cost_usd = 0.0
-
-        for entry in lines:
-            raw = _parse_json_line(entry.line)
-            if raw is None:
-                continue
-
-            usage = raw.get("usage", {})
-            if isinstance(usage, dict):
-                input_tokens += _int_or_zero(usage.get("input_tokens"))
-                output_tokens += _int_or_zero(usage.get("output_tokens"))
-
-            if not cost_usd:
-                cost_usd = _float_or_zero(raw.get("cost"))
-            payload_cost = raw.get("cost")
-            if isinstance(payload_cost, dict):
-                cost_usd += _float_or_zero(payload_cost.get("usd"))
-
-        total_tokens = input_tokens + output_tokens
-        evidence = _evidence_hash(lines)
-
-        return UsageRecord(
+        return _extract_json_line_usage(
             session_id=session_id,
             harness_id=harness_id,
-            provider=_extract_field(lines, ["provider", "resolved_provider"]),
-            model=_extract_field(lines, ["model", "resolved_model"]),
-            run_profile=_extract_field(lines, ["run_profile", "resolved_profile", "profile"]),
-            cwd=_extract_field(lines, ["cwd"]),
-            started_at=_extract_field(lines, ["started_at"]),
-            ended_at=_extract_field(lines, ["ended_at"]),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            cost_usd=round(cost_usd, 4),
-            raw_evidence=evidence,
             source=self.source,
+            lines=lines,
+        )
+
+
+class JsonLineUsageParser:
+    def __init__(self, harness_id: str, source: str) -> None:
+        self.harness_id = harness_id
+        self.source = source
+
+    def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord:
+        return _extract_json_line_usage(
+            session_id=session_id,
+            harness_id=harness_id,
+            source=self.source,
+            lines=lines,
         )
 
 
@@ -125,7 +164,14 @@ class FallbackUsageParser:
         )
 
 
-_PARSERS: list[UsageParser] = [OpenclawUsageParser(), FallbackUsageParser()]
+_PARSERS: list[UsageParser] = [
+    OpenclawUsageParser(),
+    JsonLineUsageParser("claude", USAGE_PARSER_SOURCE_CLAUDE),
+    JsonLineUsageParser("codex", USAGE_PARSER_SOURCE_CODEX),
+    JsonLineUsageParser("opencode", USAGE_PARSER_SOURCE_OPENCODE),
+    JsonLineUsageParser("cursor", USAGE_PARSER_SOURCE_CURSOR),
+    FallbackUsageParser(),
+]
 _TOKEN_PATTERN = re.compile(r"\btokens?\b\s*[:=]?\s*(?P<tokens>\d+)", re.IGNORECASE)
 
 
@@ -134,6 +180,36 @@ def read_usage_parser(harness_id: str) -> UsageParser:
         if parser.harness_id == harness_id:
             return parser
     return FallbackUsageParser()
+
+
+def _quota_status(used_tokens: int, limit_tokens: int) -> str:
+    if used_tokens >= limit_tokens:
+        return "exceeded"
+    if used_tokens >= int(limit_tokens * 0.8):
+        return "warning"
+    return "ok"
+
+
+def _profile_quota_row(
+    *,
+    run_profile: str,
+    profile: object,
+    used_tokens: int,
+) -> dict[str, object]:
+    from agentic_os.profiles import RunProfileInput
+
+    if not isinstance(profile, RunProfileInput) or profile.max_tokens_budget is None:
+        raise ValueError(f"profile {run_profile} has no token budget")
+
+    limit_tokens = profile.max_tokens_budget
+    return {
+        "run_profile": run_profile,
+        "harness_id": profile.harness_id,
+        "limit_tokens": limit_tokens,
+        "used_tokens": used_tokens,
+        "remaining_tokens": max(0, limit_tokens - used_tokens),
+        "status": _quota_status(used_tokens, limit_tokens),
+    }
 
 
 def parse_logs_for_usage(log_paths: list[Path]) -> list[_ParsedLogLine]:
@@ -267,46 +343,69 @@ class UsageStore:
             ).fetchall()
         return [_usage_row_to_dict(row) for row in rows]
 
-    def list_daily_totals(self) -> list[dict[str, object]]:
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                  date(updated_at) AS day,
-                  COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                  COALESCE(SUM(cost_usd), 0.0) AS cost_usd,
-                  COUNT(*) AS session_count
-                FROM usage_records
-                GROUP BY date(updated_at)
-                ORDER BY day DESC
-                """
-            ).fetchall()
-        return [
-            {
-                "day": row["day"],
-                "total_tokens": int(row["total_tokens"]),
-                "cost_usd": float(row["cost_usd"]),
-                "session_count": int(row["session_count"]),
-            }
-            for row in rows
-        ]
+    def list_profile_quotas_daily(
+        self, profiles: dict[str, object]
+    ) -> list[dict[str, object]]:
+        from agentic_os.profiles import RunProfileInput
 
-    def list_session_totals(self) -> list[dict[str, object]]:
+        results: list[dict[str, object]] = []
+        for name, profile in sorted(profiles.items()):
+            if not isinstance(profile, RunProfileInput) or profile.max_tokens_budget is None:
+                continue
+            with self.connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT COALESCE(SUM(total_tokens), 0) AS used_tokens
+                    FROM usage_records
+                    WHERE run_profile = ? AND date(updated_at) = date('now')
+                    """,
+                    (name,),
+                ).fetchone()
+            used_tokens = int(row["used_tokens"])
+            results.append(
+                _profile_quota_row(
+                    run_profile=name,
+                    profile=profile,
+                    used_tokens=used_tokens,
+                )
+            )
+        return results
+
+    def list_profile_quotas_session(
+        self, profiles: dict[str, object]
+    ) -> list[dict[str, object]]:
+        from agentic_os.profiles import RunProfileInput
+
+        budgets = {
+            name: profile
+            for name, profile in profiles.items()
+            if isinstance(profile, RunProfileInput) and profile.max_tokens_budget is not None
+        }
+        if not budgets:
+            return []
+
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT
-                  session_id,
-                  harness_id,
-                  provider,
-                  model,
-                  total_tokens,
-                  cost_usd
+                SELECT session_id, run_profile, total_tokens
                 FROM usage_records
                 ORDER BY updated_at DESC
                 """
             ).fetchall()
-        return [_usage_row_to_dict(row) for row in rows]
+
+        results: list[dict[str, object]] = []
+        for row in rows:
+            profile = budgets.get(row["run_profile"])
+            if profile is None:
+                continue
+            entry = _profile_quota_row(
+                run_profile=row["run_profile"],
+                profile=profile,
+                used_tokens=int(row["total_tokens"]),
+            )
+            entry["session_id"] = row["session_id"]
+            results.append(entry)
+        return results
 
     def list_for_harnesses(self, limit: int = 100) -> list[UsageRecord]:
         with self.connect() as conn:
@@ -356,39 +455,6 @@ class UsageStore:
                 }
                 for row in by_harness
             ],
-        }
-
-    def quotas(self) -> dict[str, object]:
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                  provider,
-                  model,
-                  COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                  COALESCE(SUM(cost_usd), 0.0) AS cost_usd,
-                  COUNT(*) as session_count
-                FROM usage_records
-                GROUP BY provider, model
-                ORDER BY provider, model
-                """
-            ).fetchall()
-
-        return {
-            "quotas": [
-                {
-                    "provider": row["provider"],
-                    "model": row["model"],
-                    "used_tokens": int(row["total_tokens"]),
-                    "used_cost_usd": float(row["cost_usd"]),
-                    "session_count": int(row["session_count"]),
-                    "limit_tokens": None,
-                    "limit_cost_usd": None,
-                    "currency": "USD",
-                    "status": "unlimited",
-                }
-                for row in rows
-            ]
         }
 
     def _migrate_usage_columns(self, conn: sqlite3.Connection) -> None:

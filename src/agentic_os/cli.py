@@ -162,6 +162,43 @@ def profiles_show(name: str, api: str | None = _api_option()) -> None:
     _echo_json(_run_api_call(lambda: make_client(api).show_profile(name)))
 
 
+@profiles_cmd.command("set")
+def profiles_set(
+    name: str,
+    harness: str = typer.Option(..., "--harness"),
+    provider: str = typer.Option(..., "--provider"),
+    model: str = typer.Option(..., "--model"),
+    message_prefix: str = typer.Option("", "--message-prefix"),
+    max_tokens_budget: int | None = typer.Option(None, "--max-tokens-budget"),
+    notes: str = typer.Option("", "--notes"),
+    global_scope: bool = typer.Option(False, "--global", help="Write to ~/.agentic-os/profiles.toml"),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Repo path for local profile file."),
+    api: str | None = _api_option(),
+) -> None:
+    from agentic_os.profiles import RunProfileInput
+
+    profile = RunProfileInput(
+        name=name,
+        harness_id=harness,
+        provider=provider,
+        model=model,
+        message_prefix=message_prefix,
+        max_tokens_budget=max_tokens_budget,
+        notes=notes,
+    )
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd is not None else None
+    scope = "global" if global_scope else "local"
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).upsert_profile(
+                profile.model_dump(),
+                scope=scope,
+                cwd=resolved_cwd,
+            )
+        )
+    )
+
+
 @profiles_cmd.command("bind")
 def profiles_bind(
     project_path: Path,

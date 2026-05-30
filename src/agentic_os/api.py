@@ -305,6 +305,25 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"unknown profile: {name}")
         return profile.model_dump()
 
+    @app.post("/profiles", status_code=201)
+    def upsert_profile(
+        profile: profiles_module.RunProfileInput,
+        scope: str = Query(default="local"),
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        if scope not in {"local", "global"}:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": f"unsupported scope: {scope}", "supported": ["local", "global"]},
+            )
+        resolved_cwd = str(Path(cwd).resolve()) if cwd else str(Path.cwd())
+        saved = profiles_module.upsert_run_profile(
+            profile,
+            scope=scope,
+            cwd=None if scope == "global" else resolved_cwd,
+        )
+        return saved.model_dump()
+
     @app.post("/projects/{project_path:path}/bind-profile")
     def bind_project_profile(
         project_path: str,
@@ -354,11 +373,24 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         return {"count": len(rows), "rows": rows}
 
     @app.get("/usage/quotas")
-    def usage_quotas(scope: str = Query(default="daily")) -> dict[str, object]:
+    def usage_quotas(
+        scope: str = Query(default="daily"),
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        resolved_cwd = str(Path(cwd).resolve()) if cwd else str(Path.cwd())
+        profiles = profiles_module.list_profiles(resolved_cwd)
         if scope == "daily":
-            return {"scope": "daily", "rows": usage_store.list_daily_totals()}
+            return {
+                "scope": "daily",
+                "cwd": resolved_cwd,
+                "quotas": usage_store.list_profile_quotas_daily(profiles),
+            }
         if scope == "session":
-            return {"scope": "session", "rows": usage_store.list_session_totals()}
+            return {
+                "scope": "session",
+                "cwd": resolved_cwd,
+                "quotas": usage_store.list_profile_quotas_session(profiles),
+            }
         raise HTTPException(
             status_code=400,
             detail={"message": f"unsupported scope: {scope}", "supported": ["daily", "session"]},

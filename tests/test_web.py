@@ -277,9 +277,9 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
         assert token not in combined.lower()
 
 
-def test_catalog_harness_select_has_six_options() -> None:
+def test_catalog_harness_select_has_seven_options() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    for harness_id in ("claude", "codex", "opencode", "qwen", "openclaw", "hermes"):
+    for harness_id in ("claude", "codex", "opencode", "qwen", "openclaw", "hermes", "cursor"):
         assert f'<option value="{harness_id}">' in html
 
 

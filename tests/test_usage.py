@@ -1,7 +1,9 @@
 from pathlib import Path
 
+from agentic_os.profiles import RunProfileInput
 from agentic_os.usage import (
     FallbackUsageParser,
+    JsonLineUsageParser,
     OpenclawUsageParser,
     UsageRecord,
     UsageStore,
@@ -96,6 +98,53 @@ def test_fallback_parser_and_unknown_harness() -> None:
     assert usage.total_tokens == 0
     assert usage.source == "fallback"
     assert read_usage_parser("unknown").source == "fallback"
+
+
+def test_claude_parser_extracts_usage_block() -> None:
+    lines = [
+        _ParsedLogLine(
+            line='{"usage":{"input_tokens":3,"output_tokens":7},"provider":"anthropic","model":"sonnet"}',
+            stream="stdout",
+        )
+    ]
+    usage = JsonLineUsageParser("claude", "claude").extract(
+        session_id="s1",
+        harness_id="claude",
+        lines=lines,
+    )
+    assert usage.total_tokens == 10
+    assert usage.source == "claude"
+
+
+def test_profile_quota_warning_status(tmp_path: Path) -> None:
+    store = UsageStore(tmp_path / "usage.db")
+    store.init()
+    profiles = {
+        "budgeted": RunProfileInput(
+            name="budgeted",
+            harness_id="cursor",
+            provider="cursor",
+            model="default",
+            max_tokens_budget=100,
+        )
+    }
+    store.upsert(
+        UsageRecord(
+            session_id="s1",
+            harness_id="cursor",
+            provider="cursor",
+            model="default",
+            run_profile="budgeted",
+            cwd="/tmp",
+            started_at="2026-05-30T00:00:00Z",
+            ended_at="2026-05-30T00:01:00Z",
+            total_tokens=85,
+        )
+    )
+    rows = store.list_profile_quotas_daily(profiles)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "warning"
+    assert rows[0]["remaining_tokens"] == 15
 
 
 def test_raw_evidence_is_stable_digest() -> None:

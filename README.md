@@ -43,6 +43,7 @@ Phase positioning:
 | P7+ | evidence and audit timeline | chronological view of all events per session/harness | timeline construction, event correlation, per-session history | modifying source events, live event streaming |
 | P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
+| P10 | adapter contract, run profiles, usage ledger | seventh harness (`cursor`), profile upsert, multi-harness usage parsers, profile-budget quotas | provider billing APIs, harness-internal tool enforcement, Cursor json output default |
 
 ## P0 Scope
 

@@ -1129,10 +1129,21 @@ class RecordingHttpxClient:
             return FakeResponse({"events": []})
         return FakeResponse({"entries": []})
 
-    def post(self, path: str, json: dict[str, object]) -> "FakeResponse":
-        self.requests.append(
-            {"method": "POST", "base_url": self.base_url, "path": path, "json": json}
-        )
+    def post(
+        self,
+        path: str,
+        json: dict[str, object],
+        params: dict[str, object] | None = None,
+    ) -> "FakeResponse":
+        request: dict[str, Any] = {
+            "method": "POST",
+            "base_url": self.base_url,
+            "path": path,
+            "json": json,
+        }
+        if params is not None:
+            request["params"] = params
+        self.requests.append(request)
         return FakeResponse({"id": "s_1"})
 
 

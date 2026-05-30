@@ -47,6 +47,11 @@ _HARNESS_SCOPES = {
         "project": ".hermes",
         "local": ".hermes/local",
     },
+    "cursor": {
+        "user": ".cursor",
+        "project": ".cursor",
+        "local": ".cursor/local",
+    },
 }
 
 SUPPORTED_HARNESSES = tuple(_HARNESS_SCOPES.keys())

@@ -41,7 +41,7 @@ def _write_toml_config(base: Path, content: str) -> Path:
     return base
 
 
-def test_supported_harnesses_includes_six() -> None:
+def test_supported_harnesses_includes_seven() -> None:
     assert set(SUPPORTED_HARNESSES) == {
         "claude",
         "codex",
@@ -49,6 +49,7 @@ def test_supported_harnesses_includes_six() -> None:
         "qwen",
         "openclaw",
         "hermes",
+        "cursor",
     }
 
 
