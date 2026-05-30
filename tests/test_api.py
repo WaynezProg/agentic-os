@@ -1724,6 +1724,30 @@ def test_harness_config_effective_claude(tmp_path: Path, monkeypatch) -> None:
     assert "model" in keys
 
 
+def test_harness_config_effective_cursor(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    cursor_home = home / ".cursor"
+    cursor_home.mkdir(parents=True)
+    (cursor_home / "cli-config.json").write_text(
+        json.dumps({"permissions": {"allow": [], "deny": []}}),
+        encoding="utf-8",
+    )
+    (cursor_home / "mcp.json").write_text(
+        json.dumps({"mcpServers": {}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    client = make_client(tmp_path)
+    response = client.get(
+        "/harness-config/cursor/effective",
+        params={"cwd": str(tmp_path)},
+    )
+    assert response.status_code == 200
+    keys = {entry["key"] for entry in response.json()["entries"]}
+    assert "permissions" in keys
+    assert "mcpServers" in keys
+
+
 def test_harness_config_unknown_harness(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     response = client.get("/harness-config/unknown/effective")

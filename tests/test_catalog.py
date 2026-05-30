@@ -138,6 +138,39 @@ def test_scan_mcp_servers_from_settings(tmp_path: Path) -> None:
     assert len(mcp_records) == 2
 
 
+def test_scan_cursor_native_config_files(tmp_path: Path) -> None:
+    """Cursor cli-config.json, mcp.json, and hooks.json are scanned."""
+    home = tmp_path / "home"
+    cursor_home = home / ".cursor"
+    cursor_home.mkdir(parents=True)
+    (cursor_home / "cli-config.json").write_text(
+        json.dumps({"permissions": {"allow": ["Shell(ls)"], "deny": []}}),
+        encoding="utf-8",
+    )
+    (cursor_home / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"filesystem": {"command": "mcp-server"}}}),
+        encoding="utf-8",
+    )
+    (cursor_home / "hooks.json").write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    "preToolUse": [{"command": "rtk hook cursor", "matcher": "Shell"}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    records = scan("cursor", cwd=str(tmp_path / "project"), home_dir=home)
+    types = {record.type for record in records}
+    assert "permission" in types
+    assert "mcp_server" in types
+    assert "hook" in types
+    hook_names = {record.name for record in records if record.type == "hook"}
+    assert "preToolUse:Shell" in hook_names
+
+
 def test_scan_permissions_from_settings(tmp_path: Path) -> None:
     """Permissions in settings.json are detected."""
     home = tmp_path / "home"

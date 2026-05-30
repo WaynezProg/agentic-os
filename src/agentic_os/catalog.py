@@ -59,8 +59,10 @@ _JSON_SETTINGS_FILES = {
     "claude": "settings.json",
     "qwen": "settings.json",
     "opencode": "config.json",
+    "cursor": "cli-config.json",
 }
 _TOML_CONFIG_HARNESSES = frozenset({"openclaw", "hermes", "codex"})
+_CURSOR_EXTRA_JSON_FILES = ("mcp.json", "hooks.json")
 VALID_TYPES = ("hook", "command", "skill", "subagent", "mcp_server", "permission")
 
 
@@ -224,6 +226,16 @@ def _scan_scope(
         if config_path.exists():
             records.extend(_scan_toml_config(config_path, scope_name, harness))
 
+    if harness == "cursor":
+        for filename in _CURSOR_EXTRA_JSON_FILES:
+            extra_path = base / filename
+            if not extra_path.exists():
+                continue
+            if filename == "mcp.json":
+                records.extend(_scan_claude_settings(extra_path, scope_name, harness))
+            elif filename == "hooks.json":
+                records.extend(_scan_cursor_hooks(extra_path, scope_name, harness))
+
     # Scan commands/
     commands_dir = base / "commands"
     if commands_dir.is_dir():
@@ -331,6 +343,53 @@ def _scan_claude_settings(
                     source=str(path),
                     enabled=True,
                     metadata={"write_permission": write_perm},
+                )
+            )
+
+    return records
+
+
+def _scan_cursor_hooks(
+    path: Path,
+    scope: str,
+    harness: str,
+) -> list[SurfaceRecord]:
+    """Scan Cursor hooks.json (event name -> list of hook entries)."""
+    records: list[SurfaceRecord] = []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return records
+
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict):
+        return records
+
+    for event_name, entries in hooks.items():
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            matcher = entry.get("matcher")
+            matcher_label = matcher if isinstance(matcher, str) and matcher else str(index)
+            hook_name = f"{event_name}:{matcher_label}"
+            records.append(
+                SurfaceRecord(
+                    id=f"hook:{hook_name}@{scope}",
+                    type="hook",
+                    name=hook_name,
+                    scope=scope,
+                    harness=harness,
+                    source=str(path),
+                    enabled=True,
+                    metadata=_redact_value(
+                        {
+                            "event": event_name,
+                            "command": entry.get("command"),
+                            "matcher": matcher,
+                        }
+                    ),
                 )
             )
 

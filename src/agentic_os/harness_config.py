@@ -21,8 +21,10 @@ _JSON_SETTINGS_NAME = {
     "claude": "settings.json",
     "qwen": "settings.json",
     "opencode": "config.json",
+    "cursor": "cli-config.json",
 }
 _TOML_CONFIG_NAME = "config.toml"
+_CURSOR_CONFIG_FILES = ("cli-config.json", "mcp.json", "hooks.json")
 
 
 @dataclass(frozen=True)
@@ -40,20 +42,34 @@ class HarnessConfigView:
     scopes_present: list[str] = field(default_factory=list)
 
 
-def _config_file_for_scope(harness: str, scope: str, cwd: Path, home: Path) -> Path | None:
+def _scope_base_dir(harness: str, scope: str, cwd: Path, home: Path) -> Path | None:
     if harness not in SUPPORTED_HARNESSES:
         return None
     if scope == "user":
-        base = home / _HARNESS_SCOPES_USER_REL[harness]
-    elif scope == "project":
-        base = cwd / _HARNESS_SCOPES_PROJECT_REL[harness]
-    elif scope == "local":
-        base = cwd / _HARNESS_SCOPES_LOCAL_REL[harness]
-    else:
-        return None
+        return home / _HARNESS_SCOPES_USER_REL[harness]
+    if scope == "project":
+        return cwd / _HARNESS_SCOPES_PROJECT_REL[harness]
+    if scope == "local":
+        return cwd / _HARNESS_SCOPES_LOCAL_REL[harness]
+    return None
+
+
+def _config_files_for_scope(harness: str, scope: str, cwd: Path, home: Path) -> list[Path]:
+    base = _scope_base_dir(harness, scope, cwd, home)
+    if base is None:
+        return []
+    if harness == "cursor":
+        return [base / name for name in _CURSOR_CONFIG_FILES if (base / name).exists()]
     if harness in _JSON_SETTINGS_NAME:
-        return base / _JSON_SETTINGS_NAME[harness]
-    return base / _TOML_CONFIG_NAME
+        path = base / _JSON_SETTINGS_NAME[harness]
+        return [path] if path.exists() else []
+    path = base / _TOML_CONFIG_NAME
+    return [path] if path.exists() else []
+
+
+def _config_file_for_scope(harness: str, scope: str, cwd: Path, home: Path) -> Path | None:
+    paths = _config_files_for_scope(harness, scope, cwd, home)
+    return paths[0] if paths else None
 
 
 # Relative paths under home (user) or cwd (project/local)
@@ -64,6 +80,7 @@ _HARNESS_SCOPES_USER_REL = {
     "qwen": Path(".qwen"),
     "openclaw": Path(".openclaw"),
     "hermes": Path(".hermes"),
+    "cursor": Path(".cursor"),
 }
 _HARNESS_SCOPES_PROJECT_REL = {
     "claude": Path(".claude"),
@@ -72,6 +89,7 @@ _HARNESS_SCOPES_PROJECT_REL = {
     "qwen": Path(".qwen"),
     "openclaw": Path(".openclaw"),
     "hermes": Path(".hermes"),
+    "cursor": Path(".cursor"),
 }
 _HARNESS_SCOPES_LOCAL_REL = {
     "claude": Path(".claude/local"),
@@ -80,6 +98,7 @@ _HARNESS_SCOPES_LOCAL_REL = {
     "qwen": Path(".qwen/local"),
     "openclaw": Path(".openclaw/local"),
     "hermes": Path(".hermes/local"),
+    "cursor": Path(".cursor/local"),
 }
 
 
@@ -116,22 +135,26 @@ def effective(
     scopes_present: list[str] = []
 
     for scope_name in HARNESS_CONFIG_SCOPES:
-        path = _config_file_for_scope(harness_id, scope_name, cwd_path, home)
-        if path is None or not path.exists():
+        paths = _config_files_for_scope(harness_id, scope_name, cwd_path, home)
+        if not paths:
             continue
-        config = read_harness_config_file(path)
-        if not config:
-            continue
-        scopes_present.append(scope_name)
-        for key, value in config.items():
-            all_entries.append(
-                HarnessConfigEntry(
-                    key=key,
-                    value=_redact_value(value, key),
-                    scope=scope_name,
-                    source=str(path),
+        scope_has_config = False
+        for path in paths:
+            config = read_harness_config_file(path)
+            if not config:
+                continue
+            scope_has_config = True
+            for key, value in config.items():
+                all_entries.append(
+                    HarnessConfigEntry(
+                        key=key,
+                        value=_redact_value(value, key),
+                        scope=scope_name,
+                        source=str(path),
+                    )
                 )
-            )
+        if scope_has_config and scope_name not in scopes_present:
+            scopes_present.append(scope_name)
 
     merged: dict[str, HarnessConfigEntry] = {}
     for entry in all_entries:
@@ -157,10 +180,14 @@ def diff(
 ) -> dict[str, list[dict[str, Any]]]:
     cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
     home = home_dir or Path.home()
-    path_a = _config_file_for_scope(harness_id, scope_a, cwd_path, home)
-    path_b = _config_file_for_scope(harness_id, scope_b, cwd_path, home)
-    config_a = read_harness_config_file(path_a) if path_a else {}
-    config_b = read_harness_config_file(path_b) if path_b else {}
+    def _merged_scope_config(scope: str) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        for path in _config_files_for_scope(harness_id, scope, cwd_path, home):
+            merged.update(read_harness_config_file(path))
+        return merged
+
+    config_a = _merged_scope_config(scope_a)
+    config_b = _merged_scope_config(scope_b)
     config_a = {k: _redact_value(v, k) for k, v in config_a.items()}
     config_b = {k: _redact_value(v, k) for k, v in config_b.items()}
 

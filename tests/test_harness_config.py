@@ -47,6 +47,25 @@ def test_effective_redacts_secrets(tmp_path: Path, monkeypatch) -> None:
     assert "REDACTED" in raw
 
 
+def test_cursor_effective_reads_native_json_files(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    cursor_home = home / ".cursor"
+    cursor_home.mkdir(parents=True)
+    (cursor_home / "cli-config.json").write_text(
+        json.dumps({"model": {"modelId": "composer-2.5"}}),
+        encoding="utf-8",
+    )
+    (cursor_home / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"codegraph": {"command": "codegraph"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    view = effective("cursor", str(tmp_path), home_dir=home)
+    keys = {entry.key for entry in view.entries}
+    assert "model" in keys
+    assert "mcpServers" in keys
+
+
 def test_openclaw_effective_reads_toml(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     oc = home / ".openclaw"
