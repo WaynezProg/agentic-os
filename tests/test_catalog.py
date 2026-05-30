@@ -35,6 +35,12 @@ def _write_subagent(base: Path, name: str, content: str = "") -> Path:
     return agents_dir
 
 
+def _write_toml_config(base: Path, content: str) -> Path:
+    base.mkdir(parents=True, exist_ok=True)
+    (base / "config.toml").write_text(content, encoding="utf-8")
+    return base
+
+
 def test_supported_harnesses_includes_six() -> None:
     assert set(SUPPORTED_HARNESSES) == {
         "claude",
@@ -55,6 +61,22 @@ def test_scan_openclaw_toml_config(tmp_path: Path, monkeypatch) -> None:
     records = scan("openclaw", str(tmp_path), home_dir=home)
     assert len(records) >= 1
     assert any(record.type == "permission" for record in records)
+
+
+def test_scan_toml_config_redacts_secrets(tmp_path: Path, monkeypatch) -> None:
+    """Secret values in a config.toml section must not leak into surface metadata.
+
+    Mirrors tests/test_harness_config.py::test_effective_redacts_secrets.
+    """
+    home = tmp_path / "home"
+    _write_toml_config(home / ".openclaw", '[auth]\ntoken = "sk-secret"\n')
+    monkeypatch.setenv("HOME", str(home))
+    records = scan("openclaw", str(tmp_path), home_dir=home)
+    auth = [r for r in records if r.name == "auth"]
+    assert auth, "expected a permission record for the [auth] section"
+    raw = json.dumps(auth[0].metadata)
+    assert "sk-secret" not in raw
+    assert "REDACTED" in raw
 
 
 def test_scan_empty_cwd(tmp_path: Path) -> None:

@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agentic_os.control_plane import _redact_value
+
 # Scope paths by harness type
 _HARNESS_SCOPES = {
     "claude": {
@@ -259,7 +261,9 @@ def _scan_claude_settings(
                     harness=harness,
                     source=str(path),
                     enabled=True,
-                    metadata={"config": hook_config} if isinstance(hook_config, dict) else {},
+                    metadata={"config": _redact_value(hook_config)}
+                    if isinstance(hook_config, dict)
+                    else {},
                 )
             )
 
@@ -299,7 +303,9 @@ def _scan_claude_settings(
                     harness=harness,
                     source=str(path),
                     enabled=True,
-                    metadata={"config": perm_config} if isinstance(perm_config, dict) else {},
+                    metadata={"config": _redact_value(perm_config)}
+                    if isinstance(perm_config, dict)
+                    else {},
                 )
             )
 
@@ -348,7 +354,9 @@ def _scan_toml_config(
                 harness=harness,
                 source=str(path),
                 enabled=True,
-                metadata={"section": section_value} if isinstance(section_value, dict) else {},
+                metadata={"section": _redact_value(section_value)}
+                if isinstance(section_value, dict)
+                else {},
             )
         )
     return records

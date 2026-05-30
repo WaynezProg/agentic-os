@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 
@@ -921,6 +921,23 @@ def _redact_text(value: str) -> str:
         lambda match: f"{match.group(1)} [REDACTED]",
         redacted,
     )
+
+
+def _redact_value(value: Any, key: str | None = None) -> Any:
+    """Recursively redact secrets in arbitrary config values.
+
+    A string under a secret-looking key is fully redacted; other strings are
+    scrubbed for embedded secrets. Dicts/lists are walked element-wise.
+    """
+    if isinstance(value, str):
+        if key and _SECRET_KEY_PATTERN.search(key):
+            return "[REDACTED]"
+        return _redact_text(value)
+    if isinstance(value, dict):
+        return {str(k): _redact_value(v, str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    return value
 
 
 def _json_list(values: list[str]) -> str:

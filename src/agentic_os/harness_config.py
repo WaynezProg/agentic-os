@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from agentic_os.catalog import SUPPORTED_HARNESSES
-from agentic_os.control_plane import _SECRET_KEY_PATTERN, _redact_text
+from agentic_os.control_plane import _redact_value
 
 HARNESS_CONFIG_SCOPES = ("user", "project", "local")
 SCOPE_PRIORITY = {"local": 3, "project": 2, "user": 1}
@@ -100,18 +100,6 @@ def read_harness_config_file(path: Path) -> dict[str, Any]:
         return tomllib.loads(text)
     except tomllib.TOMLDecodeError:
         return {}
-
-
-def _redact_value(value: Any, key: str | None = None) -> Any:
-    if isinstance(value, str):
-        if key and _SECRET_KEY_PATTERN.search(key):
-            return "[REDACTED]"
-        return _redact_text(value)
-    if isinstance(value, dict):
-        return {str(k): _redact_value(v, str(k)) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_redact_value(item) for item in value]
-    return value
 
 
 def effective(
