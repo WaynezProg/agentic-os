@@ -239,13 +239,19 @@ def test_scan_agents_directory(tmp_path: Path) -> None:
 
 def test_scan_multiple_scopes(tmp_path: Path) -> None:
     """Scanning user, project, and local scopes returns records from all."""
-    _write_claude_settings(tmp_path / "user-claude", {"hooks": {"PreToolUse": {}}})
-    _write_claude_settings(tmp_path / "project-claude", {"hooks": {"PostToolUse": {}}})
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    _write_claude_settings(home / ".claude", {"hooks": {"PreToolUse": {}}})
+    _write_claude_settings(project / ".claude", {"hooks": {"PostToolUse": {}}})
+    _write_claude_settings(project / ".claude/local", {"hooks": {"Stop": {}}})
 
-    records = scan("claude", cwd=str(tmp_path))
+    records = scan("claude", cwd=str(project), home_dir=home)
     hook_records = [r for r in records if r.type == "hook"]
-    # User scope is always scanned (home directory)
-    assert len(hook_records) >= 1
+    assert {(r.name, r.scope) for r in hook_records} == {
+        ("PreToolUse", "user"),
+        ("PostToolUse", "project"),
+        ("Stop", "local"),
+    }
 
 
 def test_merge_no_conflicts() -> None:
