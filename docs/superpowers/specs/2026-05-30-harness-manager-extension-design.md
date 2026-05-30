@@ -1,7 +1,7 @@
 # 024–026 Harness Manager Extension Design
 
 Date: 2026-05-30
-Status: Draft
+Status: Implemented (core in ea4590d; debt closure in 2026-05-30-024-026-debt-closure-design.md)
 Author: agentic-os team
 
 ## 背景與目標
