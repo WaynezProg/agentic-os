@@ -39,6 +39,7 @@ const ENDPOINTS = Object.freeze({
   harnessInstanceHealth: "/harnesses/{agent_id}/health",
   catalogSurfaces: "/catalog/{harness}/surfaces",
   approvalsFiltered: "/approvals",
+  auditEvents: "/audit/events",
 });
 
 const HTML_ENTITIES = Object.freeze({
@@ -106,6 +107,7 @@ function bindControls() {
   });
   byId("catalog-load").addEventListener("click", loadCatalog);
   byId("approval-load").addEventListener("click", loadApprovalsTab);
+  byId("load-audit").addEventListener("click", loadAuditStandalone);
   document.body.addEventListener("click", handleActionClick);
 }
 
@@ -145,6 +147,10 @@ function loadActiveTab() {
     // Catalog is manually loaded
   } else if (state.activeTab === "approvals") {
     loadApprovalsTab();
+  } else if (state.activeTab === "audit") {
+    // Audit is manually loaded
+  } else if (state.activeTab === "overview") {
+    loadOverview();
   }
 }
 
@@ -1048,7 +1054,7 @@ async function loadCatalog() {
     const data = await apiFetch("catalogSurfaces", { harness, surface_type: type || undefined });
     const surfaces = asArray(data.surfaces);
     if (!surfaces.length) {
-      renderEmptyRow(body, 6, "No surfaces found.");
+      renderEmptyRow(body, 8, "No surfaces found.");
       return;
     }
     body.innerHTML = surfaces
@@ -1061,12 +1067,14 @@ async function loadCatalog() {
             <td><span class="pill">${escapeHtml(s.scope)}</span></td>
             <td>${escapeHtml(s.source)}</td>
             <td>${s.enabled ? "enabled" : "disabled"}</td>
+            <td>${valueOrDash(s.overridden_by)}</td>
+            <td>${valueOrDash(s.overrides)}</td>
           </tr>
         `,
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 6, error.message);
+    renderErrorRow(body, 8, error.message);
   }
 }
 
@@ -1103,6 +1111,79 @@ async function loadApprovalsTab() {
       .join("");
   } catch (error) {
     renderErrorRow(byId("approvals-body"), 7, error.message);
+  }
+}
+
+async function loadAuditStandalone() {
+  try {
+    const domain = byId("audit-domain").value;
+    const limit = byId("audit-limit").value;
+    const params = { limit: Number(limit) };
+    if (domain) params.domain = domain;
+    const data = await apiFetch("auditEvents", params);
+    const body = byId("audit-standalone-body");
+    const events = asArray(data.events);
+    if (!events.length) {
+      renderEmptyRow(body, 6, "No audit events.");
+      return;
+    }
+    body.innerHTML = events
+      .map(
+        (evt) => `
+          <tr>
+            <td>${escapeHtml(evt.id)}</td>
+            <td>${escapeHtml(evt.domain)}</td>
+            <td class="cell-id">${escapeHtml(evt.entity_id)}</td>
+            <td>${escapeHtml(evt.event_type)}</td>
+            <td class="cell-code">${escapeHtml(evt.message)}</td>
+            <td>${escapeHtml(evt.created_at)}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(byId("audit-standalone-body"), 6, error.message);
+  }
+}
+
+async function loadOverview() {
+  // Load fleet health summary
+  try {
+    const healthData = await apiFetch("fleetHealth");
+    const instances = asArray(healthData.instances);
+    const upCount = instances.filter((i) => i.state === "up").length;
+    const downCount = instances.filter((i) => i.state === "down").length;
+    byId("overview-health-body").innerHTML = `${upCount} up, ${downCount} down, ${instances.length} total`;
+  } catch {
+    byId("overview-health-body").textContent = "error";
+  }
+
+  // Load capacity
+  try {
+    const capData = await apiFetch("fleetCapacity");
+    byId("overview-capacity-body").textContent = `${capData.running_sessions}/${capData.max_running_sessions} sessions`;
+  } catch {
+    byId("overview-capacity-body").textContent = "error";
+  }
+
+  // Load sessions count
+  try {
+    const sessData = await apiFetch("sessions");
+    const sessions = asArray(sessData.sessions);
+    const running = sessions.filter((s) => s.status === "running").length;
+    const total = sessions.length;
+    byId("overview-sessions-body").textContent = `${running} running, ${total} total`;
+  } catch {
+    byId("overview-sessions-body").textContent = "error";
+  }
+
+  // Load pending approvals count
+  try {
+    const appData = await apiFetch("approvalsFiltered", { status: "pending" });
+    const pending = asArray(appData.approvals).length;
+    byId("overview-approvals-body").textContent = `${pending} pending`;
+  } catch {
+    byId("overview-approvals-body").textContent = "error";
   }
 }
 

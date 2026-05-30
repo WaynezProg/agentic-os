@@ -114,11 +114,14 @@ def agents_show(agent_id: str, api: str | None = _api_option()) -> None:
 
 
 @harnesses_cmd.command("activity")
-def harness_activity(
+def harness_activity_cmd(
     harness_id: str,
+    event_type: str | None = typer.Option(None, "--type", help="Filter by event type."),
     api: str | None = _api_option(),
 ) -> None:
-    data = _run_api_call(lambda: make_client(api).harness_activity(harness_id))
+    data = _run_api_call(
+        lambda: make_client(api).harness_activity(harness_id, event_type=event_type)
+    )
     for entry in data.get("activity", []):
         typer.echo(f"{entry['timestamp']}\t{entry['type']}\t{entry['source']}\t{entry['message']}")
 
@@ -161,7 +164,11 @@ def sessions_events(session_id: str, api: str | None = _api_option()) -> None:
 
 
 @sessions.command("timeline")
-def sessions_timeline(session_id: str, api: str | None = _api_option()) -> None:
+def sessions_timeline(
+    session_id: str,
+    event_type: str | None = typer.Option(None, "--type", help="Filter by event type."),
+    api: str | None = _api_option(),
+) -> None:
     data = _run_api_call(lambda: make_client(api).get_session_timeline(session_id))
     for entry in data.get("timeline", []):
         typer.echo(f"{entry['timestamp']}\t{entry['type']}\t{entry['source']}\t{entry['message']}")
@@ -207,10 +214,13 @@ def approvals_list(
         None, "--status", help="Filter by status (pending/approved/rejected/expired)."
     ),
     harness_id: str | None = typer.Option(None, "--harness", help="Filter by harness id."),
+    limit: int = typer.Option(500, "--limit", help="Max approvals to return."),
     api: str | None = _api_option(),
 ) -> None:
     data = _run_api_call(
-        lambda: make_client(api).list_approvals(status=status, harness_id=harness_id)
+        lambda: make_client(api).list_approvals(
+            status=status, harness_id=harness_id, limit=limit
+        )
     )
     for approval in data["approvals"]:
         typer.echo(

@@ -60,6 +60,12 @@
       <button id="tab-approvals" class="tab" type="button" role="tab" aria-selected="false" data-tab="approvals">
         Approvals
       </button>
+      <button id="tab-audit" class="tab" type="button" role="tab" aria-selected="false" data-tab="audit">
+        Audit
+      </button>
+      <button id="tab-overview" class="tab" type="button" role="tab" aria-selected="false" data-tab="overview">
+        Overview
+      </button>
     </nav>
 
     <main class="workspace">
@@ -510,10 +516,10 @@
         <div class="table-shell">
           <table aria-label="Workflow surfaces">
             <thead>
-              <tr><th>id</th><th>type</th><th>name</th><th>scope</th><th>source</th><th>status</th></tr>
+              <tr><th>id</th><th>type</th><th>name</th><th>scope</th><th>source</th><th>status</th><th>overridden_by</th><th>overrides</th></tr>
             </thead>
             <tbody id="catalog-body">
-              <tr><td colspan="6">Select a harness and click Load.</td></tr>
+              <tr><td colspan="8">Select a harness and click Load.</td></tr>
             </tbody>
           </table>
         </div>
@@ -541,6 +547,57 @@
               <tr><td colspan="7">Click Load to view approvals.</td></tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section id="panel-audit" class="panel" role="tabpanel" aria-labelledby="tab-audit">
+        <h2>Audit Trail</h2>
+        <div class="row">
+          <label for="audit-domain">Domain</label>
+          <select id="audit-domain">
+            <option value="">All</option>
+            <option value="skill">Skill</option>
+            <option value="mcp">MCP</option>
+            <option value="policy">Policy</option>
+            <option value="governance">Governance</option>
+            <option value="session">Session</option>
+            <option value="fleet">Fleet</option>
+          </select>
+          <label for="audit-limit">Limit</label>
+          <input id="audit-limit" type="number" value="500" min="1" max="5000" style="width:80px" />
+          <button id="load-audit" type="button">Load</button>
+        </div>
+        <div class="table-shell">
+          <table aria-label="Audit events">
+            <thead>
+              <tr><th>id</th><th>domain</th><th>entity</th><th>type</th><th>message</th><th>timestamp</th></tr>
+            </thead>
+            <tbody id="audit-standalone-body">
+              <tr><td colspan="6">Click Load to view audit events.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
+        <h2>Overview</h2>
+        <div class="row">
+          <div id="overview-health" class="stat-card">
+            <h3>Fleet Health</h3>
+            <div id="overview-health-body">Loading…</div>
+          </div>
+          <div id="overview-capacity" class="stat-card">
+            <h3>Capacity</h3>
+            <div id="overview-capacity-body">Loading…</div>
+          </div>
+          <div id="overview-sessions" class="stat-card">
+            <h3>Sessions</h3>
+            <div id="overview-sessions-body">Loading…</div>
+          </div>
+          <div id="overview-approvals" class="stat-card">
+            <h3>Pending Approvals</h3>
+            <div id="overview-approvals-body">Loading…</div>
+          </div>
         </div>
       </section>
     </main>

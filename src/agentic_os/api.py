@@ -368,35 +368,35 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
         # Session lifecycle events
         if session.started_at:
-            entries.append(
-                _timeline_entry(
-                    session.started_at,
-                    "session_start",
-                    "session",
-                    f"Session {session_id} started",
-                    {"agent_id": session.agent_id, "cwd": session.cwd},
-                )
+            entry = _timeline_entry(
+                session.started_at,
+                "session_start",
+                "session",
+                f"Session {session_id} started",
+                {"agent_id": session.agent_id, "cwd": session.cwd},
             )
+            if not event_type or entry["type"] == event_type:
+                entries.append(entry)
         if session.pid is not None:
-            entries.append(
-                _timeline_entry(
-                    session.started_at or session.updated_at,
-                    "process_started",
-                    "supervisor",
-                    f"Process started with pid={session.pid}, pgid={session.pgid}",
-                    {"pid": session.pid, "pgid": session.pgid},
-                )
+            entry = _timeline_entry(
+                session.started_at or session.updated_at,
+                "process_started",
+                "supervisor",
+                f"Process started with pid={session.pid}, pgid={session.pgid}",
+                {"pid": session.pid, "pgid": session.pgid},
             )
+            if not event_type or entry["type"] == event_type:
+                entries.append(entry)
         if session.ended_at:
-            entries.append(
-                _timeline_entry(
-                    session.ended_at,
-                    "session_ended",
-                    "session",
-                    f"Session ended with exit_code={session.exit_code}",
-                    {"exit_code": session.exit_code, "status": session.status.value},
-                )
+            entry = _timeline_entry(
+                session.ended_at,
+                "session_ended",
+                "session",
+                f"Session ended with exit_code={session.exit_code}",
+                {"exit_code": session.exit_code, "status": session.status.value},
             )
+            if not event_type or entry["type"] == event_type:
+                entries.append(entry)
 
         # Session events (policy decisions, etc.)
         session_evts = store.list_events(session_id)
@@ -416,30 +416,30 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         # Memory review status
         try:
             summary = memory_store.get_summary(session_id)
-            entries.append(
-                _timeline_entry(
-                    summary.created_at,
-                    "summary_created",
-                    "memory",
-                    f"Summary created: {summary.one_liner}",
-                    {"summary_id": summary.id, "stdout_lines": summary.stdout_lines},
-                )
+            entry = _timeline_entry(
+                summary.created_at,
+                "summary_created",
+                "memory",
+                f"Summary created: {summary.one_liner}",
+                {"summary_id": summary.id, "stdout_lines": summary.stdout_lines},
             )
+            if not event_type or entry["type"] == event_type:
+                entries.append(entry)
         except KeyError:
             pass
 
         # Memory review items
         for review in memory_store.list_review_items():
             if review.session_id == session_id:
-                entries.append(
-                    _timeline_entry(
-                        review.created_at,
-                        f"review_{review.status}",
-                        "memory",
-                        f"Review {review.status} for session {session_id}",
-                        {"review_id": review.id, "kind": review.kind},
-                    )
+                entry = _timeline_entry(
+                    review.created_at,
+                    f"review_{review.status}",
+                    "memory",
+                    f"Review {review.status} for session {session_id}",
+                    {"review_id": review.id, "kind": review.kind},
                 )
+                if not event_type or entry["type"] == event_type:
+                    entries.append(entry)
 
         entries.sort(key=lambda e: str(e["timestamp"]))
         return {"timeline": entries}

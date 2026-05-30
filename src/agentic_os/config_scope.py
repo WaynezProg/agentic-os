@@ -31,11 +31,15 @@ class ConfigView:
     scopes_present: list[str] = field(default_factory=list)
 
 
-def resolve_paths(harness_id: str, cwd: str | None = None) -> dict[str, Path | None]:
+def resolve_paths(
+    harness_id: str, cwd: str | None = None, home_dir: Path | None = None
+) -> dict[str, Path | None]:
     """Resolve config file paths for each scope."""
     cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+    base_home = home_dir or Path.home()
     return {
-        "user": Path.home() / ".agentic-os" / "config.toml",
+        "managed": Path("/etc/agentic-os") / "config.toml",
+        "user": base_home / ".agentic-os" / "config.toml",
         "project": cwd_path / ".agentic-os" / "config.toml",
         "local": cwd_path / ".agentic-os.local" / "config.toml",
     }
@@ -51,14 +55,19 @@ def read_config(path: Path) -> dict[str, Any]:
         return {}
 
 
-def effective(harness_id: str, cwd: str | None = None, home_dir: Path | None = None) -> ConfigView:
+def effective(
+    harness_id: str,
+    cwd: str | None = None,
+    home_dir: Path | None = None,
+) -> ConfigView:
     """Compute effective config by merging scopes with priority.
 
-    Higher priority scope (local > project > user) overrides lower.
+    Higher priority scope (local > project > user > managed) overrides lower.
     """
     cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
     base_home = home_dir or Path.home()
-    paths = {
+    paths: dict[str, Path] = {
+        "managed": Path("/etc/agentic-os") / "config.toml",
         "user": base_home / ".agentic-os" / "config.toml",
         "project": cwd_path / ".agentic-os" / "config.toml",
         "local": cwd_path / ".agentic-os.local" / "config.toml",
@@ -92,9 +101,6 @@ def effective(harness_id: str, cwd: str | None = None, home_dir: Path | None = N
             existing.scope, 0
         ):
             merged[entry.key] = entry
-        else:
-            # Lower priority entry marked as overridden
-            pass
 
     return ConfigView(
         harness_id=harness_id,
@@ -114,13 +120,15 @@ def diff(
     base_home = home_dir or Path.home()
     cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
     paths: dict[str, Path] = {
-        "managed": Path("/etc/agentic-os/config.toml"),
+        "managed": Path("/etc/agentic-os") / "config.toml",
         "user": base_home / ".agentic-os" / "config.toml",
         "project": cwd_path / ".agentic-os" / "config.toml",
         "local": cwd_path / ".agentic-os.local" / "config.toml",
     }
-    config_a = read_config(paths[scope_a]) if paths[scope_a] and paths[scope_a].exists() else {}
-    config_b = read_config(paths[scope_b]) if paths[scope_b] and paths[scope_b].exists() else {}
+    path_a = paths.get(scope_a)
+    path_b = paths.get(scope_b)
+    config_a = read_config(path_a) if path_a and path_a.exists() else {}
+    config_b = read_config(path_b) if path_b and path_b.exists() else {}
 
     keys_a = set(config_a.keys())
     keys_b = set(config_b.keys())
@@ -148,9 +156,11 @@ def diff(
     return {"added": added, "removed": removed, "modified": modified}
 
 
-def explain(harness_id: str, cwd: str | None = None) -> list[dict[str, Any]]:
+def explain(
+    harness_id: str, cwd: str | None = None, home_dir: Path | None = None
+) -> list[dict[str, Any]]:
     """Explain where each effective config value comes from."""
-    view = effective(harness_id, cwd)
+    view = effective(harness_id, cwd, home_dir)
     return [
         {
             "key": e.key,

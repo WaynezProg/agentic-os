@@ -1,54 +1,72 @@
-# 010 — Configuration Scope Mapper (P5)
+# 013 — Configuration Scope Mapper (P5)
 
-Status: Draft
+Status: Implemented
 Date: 2026-05-30
 
 ## Positioning
 
-P5 定義 agentic-os 的設定範圍（scope）層級，支援多個 harness instance 在不同 scope 的設定讀取、合併與顯示。類似 Claude Code 的 Managed / User / Project / Local 設定視圖，但只做「讀取、合併、顯示」，不修改設定檔。
+Reads agentic-os config files across scopes, merges with priority resolution,
+provides diff/explain views. Read-only — does NOT modify config files.
 
-| Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
-|-------|-----------------|--------------------------------|------|--------------|
-| P5 | configuration scope mapper | multi-scope config view per harness instance | read, merge, display effective config across scopes | modifying config files, writing configs, harness-internal config loading |
+| Phase | Owns | Does not own |
+|-------|------|--------------|
+| P5 | config scope resolution, effective merge, diff, explain | modifying configs, harness-internal config loading, validation |
 
-## Scope Levels
+## Scope
+
+### Scope Levels
 
 | Scope | Location | Priority |
 |-------|----------|----------|
-| managed | 系統層級 baseline（machine/org） | 最低 |
-| user | `~/.agentic-os/config.toml` | 次低 |
-| project | `<cwd>/.agentic-os/config.toml` | 次高 |
-| local | `<cwd>/.agentic-os.local/config.toml` | 最高 |
+| user | `~/.agentic-os/config.toml` | 2 |
+| project | `<cwd>/.agentic-os/config.toml` | 3 |
+| local | `<cwd>/.agentic-os.local/config.toml` | 4 |
 
-Scope resolution: 從給定的 `--cwd` 向上尋找 `.agentic-os/config.toml`，找到即為 project scope。local scope 只在 cwd 目錄下。
+managed scope: Not implemented — reserved for future org-wide baseline.
 
-## CLI Commands
+### CLI Commands
 
 ```bash
-# 顯示單一 harness 在指定 cwd 下的有效設定
-agentctl config effective openclaw@work --cwd ~/Projects/demo
-
-# 比較 scopes 之間的差異
-agentctl config diff openclaw@work --scope user --scope project
-
-# 解釋設定值從哪裡來
-agentctl config explain openclaw@work --cwd ~/Projects/demo
+agentctl config effective <harness_id> --cwd <path>
+agentctl config diff <harness_id> --scope-a user --scope-b project --cwd <path>
+agentctl config explain <harness_id> --cwd <path>
 ```
 
-## API Endpoints
+### API Endpoints
 
 ```
 GET /config/{harness_id}/effective?cwd=<path>
-GET /config/{harness_id}/diff?scope_a=<a>&scope_b=<b>&cwd=<path>
+GET /config/{harness_id}/diff?scope_a=user&scope_b=project&cwd=<path>
 GET /config/{harness_id}/explain?cwd=<path>
 ```
 
-## Out of Scope
+## Implementation Status
 
-- 不修改或寫入任何設定檔
-- 不解析 harness-internal 的設定格式（只處理 agentic-os 自身的 config.toml）
-- 不做設定驗證或提示（那是 harness 的責任）
+### Completed
+- `src/agentic_os/config_scope.py` — effective(), diff(), explain(), read_config()
+- managed scope path included in `resolve_paths()` and `effective()`
+- 3 API endpoints in `api.py`
+- 3 CLI commands in `cli.py`
+- 4 client methods in `client.py`
+- `tests/test_config_scope.py` — 10 tests
+- `tests/test_api.py` — 3 API tests
 
-## Compatibility
+### Gaps
+- **explain() only shows winning entries** — does not show overridden/losing entries
+- **4-way merge not fully tested** — managed scope test would require writing to `/etc/agentic-os`
 
-既有的 P4 harness instance profile（agents.toml）維持不變。P5 是額外的 scope layer，從 project 目錄讀取補充設定。
+### Not Doing
+- Config modification or writing
+- Config validation or hinting
+
+## Acceptance Criteria & Verification
+
+| Criterion | Status | How to verify |
+|-----------|--------|---------------|
+| Can read user/project/local configs | ✅ | `uv run pytest tests/test_config_scope.py -q` |
+| project overrides user for same key | ✅ | `test_effective_project_overrides_user` |
+| local overrides project for same key | ✅ | `test_effective_local_overrides_project` |
+| diff detects added/removed/modified keys | ✅ | `test_diff_added_removed` |
+| explain returns entries with scope+source | ✅ | `test_explain_returns_entries` |
+| API returns valid response structure | ✅ | 3 API tests in `test_api.py` |
+| managed scope support | ❌ | Not implemented — reserved |
