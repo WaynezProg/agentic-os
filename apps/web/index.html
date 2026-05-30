@@ -51,6 +51,15 @@
       <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
         Fleet
       </button>
+      <button id="tab-harnesses" class="tab" type="button" role="tab" aria-selected="false" data-tab="harnesses">
+        Harnesses
+      </button>
+      <button id="tab-catalog" class="tab" type="button" role="tab" aria-selected="false" data-tab="catalog">
+        Surfaces
+      </button>
+      <button id="tab-approvals" class="tab" type="button" role="tab" aria-selected="false" data-tab="approvals">
+        Approvals
+      </button>
     </nav>
 
     <main class="workspace">
@@ -450,6 +459,89 @@
             </table>
           </div>
         </section>
+      </section>
+
+      <section id="panel-harnesses" class="panel" role="tabpanel" aria-labelledby="tab-harnesses">
+        <h2>Harness Instances</h2>
+        <div class="table-shell">
+          <table aria-label="Harness instances">
+            <thead>
+              <tr><th>id</th><th>name</th><th>provider</th><th>health</th><th>log paths</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="harnesses-body">
+              <tr><td colspan="6">Loading harnesses…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Harness Health</h3>
+        <div class="table-shell">
+          <table aria-label="Harness instance health">
+            <thead>
+              <tr><th>id</th><th>state</th><th>message</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="harness-health-body">
+              <tr><td colspan="4">Loading health…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-catalog" class="panel" role="tabpanel" aria-labelledby="tab-catalog">
+        <h2>Workflow Surfaces</h2>
+        <div class="row">
+          <label for="catalog-harness">Harness</label>
+          <select id="catalog-harness">
+            <option value="claude">Claude Code</option>
+            <option value="openclaw">OpenClaw</option>
+            <option value="hermes">Hermes</option>
+          </select>
+          <label for="catalog-type">Type</label>
+          <select id="catalog-type">
+            <option value="">All</option>
+            <option value="hook">Hooks</option>
+            <option value="command">Commands</option>
+            <option value="skill">Skills</option>
+            <option value="subagent">Subagents</option>
+            <option value="mcp_server">MCP Servers</option>
+            <option value="permission">Permissions</option>
+          </select>
+          <button id="catalog-load" type="button">Load</button>
+        </div>
+        <div class="table-shell">
+          <table aria-label="Workflow surfaces">
+            <thead>
+              <tr><th>id</th><th>type</th><th>name</th><th>scope</th><th>source</th><th>status</th></tr>
+            </thead>
+            <tbody id="catalog-body">
+              <tr><td colspan="6">Select a harness and click Load.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="panel-approvals" class="panel" role="tabpanel" aria-labelledby="tab-approvals">
+        <h2>Approval Queue</h2>
+        <div class="row">
+          <label for="approval-status-filter">Status</label>
+          <select id="approval-status-filter">
+            <option value="">All</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="expired">Expired</option>
+          </select>
+          <button id="approval-load" type="button">Load</button>
+        </div>
+        <div class="table-shell">
+          <table aria-label="Approval queue">
+            <thead>
+              <tr><th>id</th><th>harness</th><th>status</th><th>source session</th><th>approved session</th><th>reason</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="approvals-body">
+              <tr><td colspan="7">Click Load to view approvals.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
   </body>

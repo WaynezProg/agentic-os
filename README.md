@@ -38,6 +38,11 @@ Phase positioning:
 | P7 | human approval workflow | local operator approval for launch-policy decisions | approval requests, approve/reject API/CLI/UI, audit links | RBAC, notifications, live in-harness tool approval |
 | P8 | SLO benchmark harness | measurable local control-plane performance targets | latency benchmark, diagnostics resource snapshot, JSON report | hosted telemetry, continuous monitoring, automatic tuning |
 | P9 | deprecation lifecycle completion | structured sunset governance for catalog and policy records | reason/replacement/sunset metadata, un-deprecate, opportunistic auto-disable | package management, delete/purge workflow, scheduler |
+| P5+ | configuration scope mapper | multi-scope config view per harness instance | read, merge, display effective config across scopes | modifying config files, harness-internal config loading |
+| P6+ | workflow surface catalog | inventory of hooks/commands/skills/subagents/MCP across harness scopes | scan paths, classify surfaces, show merged view per project, diff between scopes | executing hooks, loading skills, starting MCP servers, modifying configs |
+| P7+ | evidence and audit timeline | chronological view of all events per session/harness | timeline construction, event correlation, per-session history | modifying source events, live event streaming |
+| P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
+| P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
 
 ## P0 Scope
 

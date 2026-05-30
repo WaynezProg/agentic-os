@@ -96,7 +96,7 @@ When fixing a bug: write the failing test first against the relevant module's te
 - **No new daemons, supervisors, or process owners.** The single `agentd` process owns subprocesses, logs, DB, and state dir.
 - **No LLM calls, no embeddings, no vector DB, no cloud sync.** P1-P9 are intentionally deterministic; see "Limitations" in README.md before proposing additions.
 - **`stop` only applies to `running` sessions.** The `shell` smoke exits immediately and cannot be stopped — use the `sleep` registry pattern in README.md for stop demos.
-- **Specs are authoritative for scope.** `specs/001-011*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
+- **Specs are authoritative for scope.** `specs/001-016*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
 - **README phase table is the canonical positioning.** When adding a phase or capability, update both the README phase table and the relevant spec — tests in `test_web.py` assert against this wording.
 
 ## Reference: phase scope (P0-P9)

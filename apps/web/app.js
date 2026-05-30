@@ -34,6 +34,11 @@ const ENDPOINTS = Object.freeze({
   fleetProbe: "/fleet/probe",
   auditEvents: "/audit/events",
   auditPolicyCoverage: "/audit/policy-coverage",
+  harnesses: "/harnesses",
+  harnessHealth: "/harnesses/{harness_id}/health",
+  harnessInstanceHealth: "/harnesses/{agent_id}/health",
+  catalogSurfaces: "/catalog/{harness}/surfaces",
+  approvalsFiltered: "/approvals",
 });
 
 const HTML_ENTITIES = Object.freeze({
@@ -99,6 +104,8 @@ function bindControls() {
   byId("log-stream").addEventListener("change", () => {
     resetLogState();
   });
+  byId("catalog-load").addEventListener("click", loadCatalog);
+  byId("approval-load").addEventListener("click", loadApprovalsTab);
   document.body.addEventListener("click", handleActionClick);
 }
 
@@ -132,12 +139,18 @@ function loadActiveTab() {
     loadSkillsMcp();
   } else if (state.activeTab === "fleet") {
     loadFleet();
+  } else if (state.activeTab === "harnesses") {
+    loadHarnesses();
+  } else if (state.activeTab === "catalog") {
+    // Catalog is manually loaded
+  } else if (state.activeTab === "approvals") {
+    loadApprovalsTab();
   }
 }
 
 async function refreshAll() {
   await loadHealth();
-  await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp(), loadFleet()]);
+  await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp(), loadFleet(), loadHarnesses()]);
   if (state.activeTab === "logs" && byId("log-session-id").value.trim()) {
     await loadLogs();
   }
@@ -944,6 +957,152 @@ async function loadAuditEvents() {
       .join("");
   } catch (error) {
     renderErrorRow(body, 6, error.message);
+  }
+}
+
+async function loadHarnesses() {
+  try {
+    const data = await apiFetch("harnesses");
+    const body = byId("harnesses-body");
+    const rows = asArray(data.harnesses);
+    if (!rows.length) {
+      renderEmptyRow(body, 6, "No harness instances configured.");
+      return;
+    }
+    body.innerHTML = rows
+      .map(
+        (h) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(h.id)}</td>
+            <td>${escapeHtml(h.name)}</td>
+            <td>${valueOrDash(h.default_provider)}</td>
+            <td><span class="${healthPillClass('unknown')}">unknown</span></td>
+            <td>${(h.log_paths || []).length || "-"}</td>
+            <td>
+              <button class="btn" onclick="loadHarnessHealth('${escapeHtml(h.id)}')">Check</button>
+            </td>
+          </tr>
+        `,
+      )
+      .join("");
+    // Also load fleet health in parallel
+    await loadHarnessHealth();
+  } catch (error) {
+    renderErrorRow(byId("harnesses-body"), 6, error.message);
+  }
+}
+
+async function loadHarnessHealth(harnessId) {
+  try {
+    if (harnessId) {
+      const data = await apiFetch("harnessInstanceHealth", { agent_id: harnessId });
+      const body = byId("harness-health-body");
+      body.innerHTML = `
+        <tr>
+          <td class="cell-id">${escapeHtml(data.id)}</td>
+          <td><span class="${healthPillClass(data.state)}">${escapeHtml(data.state)}</span></td>
+          <td>${escapeHtml(data.message || "")}</td>
+          <td>-</td>
+        </tr>
+      `;
+    } else {
+      // Load all harness health checks
+      const allData = await apiFetch("harnesses");
+      const body = byId("harness-health-body");
+      const harnesses = asArray(allData.harnesses);
+      if (!harnesses.length) {
+        renderEmptyRow(body, 4, "No harness instances.");
+        return;
+      }
+      const results = await Promise.allSettled(
+        harnesses.map((h) =>
+          apiFetch("harnessHealth", { harness_id: h.id })
+            .then((r) => ({ ...r, id: h.id }))
+            .catch((e) => ({ id: h.id, state: "error", message: e.message }))
+        )
+      );
+      body.innerHTML = results
+        .map((r) => {
+          const data = r.status === "fulfilled" ? r.value : { id: "?", state: "error", message: r.reason?.message || "failed" };
+          return `
+            <tr>
+              <td class="cell-id">${escapeHtml(data.id)}</td>
+              <td><span class="${healthPillClass(data.state)}">${escapeHtml(data.state)}</span></td>
+              <td>${escapeHtml(data.message || "")}</td>
+              <td>-</td>
+            </tr>
+          `;
+        })
+        .join("");
+    }
+  } catch (error) {
+    renderErrorRow(byId("harness-health-body"), 4, error.message);
+  }
+}
+
+async function loadCatalog() {
+  const harness = byId("catalog-harness").value;
+  const type = byId("catalog-type").value;
+  const body = byId("catalog-body");
+  try {
+    const data = await apiFetch("catalogSurfaces", { harness, surface_type: type || undefined });
+    const surfaces = asArray(data.surfaces);
+    if (!surfaces.length) {
+      renderEmptyRow(body, 6, "No surfaces found.");
+      return;
+    }
+    body.innerHTML = surfaces
+      .map(
+        (s) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(s.id)}</td>
+            <td>${escapeHtml(s.type)}</td>
+            <td>${escapeHtml(s.name)}</td>
+            <td><span class="pill">${escapeHtml(s.scope)}</span></td>
+            <td>${escapeHtml(s.source)}</td>
+            <td>${s.enabled ? "enabled" : "disabled"}</td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(body, 6, error.message);
+  }
+}
+
+async function loadApprovalsTab() {
+  try {
+    const status = byId("approval-status-filter").value;
+    const params = status ? { status } : {};
+    const data = await apiFetch("approvals", params);
+    const body = byId("approvals-body");
+    const approvals = asArray(data.approvals);
+    if (!approvals.length) {
+      renderEmptyRow(body, 7, "No approvals.");
+      return;
+    }
+    body.innerHTML = approvals
+      .map(
+        (a) => `
+          <tr>
+            <td class="cell-id">${escapeHtml(a.id)}</td>
+            <td>${escapeHtml(a.agent_id)}</td>
+            <td><span class="${statusPillClass(a.status)}">${escapeHtml(a.status)}</span></td>
+            <td class="cell-id">${escapeHtml(a.source_session_id)}</td>
+            <td class="cell-id">${valueOrDash(a.approved_session_id)}</td>
+            <td>${escapeHtml(a.reason || "")}</td>
+            <td>
+              ${a.status === "pending" ? `
+                <button class="btn" onclick="approveApproval('${escapeHtml(a.id)}')">Approve</button>
+                <button class="btn" onclick="rejectApproval('${escapeHtml(a.id)}')">Reject</button>
+              ` : "-"}
+            </td>
+          </tr>
+        `,
+      )
+      .join("");
+  } catch (error) {
+    renderErrorRow(byId("approvals-body"), 7, error.message);
   }
 }
 

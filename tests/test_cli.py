@@ -71,8 +71,10 @@ class FakeClient:
         self.calls.append(("retry_session", (session_id,), {}))
         return {"id": "s_2", "agent_id": "shell", "status": "queued"}
 
-    def list_approvals(self) -> dict[str, object]:
-        self.calls.append(("list_approvals", (), {}))
+    def list_approvals(self, status=None, harness_id=None, limit=500):
+        self.calls.append(
+            ("list_approvals", (), {"status": status, "harness_id": harness_id, "limit": limit})
+        )
         return {
             "approvals": [
                 {
@@ -601,7 +603,9 @@ def test_approvals_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
 
     assert result.exit_code == 0
     assert result.output == "ap_1\tshell\tpending\ts_blocked\t-\tsession.start requires approval\n"
-    assert fake.calls == [("list_approvals", (), {})]
+    assert fake.calls == [
+        ("list_approvals", (), {"status": None, "harness_id": None, "limit": 500})
+    ]
 
 
 def test_approvals_show_prints_detail(monkeypatch: Any) -> None:

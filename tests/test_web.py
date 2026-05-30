@@ -20,8 +20,18 @@ def test_static_web_files_exist() -> None:
 def test_five_tabs_are_present() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert html.count('role="tab"') == 6
-    for tab in ["Agents", "Sessions", "Logs", "Memory", "Skills / MCP", "Fleet"]:
+    assert html.count('role="tab"') == 9
+    for tab in [
+        "Agents",
+        "Sessions",
+        "Logs",
+        "Memory",
+        "Skills / MCP",
+        "Fleet",
+        "Harnesses",
+        "Surfaces",
+        "Approvals",
+    ]:
         assert re.search(rf">\s*{re.escape(tab)}\s*<", html)
 
 

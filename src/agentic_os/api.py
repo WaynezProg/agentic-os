@@ -25,6 +25,17 @@ from agentic_os.control_plane import (
     SkillUpsert,
     SunsetChange,
 )
+from agentic_os.catalog import (
+    SurfaceRecord,
+    diff as catalog_diff,
+    merge as catalog_merge,
+    scan as catalog_scan,
+)
+from agentic_os.config_scope import (
+    diff as config_diff,
+    effective as config_effective,
+    explain as config_explain,
+)
 from agentic_os.diagnostics import resource_snapshot
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
@@ -207,6 +218,56 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"id": agent.id, "log_paths": list(agent.log_paths)}
 
+    @app.get("/harnesses/{harness_id}/activity")
+    def harness_activity(
+        harness_id: str,
+        event_type: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        try:
+            registry.get(harness_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        sessions = [s for s in store.list_sessions() if s.agent_id == harness_id]
+        entries: list[dict[str, object]] = []
+
+        for session in sessions:
+            if session.started_at:
+                entries.append(
+                    _timeline_entry(
+                        session.started_at,
+                        "session_start",
+                        "session",
+                        f"Session {session.id} started",
+                        {"session_id": session.id, "cwd": session.cwd},
+                    )
+                )
+            if session.ended_at:
+                entries.append(
+                    _timeline_entry(
+                        session.ended_at,
+                        "session_ended",
+                        "session",
+                        f"Session {session.id} ended with exit_code={session.exit_code}",
+                        {"session_id": session.id, "exit_code": session.exit_code},
+                    )
+                )
+            for evt in store.list_events(session.id):
+                if event_type and evt.event_type != event_type:
+                    continue
+                entries.append(
+                    _timeline_entry(
+                        evt.created_at,
+                        evt.event_type,
+                        "session",
+                        evt.message,
+                        {"session_id": session.id, **evt.metadata},
+                    )
+                )
+
+        entries.sort(key=lambda e: str(e["timestamp"]), reverse=True)
+        return {"harness_id": harness_id, "activity": entries[:100]}
+
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
         _check_capacity(request.agent_id)
@@ -279,6 +340,95 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         events = store.list_events(session_id)
         return {"events": [event.model_dump() for event in events]}
+
+    @app.get("/sessions/{session_id}/timeline")
+    def session_timeline(
+        session_id: str,
+        event_type: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        try:
+            session = store.get_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        entries: list[dict[str, object]] = []
+
+        # Session lifecycle events
+        if session.started_at:
+            entries.append(
+                _timeline_entry(
+                    session.started_at,
+                    "session_start",
+                    "session",
+                    f"Session {session_id} started",
+                    {"agent_id": session.agent_id, "cwd": session.cwd},
+                )
+            )
+        if session.pid is not None:
+            entries.append(
+                _timeline_entry(
+                    session.started_at or session.updated_at,
+                    "process_started",
+                    "supervisor",
+                    f"Process started with pid={session.pid}, pgid={session.pgid}",
+                    {"pid": session.pid, "pgid": session.pgid},
+                )
+            )
+        if session.ended_at:
+            entries.append(
+                _timeline_entry(
+                    session.ended_at,
+                    "session_ended",
+                    "session",
+                    f"Session ended with exit_code={session.exit_code}",
+                    {"exit_code": session.exit_code, "status": session.status.value},
+                )
+            )
+
+        # Session events (policy decisions, etc.)
+        session_evts = store.list_events(session_id)
+        for evt in session_evts:
+            if event_type and evt.event_type != event_type:
+                continue
+            entries.append(
+                _timeline_entry(
+                    evt.created_at,
+                    evt.event_type,
+                    "session",
+                    evt.message,
+                    evt.metadata,
+                )
+            )
+
+        # Memory review status
+        try:
+            summary = memory_store.get_summary(session_id)
+            entries.append(
+                _timeline_entry(
+                    summary.created_at,
+                    "summary_created",
+                    "memory",
+                    f"Summary created: {summary.one_liner}",
+                    {"summary_id": summary.id, "stdout_lines": summary.stdout_lines},
+                )
+            )
+        except KeyError:
+            pass
+
+        # Memory review items
+        for review in memory_store.list_review_items():
+            if review.session_id == session_id:
+                entries.append(
+                    _timeline_entry(
+                        review.created_at,
+                        f"review_{review.status}",
+                        "memory",
+                        f"Review {review.status} for session {session_id}",
+                        {"review_id": review.id, "kind": review.kind},
+                    )
+                )
+
+        entries.sort(key=lambda e: str(e["timestamp"]))
+        return {"timeline": entries}
 
     @app.get("/sessions/{session_id}/logs")
     def session_logs(
@@ -386,12 +536,17 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return supervisor.store.get_session(session.id).model_dump()
 
     @app.get("/approvals")
-    def list_approvals() -> dict[str, object]:
-        return {
-            "approvals": [
-                _asdict(_refresh_approval(approval)) for approval in approval_store.list()
-            ]
-        }
+    def list_approvals(
+        status: str | None = Query(default=None),
+        harness_id: str | None = Query(default=None),
+        limit: int = Query(default=500, ge=1, le=5000),
+    ) -> dict[str, object]:
+        approvals = [_asdict(_refresh_approval(approval)) for approval in approval_store.list()]
+        if status:
+            approvals = [a for a in approvals if a["status"] == status]
+        if harness_id:
+            approvals = [a for a in approvals if a["agent_id"] == harness_id]
+        return {"approvals": approvals[:limit]}
 
     @app.get("/approvals/{approval_id}")
     def show_approval(approval_id: str) -> dict[str, Any]:
@@ -883,6 +1038,80 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         coverage = audit_store.policy_coverage(agent_ids, session_ids_by_agent, policy_agent_ids)
         return {"coverage": coverage}
 
+    @app.get("/catalog/{harness}/surfaces")
+    def catalog_surfaces(
+        harness: str,
+        cwd: str | None = Query(default=None),
+        scope: str | None = Query(default=None),
+        surface_type: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        if harness not in ("claude", "openclaw", "hermes"):
+            raise HTTPException(status_code=400, detail=f"unsupported harness: {harness}")
+        records = catalog_scan(harness, cwd)
+        if scope:
+            records = [r for r in records if r.scope == scope]
+        if surface_type:
+            records = [r for r in records if r.type == surface_type]
+        return {"surfaces": [_surface_record_dict(r) for r in records]}
+
+    @app.get("/catalog/{harness}/merged")
+    def catalog_merged(
+        harness: str,
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        if harness not in ("claude", "openclaw", "hermes"):
+            raise HTTPException(status_code=400, detail=f"unsupported harness: {harness}")
+        records = catalog_scan(harness, cwd)
+        merged = catalog_merge(records)
+        return {"surfaces": [_surface_record_dict(r) for r in merged]}
+
+    @app.get("/catalog/{harness}/diff")
+    def catalog_diff_endpoint(
+        harness: str,
+        cwd_a: str | None = Query(default=None),
+        cwd_b: str | None = Query(default=None),
+        scope_a: str | None = Query(default=None),
+        scope_b: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        if harness not in ("claude", "openclaw", "hermes"):
+            raise HTTPException(status_code=400, detail=f"unsupported harness: {harness}")
+        records_a = [r for r in catalog_scan(harness, cwd_a) if not scope_a or r.scope == scope_a]
+        records_b = [r for r in catalog_scan(harness, cwd_b) if not scope_b or r.scope == scope_b]
+        result = catalog_diff(records_a, records_b)
+        return result
+
+    @app.get("/config/{harness_id}/effective")
+    def config_effective_endpoint(
+        harness_id: str,
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        view = config_effective(harness_id, cwd)
+        return {
+            "harness_id": view.harness_id,
+            "scopes_present": view.scopes_present,
+            "entries": [
+                {"key": e.key, "value": e.value, "scope": e.scope, "source": e.source}
+                for e in view.entries
+            ],
+        }
+
+    @app.get("/config/{harness_id}/diff")
+    def config_diff_endpoint(
+        harness_id: str,
+        scope_a: str = Query(default="user"),
+        scope_b: str = Query(default="project"),
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        return config_diff(harness_id, cwd=cwd, scope_a=scope_a, scope_b=scope_b)
+
+    @app.get("/config/{harness_id}/explain")
+    def config_explain_endpoint(
+        harness_id: str,
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        entries = config_explain(harness_id, cwd)
+        return {"harness_id": harness_id, "entries": entries}
+
     @app.get("/fleet/health")
     def fleet_health() -> dict[str, object]:
         records = fleet_store.list_health()
@@ -1199,3 +1428,34 @@ def _run_health_check(agent: AgentDefinition) -> dict[str, object]:
         return {"id": agent.id, "state": "down", "message": "health check timed out"}
     except Exception as exc:
         return {"id": agent.id, "state": "down", "message": str(exc)}
+
+
+def _timeline_entry(
+    timestamp: str,
+    event_type: str,
+    source: str,
+    message: str,
+    metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "timestamp": timestamp,
+        "type": event_type,
+        "source": source,
+        "message": message,
+        "metadata": metadata or {},
+    }
+
+
+def _surface_record_dict(r: SurfaceRecord) -> dict[str, object]:
+    return {
+        "id": r.id,
+        "type": r.type,
+        "name": r.name,
+        "scope": r.scope,
+        "harness": r.harness,
+        "source": r.source,
+        "enabled": r.enabled,
+        "metadata": r.metadata,
+        "overridden_by": r.overridden_by,
+        "overrides": r.overrides,
+    }

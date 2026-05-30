@@ -31,6 +31,9 @@ class AgenticClient:
     def get_session_events(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}/events")
 
+    def get_session_timeline(self, session_id: str) -> dict[str, Any]:
+        return self._get(f"/sessions/{_validate_path_id(session_id)}/timeline")
+
     def get_logs(
         self,
         session_id: str,
@@ -48,8 +51,18 @@ class AgenticClient:
     def retry_session(self, session_id: str) -> dict[str, Any]:
         return self._post(f"/sessions/{_validate_path_id(session_id)}/retry", {})
 
-    def list_approvals(self) -> dict[str, Any]:
-        return self._get("/approvals")
+    def list_approvals(
+        self,
+        status: str | None = None,
+        harness_id: str | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"limit": limit}
+        if status:
+            params["status"] = status
+        if harness_id:
+            params["harness_id"] = harness_id
+        return self._get("/approvals", params=params)
 
     def show_approval(self, approval_id: str) -> dict[str, Any]:
         return self._get(f"/approvals/{_validate_path_id(approval_id)}")
@@ -228,6 +241,74 @@ class AgenticClient:
 
     def harness_logs(self, harness_id: str) -> dict[str, Any]:
         return self._get(f"/harnesses/{_validate_path_id(harness_id)}/logs")
+
+    def harness_activity(self, harness_id: str) -> dict[str, Any]:
+        return self._get(f"/harnesses/{_validate_path_id(harness_id)}/activity")
+
+    def catalog_surfaces(
+        self,
+        harness: str,
+        cwd: str | None = None,
+        scope: str | None = None,
+        surface_type: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd:
+            params["cwd"] = cwd
+        if scope:
+            params["scope"] = scope
+        if surface_type:
+            params["surface_type"] = surface_type
+        return self._get(f"/catalog/{_validate_path_id(harness)}/surfaces", params=params)
+
+    def catalog_merged(self, harness: str, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(f"/catalog/{_validate_path_id(harness)}/merged", params=params)
+
+    def catalog_diff(
+        self,
+        harness: str,
+        cwd_a: str | None = None,
+        cwd_b: str | None = None,
+        scope_a: str | None = None,
+        scope_b: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd_a:
+            params["cwd_a"] = cwd_a
+        if cwd_b:
+            params["cwd_b"] = cwd_b
+        if scope_a:
+            params["scope_a"] = scope_a
+        if scope_b:
+            params["scope_b"] = scope_b
+        return self._get(f"/catalog/{_validate_path_id(harness)}/diff", params=params)
+
+    def config_effective(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(f"/config/{_validate_path_id(harness_id)}/effective", params=params)
+
+    def config_diff(
+        self,
+        harness_id: str,
+        scope_a: str = "user",
+        scope_b: str = "project",
+        cwd: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope_a": scope_a, "scope_b": scope_b}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(f"/config/{_validate_path_id(harness_id)}/diff", params=params)
+
+    def config_explain(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(f"/config/{_validate_path_id(harness_id)}/explain", params=params)
 
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:

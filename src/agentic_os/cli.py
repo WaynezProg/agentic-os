@@ -27,6 +27,8 @@ mcp = typer.Typer(help="Inspect and manage local MCP registry records.")
 policy = typer.Typer(help="Inspect and evaluate local capability policy.")
 bench = typer.Typer(help="Run local benchmark checks.")
 app.add_typer(agents, name="agents")
+harnesses_cmd = typer.Typer(help="Inspect harness instances and activity.")
+app.add_typer(harnesses_cmd, name="harnesses")
 app.add_typer(sessions, name="sessions")
 app.add_typer(approvals, name="approvals")
 app.add_typer(memory, name="memory")
@@ -39,6 +41,10 @@ fleet = typer.Typer(help="Inspect fleet health, events, and capacity.")
 app.add_typer(fleet, name="fleet")
 audit = typer.Typer(help="Query governance audit trail.")
 app.add_typer(audit, name="audit")
+catalog = typer.Typer(help="Scan and inspect workflow surfaces.")
+app.add_typer(catalog, name="catalog")
+config_cmd = typer.Typer(help="Inspect configuration scopes.")
+app.add_typer(config_cmd, name="config")
 
 T = TypeVar("T")
 
@@ -107,6 +113,16 @@ def agents_show(agent_id: str, api: str | None = _api_option()) -> None:
     _echo_json(data)
 
 
+@harnesses_cmd.command("activity")
+def harness_activity(
+    harness_id: str,
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(lambda: make_client(api).harness_activity(harness_id))
+    for entry in data.get("activity", []):
+        typer.echo(f"{entry['timestamp']}\t{entry['type']}\t{entry['source']}\t{entry['message']}")
+
+
 @app.command()
 def run(
     agent_id: str,
@@ -144,6 +160,13 @@ def sessions_events(session_id: str, api: str | None = _api_option()) -> None:
         )
 
 
+@sessions.command("timeline")
+def sessions_timeline(session_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).get_session_timeline(session_id))
+    for entry in data.get("timeline", []):
+        typer.echo(f"{entry['timestamp']}\t{entry['type']}\t{entry['source']}\t{entry['message']}")
+
+
 @app.command()
 def logs(
     session_id: str,
@@ -179,8 +202,16 @@ def retry(session_id: str, api: str | None = _api_option()) -> None:
 
 
 @approvals.command("list")
-def approvals_list(api: str | None = _api_option()) -> None:
-    data = _run_api_call(lambda: make_client(api).list_approvals())
+def approvals_list(
+    status: str | None = typer.Option(
+        None, "--status", help="Filter by status (pending/approved/rejected/expired)."
+    ),
+    harness_id: str | None = typer.Option(None, "--harness", help="Filter by harness id."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).list_approvals(status=status, harness_id=harness_id)
+    )
     for approval in data["approvals"]:
         typer.echo(
             f"{approval['id']}\t{approval['agent_id']}\t{approval['status']}\t"
@@ -630,3 +661,118 @@ def audit_coverage_cmd(api: str | None = _api_option()) -> None:
             f"{item['agent_id']}\tpolicy={has_policy}\tlast_eval={last_eval}\t"
             f"runs={item['recent_run_count']}\tuncovered={uncovered}"
         )
+
+
+@catalog.command("list")
+def catalog_list(
+    harness: str,
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    scope: str | None = typer.Option(None, "--scope", help="Filter by scope (user/project/local)."),
+    surface_type: str | None = typer.Option(None, "--type", help="Filter by surface type."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(
+        lambda: make_client(api).catalog_surfaces(
+            harness, cwd=resolved_cwd, scope=scope, surface_type=surface_type
+        )
+    )
+    for surface in data.get("surfaces", []):
+        typer.echo(
+            f"{surface['id']}\t{surface['type']}\t{surface['scope']}\t"
+            f"{surface['source']}\t{'enabled' if surface['enabled'] else 'disabled'}"
+        )
+
+
+@catalog.command("merged")
+def catalog_merged(
+    harness: str,
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(lambda: make_client(api).catalog_merged(harness, cwd=resolved_cwd))
+    for surface in data.get("surfaces", []):
+        override_info = ""
+        if surface.get("overridden_by"):
+            override_info = f" [overridden by {surface['overridden_by']}]"
+        elif surface.get("overrides"):
+            override_info = f" [overrides {surface['overrides']}]"
+        typer.echo(f"{surface['id']}\t{surface['scope']}{override_info}")
+
+
+@catalog.command("diff")
+def catalog_diff_cmd(
+    harness: str,
+    cwd_a: Path | None = typer.Option(None, "--cwd-a", help="First project directory."),
+    cwd_b: Path | None = typer.Option(None, "--cwd-b", help="Second project directory."),
+    scope_a: str | None = typer.Option(None, "--scope-a", help="First scope filter."),
+    scope_b: str | None = typer.Option(None, "--scope-b", help="Second scope filter."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_a = str(cwd_a.expanduser().resolve()) if cwd_a else None
+    resolved_b = str(cwd_b.expanduser().resolve()) if cwd_b else None
+    data = _run_api_call(
+        lambda: make_client(api).catalog_diff(
+            harness,
+            cwd_a=resolved_a,
+            cwd_b=resolved_b,
+            scope_a=scope_a,
+            scope_b=scope_b,
+        )
+    )
+    for s in data.get("added", []):
+        typer.echo(f"+ {s['id']}\t{scope_b or ''}")
+    for s in data.get("removed", []):
+        typer.echo(f"- {s['id']}\t{scope_a or ''}")
+    for m in data.get("modified", []):
+        typer.echo(f"~ {m['surface']['id']}")
+
+
+@config_cmd.command("effective")
+def config_effective(
+    harness_id: str,
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(lambda: make_client(api).config_effective(harness_id, cwd=resolved_cwd))
+    typer.echo(f"harness: {data['harness_id']}")
+    typer.echo(f"scopes: {', '.join(data.get('scopes_present', []))}")
+    typer.echo("")
+    for entry in data.get("entries", []):
+        typer.echo(f"{entry['key']}\t{entry['value']}\t[{entry['scope']}]\t{entry['source']}")
+
+
+@config_cmd.command("diff")
+def config_diff_cmd(
+    harness_id: str,
+    scope_a: str = typer.Option("user", "--scope-a", help="First scope."),
+    scope_b: str = typer.Option("project", "--scope-b", help="Second scope."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(
+        lambda: make_client(api).config_diff(
+            harness_id, scope_a=scope_a, scope_b=scope_b, cwd=resolved_cwd
+        )
+    )
+    for item in data.get("added", []):
+        typer.echo(f"+ {item['key']}\t{item['value']}\t[{item['scope']}]")
+    for item in data.get("removed", []):
+        typer.echo(f"- {item['key']}\t{item['value']}\t[{item['scope']}]")
+    for item in data.get("modified", []):
+        typer.echo(f"~ {item['key']}\t{item['before']['value']} -> {item['after']['value']}")
+
+
+@config_cmd.command("explain")
+def config_explain(
+    harness_id: str,
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(lambda: make_client(api).config_explain(harness_id, cwd=resolved_cwd))
+    for entry in data.get("entries", []):
+        typer.echo(f"{entry['key']}\t[{entry['scope']}]\t{entry['source']}")

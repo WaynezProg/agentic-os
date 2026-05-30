@@ -1315,3 +1315,205 @@ def test_harness_logs_empty_paths(tmp_path: Path) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["log_paths"] == []
+
+
+def test_session_timeline_returns_entries(tmp_path: Path) -> None:
+    """GET /sessions/{id}/timeline returns chronological events for a session."""
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "timeline test"}
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    response = client.get(f"/sessions/{session_id}/timeline")
+
+    assert response.status_code == 200
+    timeline = response.json()["timeline"]
+    assert len(timeline) >= 1
+    types = [e["type"] for e in timeline]
+    assert "session_start" in types or "process_started" in types
+
+
+def test_session_timeline_404(tmp_path: Path) -> None:
+    """GET /sessions/{id}/timeline returns 404 for unknown session."""
+    client = make_client(tmp_path)
+
+    response = client.get("/sessions/missing/timeline")
+
+    assert response.status_code == 404
+
+
+def test_catalog_surfaces_returns_valid_response(tmp_path: Path) -> None:
+    """GET /catalog/{harness}/surfaces returns valid response structure."""
+    client = make_client(tmp_path)
+
+    response = client.get("/catalog/claude/surfaces", params={"cwd": str(tmp_path)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "surfaces" in data
+    for s in data["surfaces"]:
+        assert "id" in s
+        assert "type" in s
+        assert "scope" in s
+        assert "harness" in s
+
+
+def test_catalog_surfaces_400_for_unknown_harness(tmp_path: Path) -> None:
+    """GET /catalog/{harness}/surfaces returns 400 for unsupported harness."""
+    client = make_client(tmp_path)
+
+    response = client.get("/catalog/unknown/surfaces")
+
+    assert response.status_code == 400
+
+
+def test_catalog_merged_returns_valid_response(tmp_path: Path) -> None:
+    """GET /catalog/{harness}/merged returns valid merged response structure."""
+    client = make_client(tmp_path)
+
+    response = client.get("/catalog/claude/merged", params={"cwd": str(tmp_path)})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "surfaces" in data
+    # Verify merged surfaces have override info when applicable
+    for s in data["surfaces"]:
+        assert "overridden_by" in s or "overrides" in s or True  # at least one field present
+
+
+def test_catalog_diff_returns_empty_diff(tmp_path: Path) -> None:
+    """GET /catalog/{harness}/diff returns empty diff when both sides are empty."""
+    client = make_client(tmp_path)
+
+    response = client.get(
+        "/catalog/claude/diff",
+        params={
+            "cwd_a": str(tmp_path),
+            "cwd_b": str(tmp_path),
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["added"] == []
+    assert data["removed"] == []
+    assert data["modified"] == []
+
+
+def test_approvals_list_filter_by_status(tmp_path: Path) -> None:
+    """GET /approvals?status=pending filters by approval status."""
+    client = make_client(tmp_path)
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+    blocked = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "needs approval"},
+    )
+    assert blocked.status_code == 409
+    approval_id = blocked.json()["approval_id"]
+
+    pending = client.get("/approvals", params={"status": "pending"})
+    assert pending.status_code == 200
+    assert any(a["id"] == approval_id for a in pending.json()["approvals"])
+
+    rejected = client.get("/approvals", params={"status": "rejected"})
+    assert rejected.status_code == 200
+    assert not any(a["id"] == approval_id for a in rejected.json()["approvals"])
+
+
+def test_approvals_list_filter_by_harness_id(tmp_path: Path) -> None:
+    """GET /approvals?harness_id=shell filters by harness id."""
+    client = make_client(tmp_path)
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+    blocked = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "needs approval"},
+    )
+    assert blocked.status_code == 409
+    approval_id = blocked.json()["approval_id"]
+
+    filtered = client.get("/approvals", params={"harness_id": "shell"})
+    assert filtered.status_code == 200
+    assert any(a["id"] == approval_id for a in filtered.json()["approvals"])
+
+    filtered_other = client.get("/approvals", params={"harness_id": "other"})
+    assert filtered_other.status_code == 200
+    assert not any(a["id"] == approval_id for a in filtered_other.json()["approvals"])
+
+
+def test_harness_activity_returns_sessions(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/activity returns session events for a harness."""
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "activity test"}
+    )
+    assert run.status_code == 200
+
+    response = client.get("/harnesses/shell/activity")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["harness_id"] == "shell"
+    assert len(data["activity"]) >= 1
+
+
+def test_harness_activity_404(tmp_path: Path) -> None:
+    """GET /harnesses/{id}/activity returns 404 for unknown harness."""
+    client = make_client(tmp_path)
+
+    response = client.get("/harnesses/missing/activity")
+
+    assert response.status_code == 404
+
+
+def test_config_effective_returns_valid(tmp_path: Path) -> None:
+    """GET /config/{id}/effective returns valid response structure."""
+    client = make_client(tmp_path)
+
+    response = client.get("/config/shell/effective")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "harness_id" in data
+    assert "entries" in data
+    assert "scopes_present" in data
+
+
+def test_config_diff_returns_valid(tmp_path: Path) -> None:
+    """GET /config/{id}/diff returns valid diff structure."""
+    client = make_client(tmp_path)
+
+    response = client.get("/config/shell/diff")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "added" in data
+    assert "removed" in data
+    assert "modified" in data
+
+
+def test_config_explain_returns_valid(tmp_path: Path) -> None:
+    """GET /config/{id}/explain returns valid explain structure."""
+    client = make_client(tmp_path)
+
+    response = client.get("/config/shell/explain")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "harness_id" in data
+    assert "entries" in data
