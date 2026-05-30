@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from agentic_os.logs import JsonlLogStore, ReadResult
 
 
@@ -166,13 +164,14 @@ def test_read_merged_stream_filter_keeps_per_file_indexes(tmp_path: Path) -> Non
     assert [entry.index for entry in entries] == [1, 2]
 
 
-def test_log_store_malformed_jsonl_fails_fast(tmp_path: Path) -> None:
+def test_log_store_malformed_jsonl_skips_invalid_lines(tmp_path: Path) -> None:
     store = JsonlLogStore()
     path = tmp_path / "stdout.jsonl"
     path.write_text("{not-json}\n", encoding="utf-8")
 
-    with pytest.raises(json.JSONDecodeError):
-        store.read(path)
+    result = store.read(path)
+    assert result.entries == []
+    assert result.truncated is False
 
 
 def test_read_returns_read_result_with_truncated_false(tmp_path: Path) -> None:

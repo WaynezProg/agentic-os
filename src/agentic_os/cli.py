@@ -47,6 +47,12 @@ config_cmd = typer.Typer(help="Inspect configuration scopes.")
 app.add_typer(config_cmd, name="config")
 harness_config_cmd = typer.Typer(help="Inspect harness-native configuration (read-only).")
 app.add_typer(harness_config_cmd, name="harness-config")
+harness_contract_cmd = typer.Typer(help="Inspect harness adapter contracts.")
+app.add_typer(harness_contract_cmd, name="harness-contracts")
+profiles_cmd = typer.Typer(help="Inspect and bind run profiles.")
+app.add_typer(profiles_cmd, name="profiles")
+usage_cmd = typer.Typer(help="Inspect token/cost usage.")
+app.add_typer(usage_cmd, name="usage")
 
 T = TypeVar("T")
 
@@ -128,6 +134,81 @@ def harnesses_validate(api: str | None = _api_option()) -> None:
     typer.echo("registry validation ok")
 
 
+@harness_contract_cmd.command("list")
+def harness_contracts_list(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).list_harness_contracts())
+    for contract in data.get("contracts", []):
+        typer.echo(
+            f"{contract['harness_id']}\t{contract['contract_version']}\t{contract['required_env']}"
+        )
+
+
+@harness_contract_cmd.command("show")
+def harness_contracts_show(harness_id: str, api: str | None = _api_option()) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).show_harness_contract(harness_id)))
+
+
+@profiles_cmd.command("list")
+def profiles_list(
+    cwd: Path | None = typer.Option(None, "--cwd", help="Working directory for profile lookup."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd is not None else None
+    _echo_json(_run_api_call(lambda: make_client(api).list_profiles(resolved_cwd)))
+
+
+@profiles_cmd.command("show")
+def profiles_show(name: str, api: str | None = _api_option()) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).show_profile(name)))
+
+
+@profiles_cmd.command("bind")
+def profiles_bind(
+    project_path: Path,
+    run_profile: str = typer.Option(..., "--run-profile"),
+    api: str | None = _api_option(),
+) -> None:
+    resolved = str(project_path.expanduser().resolve())
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).bind_project_profile(resolved, run_profile),
+        )
+    )
+
+
+@usage_cmd.command("summary")
+def usage_summary_cmd(
+    harness_id: str | None = typer.Option(None, "--harness-id"),
+    provider: str | None = typer.Option(None, "--provider"),
+    from_: str | None = typer.Option(None, "--from"),
+    to: str | None = typer.Option(None, "--to"),
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).usage_summary(
+                from_=from_,
+                to=to,
+                harness_id=harness_id,
+                provider=provider,
+            )
+        )
+    )
+
+
+@usage_cmd.command("session")
+def usage_session_cmd(session_id: str, api: str | None = _api_option()) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).usage_session(session_id)))
+
+
+@usage_cmd.command("quotas")
+def usage_quotas_cmd(
+    scope: str = typer.Option("daily", "--scope", help="daily or session"),
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).usage_quotas(scope=scope)))
+
+
 @harnesses_cmd.command("activity")
 def harness_activity_cmd(
     harness_id: str,
@@ -146,11 +227,17 @@ def run(
     agent_id: str,
     cwd: Path | None = typer.Option(None, "--cwd", help="Working directory."),
     message: str = typer.Option(..., "--message", help="Message passed to the agent."),
+    profile: str | None = typer.Option(None, "--profile", help="Run profile name."),
     api: str | None = _api_option(),
 ) -> None:
     resolved_cwd = str(cwd.expanduser().resolve()) if cwd is not None else None
     data = _run_api_call(
-        lambda: make_client(api).run_session(agent_id=agent_id, cwd=resolved_cwd, message=message)
+        lambda: make_client(api).run_session(
+            agent_id=agent_id,
+            cwd=resolved_cwd,
+            message=message,
+            profile=profile,
+        )
     )
     typer.echo(f"{data['id']}\t{data['agent_id']}\t{data['status']}")
 

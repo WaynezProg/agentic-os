@@ -50,6 +50,9 @@ CREATE TABLE sessions (
   stdout_log TEXT NOT NULL,
   stderr_log TEXT NOT NULL,
   summary_one_liner TEXT NOT NULL DEFAULT '',
+  resolved_profile TEXT,
+  resolved_provider TEXT,
+  resolved_model TEXT,
   started_at TEXT,
   ended_at TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -97,6 +100,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   stdout_log TEXT NOT NULL,
   stderr_log TEXT NOT NULL,
   summary_one_liner TEXT NOT NULL DEFAULT '',
+  resolved_profile TEXT,
+  resolved_provider TEXT,
+  resolved_model TEXT,
   started_at TEXT,
   ended_at TEXT,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -126,6 +132,7 @@ class Store:
             self._migrate_sessions_env_json(conn)
             self._migrate_events_foreign_key(conn)
             self._migrate_sessions_attach_fields(conn)
+            self._migrate_sessions_resolved_fields(conn)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -140,9 +147,10 @@ class Store:
                 """
                 INSERT INTO sessions (
                   id, agent_id, cwd, argv_json, env_json, status, artifact_dir,
-                  stdout_log, stderr_log, summary_one_liner, updated_at
+                  stdout_log, stderr_log, summary_one_liner,
+                  resolved_profile, resolved_provider, resolved_model, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     session_id,
@@ -155,6 +163,9 @@ class Store:
                     request.stdout_log,
                     request.stderr_log,
                     request.summary_one_liner,
+                    request.resolved_profile,
+                    request.resolved_provider,
+                    request.resolved_model,
                 ),
             )
         return self.get_session(session_id)
@@ -414,21 +425,23 @@ class Store:
         )
         # Legacy rows with invalid statuses cannot satisfy the rebuilt CHECK constraint.
         conn.execute(
-            f"""
-            INSERT INTO sessions (
-              id, agent_id, cwd, argv_json, env_json, status, pid, pgid, exit_code,
-              artifact_dir, stdout_log, stderr_log, summary_one_liner,
-              started_at, ended_at, updated_at
+                f"""
+                INSERT INTO sessions (
+                  id, agent_id, cwd, argv_json, env_json, status, pid, pgid, exit_code,
+                  artifact_dir, stdout_log, stderr_log, summary_one_liner,
+                  resolved_profile, resolved_provider, resolved_model,
+                  started_at, ended_at, updated_at
+                )
+                SELECT
+                  id, agent_id, cwd, argv_json, {env_json_projection}, status, pid, pgid, exit_code,
+                  artifact_dir, stdout_log, stderr_log, summary_one_liner,
+                  NULL, NULL, NULL,
+                  started_at, ended_at, updated_at
+                FROM sessions_without_status_check
+                WHERE status IN ({valid_status_placeholders})
+                """,
+                VALID_STATUS_VALUES,
             )
-            SELECT
-              id, agent_id, cwd, argv_json, {env_json_projection}, status, pid, pgid, exit_code,
-              artifact_dir, stdout_log, stderr_log, summary_one_liner,
-              started_at, ended_at, updated_at
-            FROM sessions_without_status_check
-            WHERE status IN ({valid_status_placeholders})
-            """,
-            VALID_STATUS_VALUES,
-        )
 
         conn.execute(EVENTS_SCHEMA)
         conn.execute(
@@ -467,6 +480,13 @@ class Store:
         conn.execute(
             "ALTER TABLE sessions ADD COLUMN attach_status TEXT NOT NULL DEFAULT 'none'"
         )
+
+    def _migrate_sessions_resolved_fields(self, conn: sqlite3.Connection) -> None:
+        if _table_has_column(conn, "sessions", "resolved_profile"):
+            return
+        conn.execute("ALTER TABLE sessions ADD COLUMN resolved_profile TEXT")
+        conn.execute("ALTER TABLE sessions ADD COLUMN resolved_provider TEXT")
+        conn.execute("ALTER TABLE sessions ADD COLUMN resolved_model TEXT")
 
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
@@ -516,6 +536,9 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         external_session_id=row["external_session_id"],
         attachable=bool(row["attachable"]),
         attach_status=row["attach_status"],
+        resolved_profile=row["resolved_profile"],
+        resolved_provider=row["resolved_provider"],
+        resolved_model=row["resolved_model"],
     )
 
 

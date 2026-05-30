@@ -24,9 +24,76 @@ class FakeClient:
         self.calls.append(("show_agent", (agent_id,), {}))
         return {"id": agent_id, "label": "Shell", "enabled": True}
 
-    def run_session(self, agent_id: str, cwd: str | None, message: str) -> dict[str, object]:
-        self.calls.append(("run_session", (agent_id, cwd, message), {}))
+    def run_session(
+        self,
+        agent_id: str,
+        cwd: str | None,
+        message: str,
+        profile: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(("run_session", (agent_id, cwd, message), {"profile": profile}))
         return {"id": "s_1", "agent_id": agent_id, "cwd": cwd, "status": "succeeded"}
+
+    def list_harness_contracts(self) -> dict[str, object]:
+        self.calls.append(("list_harness_contracts", (), {}))
+        return {
+            "contracts": [
+                {
+                    "harness_id": "shell",
+                    "contract_version": "v1",
+                    "required_env": [],
+                }
+            ],
+            "count": 1,
+        }
+
+    def show_harness_contract(self, harness_id: str) -> dict[str, object]:
+        self.calls.append(("show_harness_contract", (harness_id,), {}))
+        return {"harness_id": harness_id, "contract_version": "v1"}
+
+    def list_profiles(self, cwd: str | None = None) -> dict[str, object]:
+        self.calls.append(("list_profiles", (), {"cwd": cwd}))
+        return {"run_profiles": [], "project_bindings": []}
+
+    def show_profile(self, name: str) -> dict[str, object]:
+        self.calls.append(("show_profile", (name,), {}))
+        return {"name": name, "harness_id": "shell"}
+
+    def bind_project_profile(self, project_path: str, run_profile: str) -> dict[str, object]:
+        self.calls.append(
+            ("bind_project_profile", (project_path, run_profile), {}),
+        )
+        return {"project_path": project_path, "run_profile": run_profile}
+
+    def usage_summary(
+        self,
+        *,
+        from_: str | None = None,
+        to: str | None = None,
+        harness_id: str | None = None,
+        provider: str | None = None,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "usage_summary",
+                (),
+                {
+                    "from_": from_,
+                    "to": to,
+                    "harness_id": harness_id,
+                    "provider": provider,
+                },
+            ),
+        )
+        return {"count": 0, "rows": []}
+
+    def usage_session(self, session_id: str) -> dict[str, object]:
+        self.calls.append(("usage_session", (session_id,), {}))
+        return {"session_id": session_id, "total_tokens": 0}
+
+    def usage_quotas(self, scope: str = "daily") -> dict[str, object]:
+        self.calls.append(("usage_quotas", (), {"scope": scope}))
+        return {"scope": scope, "rows": []}
 
     def list_sessions(self) -> dict[str, object]:
         self.calls.append(("list_sessions", (), {}))
@@ -531,7 +598,7 @@ def test_run_resolves_cwd_and_prints_tab_separated_row(
 
     assert result.exit_code == 0
     assert result.output == "s_1\tshell\tsucceeded\n"
-    assert fake.calls == [("run_session", ("shell", str(cwd.resolve()), "OK"), {})]
+    assert fake.calls == [("run_session", ("shell", str(cwd.resolve()), "OK"), {"profile": None})]
 
 
 def test_run_omits_cwd_when_not_provided(monkeypatch: Any) -> None:
@@ -541,7 +608,7 @@ def test_run_omits_cwd_when_not_provided(monkeypatch: Any) -> None:
     result = CliRunner().invoke(cli.app, ["run", "shell", "--message", "OK"])
 
     assert result.exit_code == 0
-    assert fake.calls == [("run_session", ("shell", None, "OK"), {})]
+    assert fake.calls == [("run_session", ("shell", None, "OK"), {"profile": None})]
 
 
 def test_sessions_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
@@ -1822,6 +1889,58 @@ def test_audit_coverage_prints_summary(monkeypatch: Any) -> None:
     assert "policy=yes" in result.output
     assert "uncovered=1" in result.output
     assert fake.calls == [("audit_policy_coverage", (), {})]
+
+
+def test_client_calls_harness_contract_endpoints(monkeypatch: Any) -> None:
+    client = AgenticClient(base_url="http://example.com")
+    responses: list[dict[str, object]] = [
+        {"contracts": [], "count": 0},
+        {"harness_id": "shell", "contract_version": "v1"},
+    ]
+
+    def fake_get(path: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        return responses.pop(0)
+
+    monkeypatch.setattr(client, "_get", fake_get)
+    assert client.list_harness_contracts()["contracts"] == []
+    assert client.show_harness_contract("shell")["harness_id"] == "shell"
+
+
+def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    runner = CliRunner()
+
+    list_result = runner.invoke(cli.app, ["harness-contracts", "list"])
+    assert list_result.exit_code == 0
+
+    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell"])
+    assert show_result.exit_code == 0
+
+
+def test_run_command_passes_profile_flag(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.app,
+        ["run", "shell", "--message", "hello", "--profile", "default"],
+    )
+    assert result.exit_code == 0
+    assert fake.calls[0] == (
+        "run_session",
+        ("shell", None, "hello"),
+        {"profile": "default"},
+    )
+
+
+def test_usage_client_calls_api(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    runner = CliRunner()
+    result = runner.invoke(cli.app, ["usage", "summary", "--harness-id", "claude"])
+    assert result.exit_code == 0
+    assert fake.calls[0][0] == "usage_summary"
 
 
 def test_deprecated_status_shown_in_skills_list(monkeypatch: Any) -> None:

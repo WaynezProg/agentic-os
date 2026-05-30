@@ -47,6 +47,9 @@ class SessionCreate(BaseModel):
     stdout_log: str
     stderr_log: str
     summary_one_liner: str = ""
+    resolved_profile: str | None = None
+    resolved_provider: str | None = None
+    resolved_model: str | None = None
 
 
 class SessionRecord(SessionCreate):
@@ -61,6 +64,9 @@ class SessionRecord(SessionCreate):
     external_session_id: str | None = None
     attachable: bool = False
     attach_status: AttachStatus = "none"
+    resolved_profile: str | None = None
+    resolved_provider: str | None = None
+    resolved_model: str | None = None
 
 
 class SessionAttachRequest(BaseModel):

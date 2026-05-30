@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -19,8 +20,21 @@ class AgenticClient:
     def show_agent(self, agent_id: str) -> dict[str, Any]:
         return self._get(f"/agents/{_validate_path_id(agent_id)}")
 
-    def run_session(self, agent_id: str, cwd: str | None, message: str) -> dict[str, Any]:
-        return self._post("/sessions", {"agent_id": agent_id, "cwd": cwd, "message": message})
+    def run_session(
+        self,
+        agent_id: str,
+        cwd: str | None,
+        message: str,
+        profile: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, object] = {
+            "agent_id": agent_id,
+            "cwd": cwd,
+            "message": message,
+        }
+        if profile is not None:
+            payload["profile"] = profile
+        return self._post("/sessions", payload)
 
     def list_sessions(self) -> dict[str, Any]:
         return self._get("/sessions")
@@ -263,6 +277,54 @@ class AgenticClient:
         if event_type:
             params["event_type"] = event_type
         return self._get(f"/harnesses/{_validate_path_id(harness_id)}/activity", params=params)
+
+    def list_harness_contracts(self) -> dict[str, Any]:
+        return self._get("/harness-contracts")
+
+    def show_harness_contract(self, harness_id: str) -> dict[str, Any]:
+        return self._get(f"/harness-contracts/{_validate_path_id(harness_id)}")
+
+    def list_profiles(self, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd is not None:
+            params["cwd"] = cwd
+        return self._get("/profiles", params=params)
+
+    def show_profile(self, name: str) -> dict[str, Any]:
+        return self._get(f"/profiles/{_validate_path_id(name)}")
+
+    def bind_project_profile(self, project_path: str, run_profile: str) -> dict[str, Any]:
+        encoded_path = quote(project_path, safe="")
+        return self._post(
+            f"/projects/{encoded_path}/bind-profile",
+            {"run_profile": run_profile},
+        )
+
+    def usage_summary(
+        self,
+        *,
+        from_: str | None = None,
+        to: str | None = None,
+        harness_id: str | None = None,
+        provider: str | None = None,
+    ) -> dict[str, Any]:
+        params = {
+            key: value
+            for key, value in {
+                "from": from_,
+                "to": to,
+                "harness_id": harness_id,
+                "provider": provider,
+            }.items()
+            if value is not None
+        }
+        return self._get("/usage/summary", params=params)
+
+    def usage_session(self, session_id: str) -> dict[str, Any]:
+        return self._get(f"/usage/sessions/{_validate_path_id(session_id)}")
+
+    def usage_quotas(self, scope: str = "daily") -> dict[str, Any]:
+        return self._get("/usage/quotas", {"scope": scope})
 
     def catalog_surfaces(
         self,

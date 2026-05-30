@@ -50,13 +50,26 @@ class JsonlLogStore:
                 if len(entries) >= max_lines:
                     truncated = True
                     break
-                raw = json.loads(line)
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(raw, dict):
+                    continue
+                stream = raw.get("stream")
+                if not isinstance(stream, str) or stream not in {"stdout", "stderr"}:
+                    continue
+                session_id = raw.get("session_id")
+                line = raw.get("line")
+                ts = raw.get("ts")
+                if not isinstance(session_id, str) or not isinstance(line, str) or not isinstance(ts, str):
+                    continue
                 entries.append(
                     LogEntry(
-                        ts=raw["ts"],
-                        stream=raw["stream"],
-                        session_id=raw["session_id"],
-                        line=raw["line"],
+                        ts=ts,
+                        stream=stream,
+                        session_id=session_id,
+                        line=line,
                         index=index + 1,
                     )
                 )
@@ -78,12 +91,22 @@ class JsonlLogStore:
                 raw = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(raw, dict):
+                continue
+            stream = raw.get("stream")
+            if not isinstance(stream, str) or stream not in {"stdout", "stderr"}:
+                continue
+            session_id = raw.get("session_id")
+            content = raw.get("line")
+            ts = raw.get("ts")
+            if not isinstance(session_id, str) or not isinstance(content, str) or not isinstance(ts, str):
+                continue
             entries.append(
                 LogEntry(
-                    ts=raw["ts"],
-                    stream=raw["stream"],
-                    session_id=raw["session_id"],
-                    line=raw["line"],
+                    ts=ts,
+                    stream=stream,
+                    session_id=session_id,
+                    line=content,
                     index=start_index + offset + 1,
                 )
             )

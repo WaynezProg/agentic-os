@@ -6,6 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -42,6 +43,8 @@ from agentic_os.config_scope import (
     effective as config_effective,
     explain as config_explain,
 )
+from agentic_os.adapter_contract import contract_from_agent
+from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
@@ -53,6 +56,8 @@ from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionReco
 from agentic_os.registry import Registry, RenderedRun, validate_registry
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
+from agentic_os.profiles import ResolvedRunProfile
+from agentic_os.usage import UsageStore, usage_record_to_dict
 
 
 SESSION_START_APPROVAL_TOOL = "session.start"
@@ -63,6 +68,11 @@ class SessionRunRequest(BaseModel):
     agent_id: str
     cwd: str | None = None
     message: str
+    profile: str | None = None
+
+
+class ProjectProfileBindRequest(BaseModel):
+    run_profile: str
 
 
 class SkillUpsertRequest(BaseModel):
@@ -130,6 +140,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     fleet_store.init()
     audit_store = AuditStore(state_dir / "agentic-os.db")
     audit_store.init()
+    usage_store = UsageStore(state_dir / "agentic-os.db")
+    usage_store.init()
     prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
     supervisor = ProcessSupervisor(
@@ -137,6 +149,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         logs=logs,
         state_dir=state_dir,
         registry=registry,
+        usage_store=usage_store,
     )
     supervisor.reconcile()
 
@@ -146,6 +159,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     app.state.audit_store = audit_store
     app.state.control_plane = control_plane
     app.state.approval_store = approval_store
+    app.state.usage_store = usage_store
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
@@ -218,6 +232,27 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/harness-contracts")
+    def list_harness_contracts() -> dict[str, object]:
+        agents = registry.list_agents()
+        contracts = [contract_from_agent(agent).model_dump() for agent in agents]
+        contracts.sort(key=lambda contract: contract["harness_id"])
+        return {"contracts": contracts, "count": len(contracts)}
+
+    @app.get("/harness-contracts/{harness_id}")
+    def show_harness_contract(harness_id: str) -> dict[str, object]:
+        try:
+            agent = registry.get(harness_id)
+        except KeyError:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"unknown harness: {harness_id}",
+                    "supported": [agent.id for agent in registry.list_agents()],
+                },
+            )
+        return contract_from_agent(agent).model_dump()
+
     @app.get("/harnesses/{harness_id}/health")
     def harness_health(harness_id: str) -> dict[str, object]:
         try:
@@ -248,6 +283,86 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"id": agent.id, "log_paths": list(agent.log_paths)}
+
+    @app.get("/profiles")
+    def list_profiles(cwd: str | None = Query(default=None)) -> dict[str, object]:
+        resolved_cwd = str(Path(cwd).resolve()) if cwd else str(Path.cwd())
+        profiles = profiles_module.list_profiles(resolved_cwd)
+        bindings = profiles_module.list_project_bindings(resolved_cwd)
+        return {
+            "cwd": resolved_cwd,
+            "run_profiles": [profile.model_dump() for profile in profiles.values()],
+            "project_bindings": [
+                {"project_path": project_path, "run_profile": profile_name}
+                for project_path, profile_name in bindings
+            ],
+        }
+
+    @app.get("/profiles/{name}")
+    def show_profile(name: str) -> dict[str, object]:
+        profile = profiles_module.show_profile(name, Path.cwd())
+        if profile is None:
+            raise HTTPException(status_code=404, detail=f"unknown profile: {name}")
+        return profile.model_dump()
+
+    @app.post("/projects/{project_path:path}/bind-profile")
+    def bind_project_profile(
+        project_path: str,
+        request: ProjectProfileBindRequest,
+    ) -> dict[str, object]:
+        resolved_project = str(Path(unquote(project_path)).resolve())
+        if profiles_module.show_profile(request.run_profile, resolved_project) is None:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"unknown profile: {request.run_profile}",
+                    "available": sorted(profiles_module.list_profiles(resolved_project)),
+                },
+            )
+        profiles_module.bind_project_profile(resolved_project, request.run_profile, resolved_project)
+        return {
+            "project_path": resolved_project,
+            "run_profile": request.run_profile,
+        }
+
+    @app.get("/usage/sessions/{session_id}")
+    def usage_session(session_id: str) -> dict[str, object]:
+        record = usage_store.try_get(session_id)
+        if record is None:
+            return {
+                "session_id": session_id,
+                "provider": "N/A",
+                "model": "N/A",
+                "total_tokens": "N/A",
+                "cost_usd": "N/A",
+            }
+        return usage_record_to_dict(record)
+
+    @app.get("/usage/summary")
+    def usage_summary(
+        from_: str | None = Query(default=None, alias="from"),
+        to: str | None = Query(default=None, alias="to"),
+        harness_id: str | None = None,
+        provider: str | None = None,
+    ) -> dict[str, object]:
+        rows = usage_store.list_summary(
+            from_ts=from_,
+            to_ts=to,
+            harness_id=harness_id,
+            provider=provider,
+        )
+        return {"count": len(rows), "rows": rows}
+
+    @app.get("/usage/quotas")
+    def usage_quotas(scope: str = Query(default="daily")) -> dict[str, object]:
+        if scope == "daily":
+            return {"scope": "daily", "rows": usage_store.list_daily_totals()}
+        if scope == "session":
+            return {"scope": "session", "rows": usage_store.list_session_totals()}
+        raise HTTPException(
+            status_code=400,
+            detail={"message": f"unsupported scope: {scope}", "supported": ["daily", "session"]},
+        )
 
     @app.get("/harnesses/{harness_id}/activity")
     def harness_activity(
@@ -323,21 +438,22 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
-        _check_capacity(request.agent_id)
-        try:
-            rendered = registry.build_run(request.agent_id, request.cwd, request.message)
-        except KeyError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        rendered, resolved = _prepare_session_run(request)
+        _check_capacity(rendered.agent.id)
 
-        policy_result = _evaluate_session_policy(rendered.agent.id, rendered.cwd)
+        policy_result = _evaluate_session_policy(
+            rendered.agent.id,
+            rendered.cwd,
+            model_id=resolved.model if resolved is not None else None,
+        )
         if policy_result is not None:
             if policy_result.decision != "allow":
-                return _reject_session(rendered, policy_result)
-            session = supervisor.start(
-                rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
-            )
+                return _reject_session(
+                    rendered,
+                    policy_result,
+                    **_resolved_profile_kwargs(resolved),
+                )
+            session = _supervisor_start(rendered, resolved)
             audit_store.record(
                 "governance",
                 rendered.agent.id,
@@ -361,9 +477,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 "policy_missing_at_run_start",
                 f"no policy configured for {rendered.agent.id}",
             )
-            session = supervisor.start(
-                rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
-            )
+            session = _supervisor_start(rendered, resolved)
             audit_store.record(
                 "governance",
                 rendered.agent.id,
@@ -578,7 +692,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             {"source_session_id": session_id},
         )
 
-        policy_result = _evaluate_session_policy(previous.agent_id, previous.cwd)
+        policy_result = _evaluate_session_policy(
+            previous.agent_id,
+            previous.cwd,
+            model_id=previous.resolved_model,
+        )
         if policy_result is not None:
             if policy_result.decision != "allow":
                 rendered = RenderedRun(
@@ -587,9 +705,21 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     argv=previous.argv,
                     env=previous.env,
                 )
-                return _reject_session(rendered, policy_result)
+                return _reject_session(
+                    rendered,
+                    policy_result,
+                    resolved_profile=previous.resolved_profile,
+                    resolved_provider=previous.resolved_provider,
+                    resolved_model=previous.resolved_model,
+                )
             session = supervisor.start(
-                previous.agent_id, previous.cwd, previous.argv, env=previous.env
+                previous.agent_id,
+                previous.cwd,
+                previous.argv,
+                env=previous.env,
+                resolved_profile=previous.resolved_profile,
+                resolved_provider=previous.resolved_provider,
+                resolved_model=previous.resolved_model,
             )
             audit_store.record(
                 "governance",
@@ -615,7 +745,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 f"no policy configured for {previous.agent_id}",
             )
             session = supervisor.start(
-                previous.agent_id, previous.cwd, previous.argv, env=previous.env
+                previous.agent_id,
+                previous.cwd,
+                previous.argv,
+                env=previous.env,
+                resolved_profile=previous.resolved_profile,
+                resolved_provider=previous.resolved_provider,
+                resolved_model=previous.resolved_model,
             )
             audit_store.record(
                 "governance",
@@ -663,7 +799,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         if body.mode == "preview":
             return response
 
-        policy_result = _evaluate_session_policy(agent.id, session.cwd)
+        policy_result = _evaluate_session_policy(
+            agent.id,
+            session.cwd,
+            model_id=session.resolved_model,
+        )
         if policy_result is not None and policy_result.decision != "allow":
             status_code = 403 if policy_result.decision == "deny" else 409
             raise HTTPException(
@@ -720,7 +860,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             if approval.status != ApprovalStatus.PENDING:
                 raise ValueError(f"approval {approval_id} is not pending")
             _check_capacity(approval.agent_id)
-            policy_result = _evaluate_session_policy(approval.agent_id, approval.cwd)
+            source_session = _get_session_or_none(approval.source_session_id)
+            policy_result = _evaluate_session_policy(
+                approval.agent_id,
+                approval.cwd,
+                model_id=source_session.resolved_model if source_session is not None else None,
+            )
             if policy_result is None or policy_result.decision == "deny":
                 reason = (
                     policy_result.reason
@@ -741,11 +886,19 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 )
                 raise HTTPException(status_code=409, detail=reason) from None
             claimed = approval_store.claim(approval_id)
+            source_session = _get_session_or_none(claimed.source_session_id)
             session = supervisor.start(
                 claimed.agent_id,
                 claimed.cwd,
                 claimed.argv,
                 env=claimed.env,
+                resolved_profile=(
+                    source_session.resolved_profile if source_session is not None else None
+                ),
+                resolved_provider=(
+                    source_session.resolved_provider if source_session is not None else None
+                ),
+                resolved_model=source_session.resolved_model if source_session is not None else None,
             )
             audit_store.record(
                 "governance",
@@ -1393,12 +1546,77 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError:
             return _build_and_store_summary(session_id)
 
-    def _evaluate_session_policy(agent_id: str, cwd: str) -> PolicyEvaluationResult | None:
+    def _prepare_session_run(
+        request: SessionRunRequest,
+    ) -> tuple[RenderedRun, ResolvedRunProfile | None]:
+        profile_cwd = request.cwd or str(Path.cwd())
+        profiles = profiles_module.list_profiles(profile_cwd)
+        bindings = profiles_module.list_project_bindings(profile_cwd)
+        try:
+            _resolved_name, resolved, effective_message = profiles_module.resolve_profile(
+                request.profile,
+                profile_cwd,
+                request.message,
+                profiles,
+                bindings,
+                request.agent_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        agent_id = resolved.harness_id if resolved is not None else request.agent_id
+        try:
+            rendered = registry.build_run(agent_id, request.cwd, effective_message)
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if resolved is not None:
+            rendered = RenderedRun(
+                agent=rendered.agent,
+                cwd=rendered.cwd,
+                argv=rendered.argv,
+                env={**rendered.env, **resolved.default_env},
+            )
+        return rendered, resolved
+
+    def _supervisor_start(
+        rendered: RenderedRun,
+        resolved: ResolvedRunProfile | None,
+    ) -> SessionRecord:
+        kwargs = _resolved_profile_kwargs(resolved)
+        return supervisor.start(
+            rendered.agent.id,
+            rendered.cwd,
+            rendered.argv,
+            env=rendered.env,
+            **kwargs,
+        )
+
+    def _resolved_profile_kwargs(
+        resolved: ResolvedRunProfile | None,
+    ) -> dict[str, str | None]:
+        if resolved is None:
+            return {}
+        return {
+            "resolved_profile": resolved.name,
+            "resolved_provider": resolved.provider,
+            "resolved_model": resolved.model,
+        }
+
+    def _evaluate_session_policy(
+        agent_id: str,
+        cwd: str,
+        model_id: str | None = None,
+    ) -> PolicyEvaluationResult | None:
         try:
             policy = control_plane.get_policy(agent_id)
         except (KeyError, ValueError):
             return None
-        result = control_plane.evaluate_policy(PolicyEvaluationRequest(agent_id=agent_id, cwd=cwd))
+        result = control_plane.evaluate_policy(
+            PolicyEvaluationRequest(agent_id=agent_id, cwd=cwd, model_id=model_id)
+        )
         if result.decision == "allow" and _requires_session_start_approval(
             policy.approval_required_tool_names
         ):
@@ -1439,7 +1657,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def _refresh_approval(approval: ApprovalRecord) -> ApprovalRecord:
         if approval.status != ApprovalStatus.PENDING:
             return approval
-        policy_result = _evaluate_session_policy(approval.agent_id, approval.cwd)
+        source_session = _get_session_or_none(approval.source_session_id)
+        policy_result = _evaluate_session_policy(
+            approval.agent_id,
+            approval.cwd,
+            model_id=source_session.resolved_model if source_session is not None else None,
+        )
         if policy_result is not None and policy_result.decision != "deny":
             return approval
         reason = (
@@ -1461,9 +1684,28 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         )
         return expired
 
-    def _reject_session(rendered: RenderedRun, result: PolicyEvaluationResult) -> JSONResponse:
+    def _get_session_or_none(session_id: str) -> SessionRecord | None:
+        try:
+            return store.get_session(session_id)
+        except KeyError:
+            return None
+
+    def _reject_session(
+        rendered: RenderedRun,
+        result: PolicyEvaluationResult,
+        *,
+        resolved_profile: str | None = None,
+        resolved_provider: str | None = None,
+        resolved_model: str | None = None,
+    ) -> JSONResponse:
         session = supervisor.start_rejected(
-            rendered.agent.id, rendered.cwd, rendered.argv, env=rendered.env
+            rendered.agent.id,
+            rendered.cwd,
+            rendered.argv,
+            env=rendered.env,
+            resolved_profile=resolved_profile,
+            resolved_provider=resolved_provider,
+            resolved_model=resolved_model,
         )
         approval_id = None
         metadata = _policy_evaluation_metadata(session.id, result)

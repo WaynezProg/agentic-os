@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from agentic_os import profiles as profiles_module
 from agentic_os.api import create_app
 from agentic_os.control_plane import SkillUpsert
 from agentic_os.models import SessionCreate
@@ -1877,3 +1878,226 @@ def test_config_explain_returns_valid(tmp_path: Path) -> None:
     data = response.json()
     assert "harness_id" in data
     assert "entries" in data
+
+
+def test_harness_contracts_list_and_show(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/harness-contracts")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] >= 1
+    assert all(item["contract_version"] == "v1" for item in payload["contracts"])
+
+    show = client.get("/harness-contracts/shell")
+    assert show.status_code == 200
+    assert show.json()["harness_id"] == "shell"
+
+
+def test_harness_contracts_show_unknown(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/harness-contracts/missing")
+    assert response.status_code == 400
+    assert "supported" in response.json()["detail"]
+
+
+def test_usage_session_not_found_returns_na(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/usage/sessions/nope")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_tokens"] == "N/A"
+    assert payload["cost_usd"] == "N/A"
+
+
+def test_usage_summary_and_quotas(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    summary = client.get("/usage/summary")
+    assert summary.status_code == 200
+    assert "count" in summary.json()
+
+    quotas = client.get("/usage/quotas", params={"scope": "daily"})
+    assert quotas.status_code == 200
+    assert quotas.json()["scope"] == "daily"
+
+    bad_scope = client.get("/usage/quotas", params={"scope": "weekly"})
+    assert bad_scope.status_code == 400
+    assert "supported" in bad_scope.json()["detail"]
+
+
+def test_session_record_stores_resolved_profile_metadata(tmp_path: Path, monkeypatch) -> None:
+    profile_dir = tmp_path / "profiles-home" / ".agentic-os"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "profiles.toml").write_text(
+        """
+[run_profiles.default]
+harness_id = "shell"
+provider = "local"
+model = "local-model"
+message_prefix = ""
+default_env = {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "global_profile_path",
+        lambda: profile_dir / "profiles.toml",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "local_profile_path",
+        lambda _cwd: tmp_path / "missing-local" / "profiles.toml",
+    )
+
+    client = make_client(tmp_path)
+    response = client.post(
+        "/sessions",
+        json={
+            "agent_id": "shell",
+            "cwd": str(tmp_path),
+            "message": "OK",
+            "profile": "default",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["resolved_profile"] == "default"
+    assert payload["resolved_provider"] == "local"
+    assert payload["resolved_model"] == "local-model"
+
+
+def test_profile_model_enforced_in_policy(tmp_path: Path, monkeypatch) -> None:
+    profile_dir = tmp_path / "profiles-home" / ".agentic-os"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "profiles.toml").write_text(
+        """
+[run_profiles.default]
+harness_id = "shell"
+provider = "local"
+model = "blocked-model"
+message_prefix = ""
+default_env = {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "global_profile_path",
+        lambda: profile_dir / "profiles.toml",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "local_profile_path",
+        lambda _cwd: tmp_path / "missing-local" / "profiles.toml",
+    )
+
+    client = make_client(tmp_path)
+    client.post(
+        "/policy/shell",
+        json={
+            "enabled": True,
+            "readonly": False,
+            "allowed_skill_ids": ["*"],
+            "allowed_mcp_server_ids": ["*"],
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": [],
+            "allowed_model_ids": ["allowed-model"],
+            "cwd_roots": [str(tmp_path)],
+            "rate_limit_per_minute": 60,
+        },
+    )
+
+    response = client.post(
+        "/sessions",
+        json={
+            "agent_id": "shell",
+            "cwd": str(tmp_path),
+            "message": "OK",
+            "profile": "default",
+        },
+    )
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["decision"] == "deny"
+    assert "session_id" in payload
+
+
+def test_profile_model_enforced_when_approval_is_rechecked(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    profile_dir = tmp_path / "profiles-home" / ".agentic-os"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "profiles.toml").write_text(
+        """
+[run_profiles.default]
+harness_id = "shell"
+provider = "local"
+model = "guarded-model"
+message_prefix = ""
+default_env = {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "global_profile_path",
+        lambda: profile_dir / "profiles.toml",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "local_profile_path",
+        lambda _cwd: tmp_path / "missing-local" / "profiles.toml",
+    )
+
+    client = make_client(tmp_path)
+    client.post(
+        "/policy/shell",
+        json={
+            "enabled": True,
+            "readonly": False,
+            "allowed_skill_ids": ["*"],
+            "allowed_mcp_server_ids": ["*"],
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "allowed_model_ids": ["guarded-model"],
+            "cwd_roots": [str(tmp_path)],
+            "rate_limit_per_minute": 60,
+        },
+    )
+
+    blocked = client.post(
+        "/sessions",
+        json={
+            "agent_id": "shell",
+            "cwd": str(tmp_path),
+            "message": "OK",
+            "profile": "default",
+        },
+    )
+    assert blocked.status_code == 409
+    source_session = client.get(f"/sessions/{blocked.json()['session_id']}").json()
+    assert source_session["resolved_model"] == "guarded-model"
+
+    client.post(
+        "/policy/shell",
+        json={
+            "enabled": True,
+            "readonly": False,
+            "allowed_skill_ids": ["*"],
+            "allowed_mcp_server_ids": ["*"],
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "allowed_model_ids": ["other-model"],
+            "cwd_roots": [str(tmp_path)],
+            "rate_limit_per_minute": 60,
+        },
+    )
+
+    approved = client.post(f"/approvals/{blocked.json()['approval_id']}/approve")
+    assert approved.status_code == 409
+    assert "guarded-model" in approved.json()["detail"]

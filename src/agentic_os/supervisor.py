@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
@@ -13,6 +14,9 @@ from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.models import SessionCreate, SessionRecord, SessionStatus
 from agentic_os.registry import Registry
 from agentic_os.storage import Store
+from agentic_os.usage import UsageRecord, UsageStore, parse_logs_for_usage, read_usage_parser
+
+log = logging.getLogger(__name__)
 
 
 TERMINAL_STATUSES = {
@@ -33,11 +37,13 @@ class ProcessSupervisor:
         logs: JsonlLogStore,
         state_dir: Path,
         registry: Registry | None = None,
+        usage_store: UsageStore | None = None,
     ) -> None:
         self.store = store
         self.logs = logs
         self.state_dir = state_dir
         self.registry = registry
+        self.usage_store = usage_store
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._reader_threads: dict[str, list[threading.Thread]] = {}
         self._lock = threading.Lock()
@@ -48,6 +54,10 @@ class ProcessSupervisor:
         cwd: str,
         argv: list[str],
         env: dict[str, str] | None = None,
+        *,
+        resolved_profile: str | None = None,
+        resolved_provider: str | None = None,
+        resolved_model: str | None = None,
     ) -> SessionRecord:
         session_env = env or {}
         session_dir = self.state_dir / "sessions" / "pending"
@@ -60,6 +70,9 @@ class ProcessSupervisor:
                 artifact_dir=str(session_dir / "artifacts"),
                 stdout_log=str(session_dir / "stdout.jsonl"),
                 stderr_log=str(session_dir / "stderr.jsonl"),
+                resolved_profile=resolved_profile,
+                resolved_provider=resolved_provider,
+                resolved_model=resolved_model,
             )
         )
         session_dir = self.state_dir / "sessions" / session.id
@@ -77,6 +90,10 @@ class ProcessSupervisor:
         cwd: str,
         argv: list[str],
         env: dict[str, str] | None = None,
+        *,
+        resolved_profile: str | None = None,
+        resolved_provider: str | None = None,
+        resolved_model: str | None = None,
     ) -> SessionRecord:
         session_env = env or {}
         session_dir = self.state_dir / "sessions" / "pending"
@@ -89,6 +106,9 @@ class ProcessSupervisor:
                 artifact_dir=str(session_dir / "artifacts"),
                 stdout_log=str(session_dir / "stdout.jsonl"),
                 stderr_log=str(session_dir / "stderr.jsonl"),
+                resolved_profile=resolved_profile,
+                resolved_provider=resolved_provider,
+                resolved_model=resolved_model,
             )
         )
         session_dir = self.state_dir / "sessions" / session.id
@@ -184,7 +204,15 @@ class ProcessSupervisor:
 
     def retry(self, session_id: str) -> SessionRecord:
         previous = self.get_retryable(session_id)
-        return self.start(previous.agent_id, previous.cwd, previous.argv, env=previous.env)
+        return self.start(
+            previous.agent_id,
+            previous.cwd,
+            previous.argv,
+            env=previous.env,
+            resolved_profile=previous.resolved_profile,
+            resolved_provider=previous.resolved_provider,
+            resolved_model=previous.resolved_model,
+        )
 
     def reconcile(self) -> None:
         for session in self.store.list_sessions():
@@ -259,6 +287,42 @@ class ProcessSupervisor:
             session_id,
             has_attach_command=has_attach_command,
         )
+        try:
+            self._collect_usage_for_session(session_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("failed to collect usage for %s: %s", session_id, exc)
+
+    def _collect_usage_for_session(self, session_id: str) -> None:
+        if self.usage_store is None:
+            return
+        session = self.store.get_session(session_id)
+        lines = parse_logs_for_usage(
+            [Path(session.stdout_log), Path(session.stderr_log)],
+        )
+        parser = read_usage_parser(session.agent_id)
+        usage = parser.extract(
+            session_id=session_id,
+            harness_id=session.agent_id,
+            lines=lines,
+        )
+        usage = UsageRecord(
+            session_id=usage.session_id,
+            harness_id=usage.harness_id,
+            provider=session.resolved_provider or usage.provider or "N/A",
+            model=session.resolved_model or usage.model or "N/A",
+            run_profile=session.resolved_profile or usage.run_profile or "default",
+            cwd=session.cwd,
+            started_at=session.started_at or usage.started_at or "N/A",
+            ended_at=session.ended_at or usage.ended_at or "N/A",
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            total_tokens=usage.total_tokens,
+            cost_usd=usage.cost_usd,
+            currency=usage.currency,
+            source=usage.source,
+            raw_evidence=usage.raw_evidence,
+        )
+        self.usage_store.upsert(usage)
 
     def _cleanup_process_tracking(self, session_id: str) -> None:
         with self._lock:
