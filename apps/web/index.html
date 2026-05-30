@@ -37,7 +37,7 @@
         Agents
       </button>
       <button id="tab-sessions" class="tab" type="button" role="tab" aria-selected="false" data-tab="sessions">
-        Sessions
+        Runs
       </button>
       <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
         Logs
@@ -115,61 +115,74 @@
 
       <section id="panel-sessions" class="panel" role="tabpanel" aria-labelledby="tab-sessions" hidden>
         <div class="panel-head">
-          <h2>Sessions</h2>
-          <button id="refresh-sessions" type="button">Refresh sessions</button>
+          <h2>Runs</h2>
+          <button id="refresh-sessions" type="button">Refresh runs</button>
         </div>
         <p id="sessions-message" class="message" aria-live="polite"></p>
-        <div class="table-shell">
-          <table id="sessions-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Agent</th>
-                <th>CWD</th>
-                <th>Status</th>
-                <th>Exit</th>
-                <th>Updated</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="sessions-body">
-              <tr>
-                <td colspan="7">No data loaded.</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="runs-layout">
+          <div class="runs-list">
+            <div class="table-shell">
+              <table id="sessions-table" class="table-compact">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Agent</th>
+                    <th>CWD</th>
+                    <th>Status</th>
+                    <th>Exit</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="sessions-body">
+                  <tr>
+                    <td colspan="7">No data loaded.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <aside class="runs-detail card">
+            <h3>Timeline &amp; logs</h3>
+            <p id="runs-selected-session" class="message">Select a session from the list.</p>
+            <div id="session-timeline" class="timeline-panel" aria-live="polite"></div>
+            <div class="control-row runs-log-controls">
+              <label for="log-session-id">Session ID</label>
+              <input id="log-session-id" type="text" spellcheck="false" />
+              <label for="log-stream">Stream</label>
+              <select id="log-stream">
+                <option value="">merged</option>
+                <option value="stdout">stdout</option>
+                <option value="stderr">stderr</option>
+              </select>
+              <button id="load-logs" type="button" class="btn-primary">Load logs</button>
+            </div>
+            <dl id="log-session-detail" class="detail-grid" aria-live="polite">
+              <dt>Session</dt>
+              <dd>-</dd>
+              <dt>Agent</dt>
+              <dd>-</dd>
+              <dt>Status</dt>
+              <dd>-</dd>
+              <dt>Updated</dt>
+              <dd>-</dd>
+            </dl>
+            <pre id="log-output" class="log-output" aria-live="polite"></pre>
+            <pre id="attach-preview-output" class="summary-output" hidden aria-live="polite"></pre>
+          </aside>
         </div>
       </section>
 
       <section id="panel-logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
         <div class="panel-head">
           <h2>Logs</h2>
-          <button id="load-logs" type="button">Load logs</button>
+          <p class="message">Use the Runs tab for timeline + logs. This tab keeps full event history.</p>
         </div>
         <div class="control-row">
-          <label for="log-session-id">Session ID</label>
-          <input id="log-session-id" type="text" spellcheck="false" />
-          <label for="log-stream">Stream</label>
-          <select id="log-stream">
-            <option value="">merged</option>
-            <option value="stdout">stdout</option>
-            <option value="stderr">stderr</option>
-          </select>
           <label for="log-after">After cursor</label>
           <input id="log-after" type="number" min="0" step="1" value="0" />
         </div>
         <p id="logs-message" class="message" aria-live="polite"></p>
-        <dl id="log-session-detail" class="detail-grid" aria-live="polite">
-          <dt>Session</dt>
-          <dd>-</dd>
-          <dt>Agent</dt>
-          <dd>-</dd>
-          <dt>Status</dt>
-          <dd>-</dd>
-          <dt>Updated</dt>
-          <dd>-</dd>
-        </dl>
-        <pre id="log-output" class="log-output" aria-live="polite"></pre>
         <details id="events-details" class="subpanel">
           <summary>Session events</summary>
           <div class="table-shell">
@@ -319,7 +332,7 @@
                     <th>Actions</th>
                   </tr>
                 </thead>
-                <tbody id="approvals-body">
+                <tbody id="approvals-embed-body">
                   <tr>
                     <td colspan="6">No data loaded.</td>
                   </tr>
@@ -490,6 +503,20 @@
             </tbody>
           </table>
         </div>
+        <h3>Native config</h3>
+        <div class="row">
+          <label for="harness-config-id">Harness</label>
+          <select id="harness-config-id">
+            <option value="claude">Claude Code</option>
+            <option value="codex">Codex</option>
+            <option value="opencode">OpenCode</option>
+            <option value="qwen">Qwen Code</option>
+            <option value="openclaw">OpenClaw</option>
+            <option value="hermes">Hermes</option>
+          </select>
+          <button id="harness-config-load" type="button">Load effective</button>
+        </div>
+        <pre id="harness-config-snippet" class="log-preview">Select a harness and load effective native config.</pre>
       </section>
 
       <section id="panel-catalog" class="panel" role="tabpanel" aria-labelledby="tab-catalog">
@@ -498,6 +525,9 @@
           <label for="catalog-harness">Harness</label>
           <select id="catalog-harness">
             <option value="claude">Claude Code</option>
+            <option value="codex">Codex</option>
+            <option value="opencode">OpenCode</option>
+            <option value="qwen">Qwen Code</option>
             <option value="openclaw">OpenClaw</option>
             <option value="hermes">Hermes</option>
           </select>
@@ -543,7 +573,7 @@
             <thead>
               <tr><th>id</th><th>harness</th><th>status</th><th>source session</th><th>approved session</th><th>reason</th><th>Actions</th></tr>
             </thead>
-            <tbody id="approvals-body">
+            <tbody id="approvals-tab-body">
               <tr><td colspan="7">Click Load to view approvals.</td></tr>
             </tbody>
           </table>
@@ -581,22 +611,22 @@
 
       <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
         <h2>Overview</h2>
-        <div class="row">
-          <div id="overview-health" class="stat-card">
+        <div class="overview-grid">
+          <div id="overview-health" class="card stat-card">
             <h3>Fleet Health</h3>
-            <div id="overview-health-body">Loading…</div>
+            <div id="overview-health-body" class="card-body">Loading…</div>
           </div>
-          <div id="overview-capacity" class="stat-card">
+          <div id="overview-capacity" class="card stat-card">
             <h3>Capacity</h3>
-            <div id="overview-capacity-body">Loading…</div>
+            <div id="overview-capacity-body" class="card-body">Loading…</div>
           </div>
-          <div id="overview-sessions" class="stat-card">
-            <h3>Sessions</h3>
-            <div id="overview-sessions-body">Loading…</div>
+          <div id="overview-sessions" class="card stat-card">
+            <h3>Runs</h3>
+            <div id="overview-sessions-body" class="card-body">Loading…</div>
           </div>
-          <div id="overview-approvals" class="stat-card">
+          <div id="overview-approvals" class="card stat-card">
             <h3>Pending Approvals</h3>
-            <div id="overview-approvals-body">Loading…</div>
+            <div id="overview-approvals-body" class="card-body">Loading…</div>
           </div>
         </div>
       </section>

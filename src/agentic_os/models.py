@@ -17,6 +17,7 @@ class SessionStatus(StrEnum):
 
 CwdMode = Literal["required", "optional", "ignored"]
 StopPolicy = Literal["process_group"]
+AttachStatus = Literal["none", "available", "attached", "unsupported"]
 
 
 class AgentDefinition(BaseModel):
@@ -57,6 +58,13 @@ class SessionRecord(SessionCreate):
     started_at: str | None = None
     ended_at: str | None = None
     updated_at: str
+    external_session_id: str | None = None
+    attachable: bool = False
+    attach_status: AttachStatus = "none"
+
+
+class SessionAttachRequest(BaseModel):
+    mode: Literal["preview", "exec"] = "preview"
 
 
 class EventRecord(BaseModel):

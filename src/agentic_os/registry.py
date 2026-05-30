@@ -64,3 +64,25 @@ class Registry:
 
 def render_command(command: list[str], message: str) -> list[str]:
     return [part.replace("{{message}}", message) for part in command]
+
+
+def validate_registry(agents: list[AgentDefinition]) -> tuple[list[str], list[str]]:
+    """Validate harness profile fields for non-shell registry entries."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    for agent in agents:
+        if agent.id == "shell":
+            continue
+        if not agent.health_command:
+            errors.append(f"{agent.id}: missing health_command")
+        if not agent.config_path:
+            errors.append(f"{agent.id}: missing config_path")
+        if not agent.default_provider:
+            errors.append(f"{agent.id}: missing default_provider")
+        if not agent.version_command:
+            errors.append(f"{agent.id}: missing version_command")
+        if not agent.config_fingerprint_command:
+            errors.append(f"{agent.id}: missing config_fingerprint_command")
+        if not agent.log_paths:
+            warnings.append(f"{agent.id}: empty log_paths")
+    return errors, warnings

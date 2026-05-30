@@ -8,8 +8,10 @@ import time
 from pathlib import Path
 from typing import TextIO
 
+from agentic_os.attach import capture_external_session_after_run
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.models import SessionCreate, SessionRecord, SessionStatus
+from agentic_os.registry import Registry
 from agentic_os.storage import Store
 
 
@@ -25,10 +27,17 @@ class LaunchFailure(ValueError):
 
 
 class ProcessSupervisor:
-    def __init__(self, store: Store, logs: JsonlLogStore, state_dir: Path) -> None:
+    def __init__(
+        self,
+        store: Store,
+        logs: JsonlLogStore,
+        state_dir: Path,
+        registry: Registry | None = None,
+    ) -> None:
         self.store = store
         self.logs = logs
         self.state_dir = state_dir
+        self.registry = registry
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._reader_threads: dict[str, list[threading.Thread]] = {}
         self._lock = threading.Lock()
@@ -239,6 +248,17 @@ class ProcessSupervisor:
                 self.store.mark_finished(session_id, exit_code)
 
         self._cleanup_process_tracking(session_id)
+        has_attach_command = False
+        if self.registry is not None:
+            try:
+                has_attach_command = bool(self.registry.get(current.agent_id).attach_command)
+            except KeyError:
+                has_attach_command = False
+        capture_external_session_after_run(
+            self.store,
+            session_id,
+            has_attach_command=has_attach_command,
+        )
 
     def _cleanup_process_tracking(self, session_id: str) -> None:
         with self._lock:

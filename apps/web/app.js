@@ -12,6 +12,8 @@ const ENDPOINTS = Object.freeze({
   sessionStop: "/sessions/{session_id}/stop",
   sessionRetry: "/sessions/{session_id}/retry",
   sessionEvents: "/sessions/{session_id}/events",
+  sessionTimeline: "/sessions/{session_id}/timeline",
+  sessionAttach: "/sessions/{session_id}/attach",
   sessionRun: "/sessions",
   sessionSummary: "/sessions/{session_id}/memory/summary",
   sessionReview: "/sessions/{session_id}/memory/review",
@@ -38,6 +40,7 @@ const ENDPOINTS = Object.freeze({
   harnessHealth: "/harnesses/{harness_id}/health",
   harnessInstanceHealth: "/harnesses/{agent_id}/health",
   catalogSurfaces: "/catalog/{harness}/surfaces",
+  harnessConfigEffective: "/harness-config/{harness_id}/effective",
   approvalsFiltered: "/approvals",
   auditEvents: "/audit/events",
 });
@@ -106,6 +109,7 @@ function bindControls() {
     resetLogState();
   });
   byId("catalog-load").addEventListener("click", loadCatalog);
+  byId("harness-config-load").addEventListener("click", loadHarnessNativeConfig);
   byId("approval-load").addEventListener("click", loadApprovalsTab);
   byId("load-audit").addEventListener("click", loadAuditStandalone);
   document.body.addEventListener("click", handleActionClick);
@@ -133,6 +137,10 @@ function loadActiveTab() {
     loadAgents();
   } else if (state.activeTab === "sessions") {
     loadSessions();
+    const selectedSession = byId("log-session-id").value.trim();
+    if (selectedSession) {
+      loadSessionTimeline(selectedSession);
+    }
   } else if (state.activeTab === "logs") {
     loadLogs();
   } else if (state.activeTab === "memory") {
@@ -294,6 +302,7 @@ function renderSessionRow(session) {
   const status = String(session.status || "unknown");
   const canStop = ["queued", "running", "stopping"].includes(status);
   const canRetry = !["queued", "running", "stopping"].includes(status);
+  const canAttach = session.attach_status === "available" || session.attachable === true;
   return `
     <tr>
       <td class="cell-id">${escapeHtml(session.id)}</td>
@@ -304,8 +313,16 @@ function renderSessionRow(session) {
       <td>${escapeHtml(session.updated_at)}</td>
       <td>
         <div class="actions">
+          <button type="button" data-action="select-session" data-session-id="${escapeHtml(session.id)}">
+            open
+          </button>
           <button type="button" data-action="logs" data-session-id="${escapeHtml(session.id)}">
             logs
+          </button>
+          <button type="button" data-action="attach-preview" data-session-id="${escapeHtml(session.id)}" ${
+            canAttach ? "" : "disabled"
+          }>
+            attach
           </button>
           <button type="button" data-action="summarize" data-session-id="${escapeHtml(session.id)}">
             summarize
@@ -326,6 +343,51 @@ function renderSessionRow(session) {
         </div>
       </td>
     </tr>
+  `;
+}
+
+async function selectSession(sessionId) {
+  if (!sessionId) {
+    return;
+  }
+  byId("log-session-id").value = sessionId;
+  byId("runs-selected-session").textContent = `Selected: ${sessionId}`;
+  showTab("sessions", { skipLoad: true });
+  resetLogState();
+  await Promise.allSettled([loadSessionTimeline(sessionId), loadLogs()]);
+}
+
+async function loadSessionTimeline(sessionId) {
+  const container = byId("session-timeline");
+  if (!sessionId) {
+    container.innerHTML = '<p class="message">Select a session from the list.</p>';
+    return;
+  }
+  try {
+    const data = await apiFetch(buildEndpoint("sessionTimeline", { session_id: sessionId }));
+    const timeline = asArray(data.timeline);
+    if (timeline.length === 0) {
+      container.innerHTML = '<p class="message">No timeline entries.</p>';
+      return;
+    }
+    container.innerHTML = timeline.map(renderTimelineEntry).join("");
+  } catch (error) {
+    container.innerHTML = `<p class="message is-error">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function renderTimelineEntry(entry) {
+  const type = String(entry.type || "event")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+  return `
+    <article class="timeline-entry timeline-entry--${escapeHtml(type)}">
+      <header>
+        <span class="badge">${escapeHtml(entry.type || "event")}</span>
+        <span class="timeline-ts">${escapeHtml(entry.timestamp || "")}</span>
+      </header>
+      <p>${escapeHtml(entry.message || "")}</p>
+    </article>
   `;
 }
 
@@ -564,7 +626,7 @@ async function loadMcpServers() {
 }
 
 async function loadApprovals() {
-  const body = byId("approvals-body");
+  const body = byId("approvals-embed-body");
   try {
     const data = await apiFetch(buildEndpoint("approvals"));
     const approvals = asArray(data.approvals);
@@ -775,11 +837,16 @@ async function handleActionClick(event) {
       showRunForm(agentId);
       button.disabled = false;
       return;
-    } else if (action === "logs" && sessionId) {
-      byId("log-session-id").value = sessionId;
-      resetLogState();
-      showTab("logs", { skipLoad: true });
-      await loadLogs();
+    } else if ((action === "logs" || action === "select-session") && sessionId) {
+      await selectSession(sessionId);
+    } else if (action === "attach-preview" && sessionId) {
+      const data = await postJson(buildEndpoint("sessionAttach", { session_id: sessionId }), {
+        mode: "preview",
+      });
+      const preview = byId("attach-preview-output");
+      preview.hidden = false;
+      preview.textContent = JSON.stringify(data, null, 2);
+      setMessage("sessions-message", `attach preview: ${data.decision}`);
     } else if (action === "summarize" && sessionId) {
       await postEmpty(buildEndpoint("sessionSummary", { session_id: sessionId }));
       const summary = await loadSessionSummary(sessionId);
@@ -836,14 +903,14 @@ async function handleActionClick(event) {
 async function approveApproval(approvalId) {
   await postEmpty(buildEndpoint("approvalApprove", { approval_id: approvalId }));
   setMessage("agents-message", `approved ${approvalId}`);
-  await Promise.allSettled([loadApprovals(), loadSessions()]);
+  await Promise.allSettled([loadApprovals(), loadApprovalsTab(), loadSessions()]);
 }
 
 async function rejectApproval(approvalId) {
   const reason = window.prompt("Rejection reason", "") || "";
   await postJson(buildEndpoint("approvalReject", { approval_id: approvalId }), { reason });
   setMessage("agents-message", `rejected ${approvalId}`);
-  await loadApprovals();
+  await Promise.allSettled([loadApprovals(), loadApprovalsTab()]);
 }
 
 async function loadFleet() {
@@ -966,6 +1033,24 @@ async function loadAuditEvents() {
   }
 }
 
+async function loadHarnessNativeConfig() {
+  const harnessId = byId("harness-config-id").value;
+  const snippet = byId("harness-config-snippet");
+  snippet.textContent = "Loading…";
+  try {
+    const data = await apiFetch(buildEndpoint("harnessConfigEffective", { harness_id: harnessId }));
+    const payload = {
+      harness_id: data.harness_id,
+      scopes_present: data.scopes_present,
+      entries: data.entries,
+    };
+    const text = JSON.stringify(payload, null, 2);
+    snippet.textContent = text.length > 4096 ? `${text.slice(0, 4096)}\n… (truncated)` : text;
+  } catch (error) {
+    snippet.textContent = error.message;
+  }
+}
+
 async function loadHarnesses() {
   try {
     const data = await apiFetch("harnesses");
@@ -1051,7 +1136,11 @@ async function loadCatalog() {
   const type = byId("catalog-type").value;
   const body = byId("catalog-body");
   try {
-    const data = await apiFetch("catalogSurfaces", { harness, surface_type: type || undefined });
+    let path = buildEndpoint("catalogSurfaces", { harness });
+    if (type) {
+      path += `?surface_type=${encodeURIComponent(type)}`;
+    }
+    const data = await apiFetch(path);
     const surfaces = asArray(data.surfaces);
     if (!surfaces.length) {
       renderEmptyRow(body, 8, "No surfaces found.");
@@ -1082,36 +1171,56 @@ async function loadApprovalsTab() {
   try {
     const status = byId("approval-status-filter").value;
     const params = status ? { status } : {};
-    const data = await apiFetch("approvals", params);
-    const body = byId("approvals-body");
+    const query = new URLSearchParams(params);
+    const path = query.toString()
+      ? `${buildEndpoint("approvals")}?${query}`
+      : buildEndpoint("approvals");
+    const data = await apiFetch(path);
+    const body = byId("approvals-tab-body");
     const approvals = asArray(data.approvals);
     if (!approvals.length) {
       renderEmptyRow(body, 7, "No approvals.");
       return;
     }
-    body.innerHTML = approvals
-      .map(
-        (a) => `
-          <tr>
-            <td class="cell-id">${escapeHtml(a.id)}</td>
-            <td>${escapeHtml(a.agent_id)}</td>
-            <td><span class="${statusPillClass(a.status)}">${escapeHtml(a.status)}</span></td>
-            <td class="cell-id">${escapeHtml(a.source_session_id)}</td>
-            <td class="cell-id">${valueOrDash(a.approved_session_id)}</td>
-            <td>${escapeHtml(a.reason || "")}</td>
-            <td>
-              ${a.status === "pending" ? `
-                <button class="btn" onclick="approveApproval('${escapeHtml(a.id)}')">Approve</button>
-                <button class="btn" onclick="rejectApproval('${escapeHtml(a.id)}')">Reject</button>
-              ` : "-"}
-            </td>
-          </tr>
-        `,
-      )
-      .join("");
+    body.innerHTML = approvals.map(renderApprovalTabRow).join("");
   } catch (error) {
-    renderErrorRow(byId("approvals-body"), 7, error.message);
+    renderErrorRow(byId("approvals-tab-body"), 7, error.message);
   }
+}
+
+function renderApprovalTabRow(approval) {
+  const status = String(approval.status || "unknown");
+  const isPending = status === "pending";
+  return `
+    <tr>
+      <td class="cell-id">${escapeHtml(approval.id)}</td>
+      <td>${escapeHtml(approval.agent_id)}</td>
+      <td><span class="${statusPillClass(status)}">${escapeHtml(status)}</span></td>
+      <td class="cell-id">
+        <button type="button" class="btn-primary" data-action="select-session" data-session-id="${escapeHtml(approval.source_session_id)}">
+          ${escapeHtml(approval.source_session_id)}
+        </button>
+      </td>
+      <td class="cell-id">
+        ${
+          approval.approved_session_id
+            ? `<button type="button" class="btn-primary" data-action="select-session" data-session-id="${escapeHtml(approval.approved_session_id)}">${escapeHtml(approval.approved_session_id)}</button>`
+            : "-"
+        }
+      </td>
+      <td>${escapeHtml(approval.reason || "")}</td>
+      <td>
+        <div class="actions">
+          <button type="button" data-action="approve-approval" data-approval-id="${escapeHtml(approval.id)}" ${
+            isPending ? "" : "disabled"
+          }>approve</button>
+          <button type="button" data-action="reject-approval" data-approval-id="${escapeHtml(approval.id)}" ${
+            isPending ? "" : "disabled"
+          }>reject</button>
+        </div>
+      </td>
+    </tr>
+  `;
 }
 
 async function loadAuditStandalone() {
@@ -1149,7 +1258,7 @@ async function loadAuditStandalone() {
 async function loadOverview() {
   // Load fleet health summary
   try {
-    const healthData = await apiFetch("fleetHealth");
+    const healthData = await apiFetch(buildEndpoint("fleetHealth"));
     const instances = asArray(healthData.instances);
     const upCount = instances.filter((i) => i.state === "up").length;
     const downCount = instances.filter((i) => i.state === "down").length;
@@ -1160,7 +1269,7 @@ async function loadOverview() {
 
   // Load capacity
   try {
-    const capData = await apiFetch("fleetCapacity");
+    const capData = await apiFetch(buildEndpoint("fleetCapacity"));
     byId("overview-capacity-body").textContent = `${capData.running_sessions}/${capData.max_running_sessions} sessions`;
   } catch {
     byId("overview-capacity-body").textContent = "error";
@@ -1168,7 +1277,7 @@ async function loadOverview() {
 
   // Load sessions count
   try {
-    const sessData = await apiFetch("sessions");
+    const sessData = await apiFetch(buildEndpoint("sessions"));
     const sessions = asArray(sessData.sessions);
     const running = sessions.filter((s) => s.status === "running").length;
     const total = sessions.length;
@@ -1179,7 +1288,7 @@ async function loadOverview() {
 
   // Load pending approvals count
   try {
-    const appData = await apiFetch("approvalsFiltered", { status: "pending" });
+    const appData = await apiFetch(`${buildEndpoint("approvals")}?status=pending`);
     const pending = asArray(appData.approvals).length;
     byId("overview-approvals-body").textContent = `${pending} pending`;
   } catch {

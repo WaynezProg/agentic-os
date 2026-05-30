@@ -23,7 +23,7 @@ def test_five_tabs_are_present() -> None:
     assert html.count('role="tab"') == 11
     for tab in [
         "Agents",
-        "Sessions",
+        "Runs",
         "Logs",
         "Memory",
         "Skills / MCP",
@@ -63,6 +63,23 @@ def test_agents_table_contract_exists() -> None:
     assert 'id="agents-body"' in html
     for header in ["ID", "Label", "Enabled", "CWD mode", "Stop policy", "Command preview"]:
         assert re.search(rf"<th>\s*{re.escape(header)}\s*</th>", html)
+
+
+def test_approvals_tab_uses_distinct_body_and_session_links() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert 'byId("approvals-embed-body")' in js
+    assert 'byId("approvals-tab-body")' in js
+    assert "renderApprovalTabRow" in js
+    assert 'data-action="select-session"' in js
+
+
+def test_session_timeline_panel_exists() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert 'id="session-timeline"' in html
+    assert "loadSessionTimeline" in js
 
 
 def test_sessions_actions_contract_exists() -> None:
@@ -111,7 +128,9 @@ def test_skills_mcp_placeholder_panels_exist() -> None:
     assert 'id="mcp-table"' in html
     assert 'id="mcp-body"' in html
     assert 'id="approvals-table"' in html
-    assert 'id="approvals-body"' in html
+    assert 'id="approvals-embed-body"' in html
+    assert 'id="approvals-tab-body"' in html
+    assert html.count('id="approvals-body"') == 0
 
 
 def test_skills_mcp_p3_registry_tables_exist() -> None:
@@ -220,7 +239,7 @@ def test_session_logs_action_loads_logs_once_while_manual_refresh_still_works() 
     js = APP_JS.read_text(encoding="utf-8")
 
     match = re.search(
-        r'if \(action === "logs" && sessionId\) \{(?P<body>.*?)\n    \} else if',
+        r'\(action === "logs" \|\| action === "select-session"\) && sessionId\) \{(?P<body>.*?)\n    \} else if',
         js,
         re.DOTALL,
     )
@@ -228,10 +247,10 @@ def test_session_logs_action_loads_logs_once_while_manual_refresh_still_works() 
     logs_action_body = match.group("body")
 
     assert 'byId("load-logs").addEventListener("click", loadLogs)' in js
-    assert "function showTab(tabName, options = {})" in js
-    assert 'showTab("logs", { skipLoad: true });' in logs_action_body
-    assert logs_action_body.count("loadLogs(") == 1
-    assert re.search(r"if \(!options\.skipLoad\) \{\s*loadActiveTab\(\);\s*\}", js)
+    assert "function selectSession(sessionId)" in js
+    assert "await selectSession(sessionId);" in logs_action_body
+    assert logs_action_body.count("selectSession(") == 1
+    assert "loadSessionTimeline" in js
 
 
 def test_no_node_build_or_package_requirement_is_introduced() -> None:
@@ -247,6 +266,20 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
     combined = INDEX_HTML.read_text(encoding="utf-8") + APP_JS.read_text(encoding="utf-8")
     for token in ["vite", "webpack", "parcel", "npm install", "node_modules"]:
         assert token not in combined.lower()
+
+
+def test_catalog_harness_select_has_six_options() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    for harness_id in ("claude", "codex", "opencode", "qwen", "openclaw", "hermes"):
+        assert f'<option value="{harness_id}">' in html
+
+
+def test_harness_native_config_panel_exists() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    js = APP_JS.read_text(encoding="utf-8")
+    assert 'id="harness-config-snippet"' in html
+    assert "loadHarnessNativeConfig" in js
+    assert "/harness-config/{harness_id}/effective" in js
 
 
 def test_fleet_tab_and_panel_exist() -> None:

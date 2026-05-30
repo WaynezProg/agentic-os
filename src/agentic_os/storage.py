@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from agentic_os.models import EventRecord, SessionCreate, SessionRecord, SessionStatus
+from agentic_os.models import AttachStatus, EventRecord, SessionCreate, SessionRecord, SessionStatus
 
 
 ALLOWED_TRANSITIONS = {
@@ -125,6 +125,7 @@ class Store:
             self._migrate_sessions_status_check(conn)
             self._migrate_sessions_env_json(conn)
             self._migrate_events_foreign_key(conn)
+            self._migrate_sessions_attach_fields(conn)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -268,6 +269,42 @@ class Store:
             )
             if cursor.rowcount != 1:
                 _raise_transition_error(conn, session_id, SessionStatus.RUNNING)
+        session = self.get_session(session_id)
+        self.write_session_metadata(session.id)
+        return session
+
+    def update_session_attach(
+        self,
+        session_id: str,
+        *,
+        external_session_id: str | None = None,
+        attachable: bool | None = None,
+        attach_status: AttachStatus | None = None,
+    ) -> SessionRecord:
+        assignments: list[str] = []
+        values: list[Any] = []
+        if external_session_id is not None:
+            assignments.append("external_session_id = ?")
+            values.append(external_session_id)
+        if attachable is not None:
+            assignments.append("attachable = ?")
+            values.append(1 if attachable else 0)
+        if attach_status is not None:
+            assignments.append("attach_status = ?")
+            values.append(attach_status)
+        if not assignments:
+            return self.get_session(session_id)
+        with self.connect() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE sessions
+                SET {", ".join(assignments)}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (*values, session_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(session_id)
         session = self.get_session(session_id)
         self.write_session_metadata(session.id)
         return session
@@ -420,6 +457,17 @@ class Store:
             return
         conn.execute("ALTER TABLE sessions ADD COLUMN env_json TEXT NOT NULL DEFAULT '{}'")
 
+    def _migrate_sessions_attach_fields(self, conn: sqlite3.Connection) -> None:
+        if _table_has_column(conn, "sessions", "external_session_id"):
+            return
+        conn.execute("ALTER TABLE sessions ADD COLUMN external_session_id TEXT")
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN attachable INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN attach_status TEXT NOT NULL DEFAULT 'none'"
+        )
+
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
             return
@@ -465,6 +513,9 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         started_at=row["started_at"],
         ended_at=row["ended_at"],
         updated_at=row["updated_at"],
+        external_session_id=row["external_session_id"],
+        attachable=bool(row["attachable"]),
+        attach_status=row["attach_status"],
     )
 
 

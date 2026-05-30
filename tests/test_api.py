@@ -1400,6 +1400,240 @@ def test_session_timeline_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
+def test_session_timeline_includes_log_chunks(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "log-chunk-test"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+    session = client.get(f"/sessions/{session_id}").json()
+    stdout_log = Path(session["stdout_log"])
+    stdout_log.parent.mkdir(parents=True, exist_ok=True)
+    stdout_log.write_text(
+        json.dumps(
+            {
+                "ts": "2026-05-30T00:00:00Z",
+                "stream": "stdout",
+                "session_id": session_id,
+                "line": "hello from stdout",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    response = client.get(f"/sessions/{session_id}/timeline")
+    assert response.status_code == 200
+    types = [entry["type"] for entry in response.json()["timeline"]]
+    assert "log_chunk" in types
+
+
+def test_session_timeline_includes_retry_requested(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "retry-timeline"}
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    retry = client.post(f"/sessions/{session_id}/retry")
+    assert retry.status_code == 200
+
+    timeline = client.get(f"/sessions/{session_id}/timeline").json()["timeline"]
+    types = [entry["type"] for entry in timeline]
+    assert "retry_requested" in types
+
+
+def test_harness_activity_includes_fleet_events(tmp_app) -> None:
+    from agentic_os.fleet import HealthState
+
+    client = TestClient(tmp_app)
+    tmp_app.state.fleet_store.record_event(
+        "shell",
+        "health_probe_requested",
+        "probe requested",
+    )
+    tmp_app.state.fleet_store.record_health("shell", HealthState.UP, "OK")
+
+    response = client.get("/harnesses/shell/activity")
+    assert response.status_code == 200
+    types = [entry["type"] for entry in response.json()["activity"]]
+    assert "health_probe" in types
+
+
+def test_harness_activity_pagination(tmp_app) -> None:
+    client = TestClient(tmp_app)
+    tmp_app.state.fleet_store.record_event("shell", "capacity_rejected", "at capacity")
+
+    response = client.get("/harnesses/shell/activity", params={"limit": 1})
+    assert response.status_code == 200
+    assert len(response.json()["activity"]) <= 1
+
+
+def test_session_attach_preview_unsupported(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "attach-test"}
+    )
+    session_id = run.json()["id"]
+
+    response = client.post(f"/sessions/{session_id}/attach", json={"mode": "preview"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"] == "unsupported"
+
+
+def _write_openclaw_registry(path: Path, *, attach_command: list[str] | None = None) -> None:
+    attach = attach_command or ["openclaw", "attach"]
+    path.write_text(
+        f"""
+[[agents]]
+id = "openclaw"
+label = "OpenClaw"
+command = ["/usr/bin/printf", "%s", "{{{{message}}}}"]
+attach_command = {json.dumps(attach)}
+cwd_mode = "optional"
+stop_policy = "process_group"
+""",
+        encoding="utf-8",
+    )
+
+
+def _set_shell_policy(client: TestClient, **overrides: object) -> None:
+    payload = {
+        "enabled": True,
+        "readonly": False,
+        "allowed_skill_ids": [],
+        "allowed_mcp_server_ids": [],
+        "allowed_tool_names": [],
+        "approval_required_tool_names": [],
+        "allowed_model_ids": [],
+        "cwd_roots": [],
+        "rate_limit_per_minute": 60,
+        **overrides,
+    }
+    response = client.post("/policy/openclaw", json=payload)
+    assert response.status_code == 200
+
+
+def test_session_attach_preview_allow_openclaw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "agentic_os.supervisor.capture_external_session_after_run",
+        lambda *args, **kwargs: None,
+    )
+    registry = tmp_path / "agents.toml"
+    _write_openclaw_registry(registry)
+    app = create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    client = TestClient(app)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "openclaw", "cwd": str(tmp_path), "message": "attach-preview"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+    app.state.store.update_session_attach(
+        session_id,
+        external_session_id="ext-session-42",
+        attachable=True,
+        attach_status="available",
+    )
+
+    response = client.post(f"/sessions/{session_id}/attach", json={"mode": "preview"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision"] == "allow"
+    assert body["attach_command"] == ["openclaw", "attach", "ext-session-42"]
+
+
+def test_session_attach_preview_deny_without_external_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "agentic_os.supervisor.capture_external_session_after_run",
+        lambda *args, **kwargs: None,
+    )
+    registry = tmp_path / "agents.toml"
+    _write_openclaw_registry(registry)
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "openclaw", "cwd": str(tmp_path), "message": "attach-deny"},
+    )
+    session_id = run.json()["id"]
+
+    response = client.post(f"/sessions/{session_id}/attach", json={"mode": "preview"})
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert detail["decision"] == "deny"
+    assert detail["session_id"] == session_id
+
+
+def test_session_attach_exec_records_audit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "agentic_os.supervisor.capture_external_session_after_run",
+        lambda *args, **kwargs: None,
+    )
+    registry = tmp_path / "agents.toml"
+    _write_openclaw_registry(registry, attach_command=["/usr/bin/true"])
+    app = create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    client = TestClient(app)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "openclaw", "cwd": str(tmp_path), "message": "attach-exec"},
+    )
+    session_id = run.json()["id"]
+    app.state.store.update_session_attach(
+        session_id,
+        external_session_id="ext-exec-1",
+        attachable=True,
+        attach_status="available",
+    )
+    _set_shell_policy(client, cwd_roots=[str(tmp_path)])
+
+    response = client.post(f"/sessions/{session_id}/attach", json={"mode": "exec"})
+    assert response.status_code == 200
+    assert response.json()["pid"] is not None
+
+    audit = client.get("/audit/events", params={"domain": "session", "limit": 20})
+    assert audit.status_code == 200
+    event_types = [event["event_type"] for event in audit.json()["events"]]
+    assert "attach_exec" in event_types
+
+    session = client.get(f"/sessions/{session_id}").json()
+    assert session["attach_status"] == "attached"
+
+
+def test_session_attach_exec_denied_by_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "agentic_os.supervisor.capture_external_session_after_run",
+        lambda *args, **kwargs: None,
+    )
+    registry = tmp_path / "agents.toml"
+    _write_openclaw_registry(registry, attach_command=["/usr/bin/true"])
+    app = create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    client = TestClient(app)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "openclaw", "cwd": str(tmp_path), "message": "attach-policy"},
+    )
+    session_id = run.json()["id"]
+    app.state.store.update_session_attach(
+        session_id,
+        external_session_id="ext-policy-1",
+        attachable=True,
+        attach_status="available",
+    )
+    _set_shell_policy(client, cwd_roots=["/nonexistent/allowed"])
+
+    response = client.post(f"/sessions/{session_id}/attach", json={"mode": "exec"})
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert detail["decision"] == "deny"
+    assert detail["session_id"] == session_id
+
+
 def test_catalog_surfaces_returns_valid_response(tmp_path: Path) -> None:
     """GET /catalog/{harness}/surfaces returns valid response structure."""
     client = make_client(tmp_path)
@@ -1422,6 +1656,40 @@ def test_catalog_surfaces_400_for_unknown_harness(tmp_path: Path) -> None:
 
     response = client.get("/catalog/unknown/surfaces")
 
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert detail["message"] == "unsupported harness: unknown"
+    assert "claude" in detail["supported"]
+
+
+def test_harnesses_validate_ok_with_examples_registry(tmp_path: Path) -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
+    response = client.get("/harnesses/validate")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["errors"] == []
+
+
+def test_harness_config_effective_claude(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    claude_dir = home / ".claude"
+    claude_dir.mkdir(parents=True)
+    (claude_dir / "settings.json").write_text('{"model": "user-model"}', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    client = make_client(tmp_path)
+    response = client.get("/harness-config/claude/effective", params={"cwd": str(tmp_path)})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["harness_id"] == "claude"
+    keys = [entry["key"] for entry in data["entries"]]
+    assert "model" in keys
+
+
+def test_harness_config_unknown_harness(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    response = client.get("/harness-config/unknown/effective")
     assert response.status_code == 400
 
 

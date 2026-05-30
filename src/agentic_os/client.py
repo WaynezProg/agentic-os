@@ -51,6 +51,12 @@ class AgenticClient:
     def retry_session(self, session_id: str) -> dict[str, Any]:
         return self._post(f"/sessions/{_validate_path_id(session_id)}/retry", {})
 
+    def attach_session(self, session_id: str, mode: str = "preview") -> dict[str, Any]:
+        return self._post(
+            f"/sessions/{_validate_path_id(session_id)}/attach",
+            {"mode": mode},
+        )
+
     def list_approvals(
         self,
         status: str | None = None,
@@ -233,6 +239,9 @@ class AgenticClient:
     def list_harnesses(self) -> dict[str, Any]:
         return self._get("/harnesses")
 
+    def harnesses_validate(self) -> dict[str, Any]:
+        return self._get("/harnesses/validate")
+
     def show_harness(self, harness_id: str) -> dict[str, Any]:
         return self._get(f"/harnesses/{_validate_path_id(harness_id)}")
 
@@ -312,6 +321,39 @@ class AgenticClient:
         if cwd:
             params["cwd"] = cwd
         return self._get(f"/config/{_validate_path_id(harness_id)}/explain", params=params)
+
+    def harness_config_effective(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(
+            f"/harness-config/{_validate_path_id(harness_id)}/effective",
+            params=params,
+        )
+
+    def harness_config_diff(
+        self,
+        harness_id: str,
+        scope_a: str = "user",
+        scope_b: str = "project",
+        cwd: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope_a": scope_a, "scope_b": scope_b}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(
+            f"/harness-config/{_validate_path_id(harness_id)}/diff",
+            params=params,
+        )
+
+    def harness_config_explain(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd:
+            params["cwd"] = cwd
+        return self._get(
+            f"/harness-config/{_validate_path_id(harness_id)}/explain",
+            params=params,
+        )
 
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:

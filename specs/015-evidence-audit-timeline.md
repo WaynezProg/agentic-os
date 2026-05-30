@@ -1,6 +1,6 @@
 # 015 — Evidence & Audit Timeline (P7)
 
-Status: Implemented with gaps
+Status: Implemented
 Date: 2026-05-30
 
 ## Positioning
@@ -23,12 +23,12 @@ Read-only view — does NOT modify source events.
 - `_timeline_entry()` helper function
 - 2 API tests in `test_api.py`
 
-### Gaps
-- **Log summaries in timeline** — spec says "log_chunk" entries should appear, but currently only session lifecycle events are included
-- **Fleet events correlation** — harness activity shows session events but does NOT include health_probe/fleet_event entries
-- **Retry events** — spec lists "retry_requested" but no explicit retry event in timeline
-- **No pagination** — harness activity always returns [:100] with no offset/before/after
-- **No UI integration** — timeline/activity not displayed in web UI
+### Gaps (closed in 021)
+- **Log summaries in timeline** — ✅ `log_chunk` via `logs.read_tail` — `test_session_timeline_includes_log_chunks`
+- **Fleet events correlation** — ✅ merged in harness activity — `test_harness_activity_includes_fleet_events`
+- **Retry events** — ✅ `retry_requested` on retry — `test_session_timeline_includes_retry_requested`
+- **Pagination** — ✅ `limit` / `before` query params — `test_harness_activity_pagination`
+- **UI integration** — ✅ Runs tab `#session-timeline` — `test_session_timeline_panel_exists`
 
 ### Not Doing
 - Live streaming

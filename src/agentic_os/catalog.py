@@ -8,6 +8,7 @@ permissions), and provides merged/diff views.
 from __future__ import annotations
 
 import json
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,23 +16,44 @@ from typing import Any
 # Scope paths by harness type
 _HARNESS_SCOPES = {
     "claude": {
-        "user": Path.home() / ".claude",
+        "user": ".claude",
         "project": ".claude",
         "local": ".claude/local",
     },
+    "codex": {
+        "user": ".codex",
+        "project": ".codex",
+        "local": ".codex/local",
+    },
+    "opencode": {
+        "user": ".config/opencode",
+        "project": ".opencode",
+        "local": ".opencode/local",
+    },
+    "qwen": {
+        "user": ".qwen",
+        "project": ".qwen",
+        "local": ".qwen/local",
+    },
     "openclaw": {
-        "user": Path.home() / ".openclaw",
+        "user": ".openclaw",
         "project": ".openclaw",
         "local": ".openclaw/local",
     },
     "hermes": {
-        "user": Path.home() / ".hermes",
+        "user": ".hermes",
         "project": ".hermes",
         "local": ".hermes/local",
     },
 }
 
 SUPPORTED_HARNESSES = tuple(_HARNESS_SCOPES.keys())
+_JSON_SETTINGS_FILES = {
+    "claude": "settings.json",
+    "qwen": "settings.json",
+    "opencode": "config.json",
+}
+_TOML_CONFIG_HARNESSES = frozenset({"openclaw", "hermes", "codex"})
 VALID_TYPES = ("hook", "command", "skill", "subagent", "mcp_server", "permission")
 
 
@@ -60,7 +82,7 @@ def scan(harness: str, cwd: str | None = None, home_dir: Path | None = None) -> 
     base_home = home_dir or Path.home()
 
     # Scan user scope
-    user_dir = base_home / scopes["user"].relative_to(Path.home())
+    user_dir = base_home / scopes["user"]
     records.extend(_scan_scope(harness, user_dir, "user", is_cwd_relative=False))
 
     # Scan project scope
@@ -186,12 +208,11 @@ def _scan_scope(
         base = scope_dir
 
     # Read settings.json / config file
-    if harness == "claude":
-        settings_path = base / "settings.json"
+    if harness in _JSON_SETTINGS_FILES:
+        settings_path = base / _JSON_SETTINGS_FILES[harness]
         if settings_path.exists():
             records.extend(_scan_claude_settings(settings_path, scope_name, harness))
-    else:
-        # For openclaw/hermes, read config.toml (future)
+    elif harness in _TOML_CONFIG_HARNESSES:
         config_path = base / "config.toml"
         if config_path.exists():
             records.extend(_scan_toml_config(config_path, scope_name, harness))
@@ -310,8 +331,27 @@ def _scan_toml_config(
     scope: str,
     harness: str,
 ) -> list[SurfaceRecord]:
-    # Basic TOML scanning for openclaw/hermes (future implementation)
-    return []
+    records: list[SurfaceRecord] = []
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, OSError):
+        return records
+    if not isinstance(data, dict):
+        return records
+    for section_name, section_value in data.items():
+        records.append(
+            SurfaceRecord(
+                id=f"permission:{section_name}@{scope}",
+                type="permission",
+                name=str(section_name),
+                scope=scope,
+                harness=harness,
+                source=str(path),
+                enabled=True,
+                metadata={"section": section_value} if isinstance(section_value, dict) else {},
+            )
+        )
+    return records
 
 
 def _scan_commands(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_os.catalog import SurfaceRecord, diff, merge, scan
+from agentic_os.catalog import SUPPORTED_HARNESSES, SurfaceRecord, diff, merge, scan
 
 
 def _write_claude_settings(base: Path, data: dict) -> Path:
@@ -33,6 +33,28 @@ def _write_subagent(base: Path, name: str, content: str = "") -> Path:
     agents_dir.mkdir(parents=True, exist_ok=True)
     (agents_dir / f"{name}.md").write_text(content, encoding="utf-8")
     return agents_dir
+
+
+def test_supported_harnesses_includes_six() -> None:
+    assert set(SUPPORTED_HARNESSES) == {
+        "claude",
+        "codex",
+        "opencode",
+        "qwen",
+        "openclaw",
+        "hermes",
+    }
+
+
+def test_scan_openclaw_toml_config(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    oc = home / ".openclaw"
+    oc.mkdir(parents=True)
+    (oc / "config.toml").write_text('[agent]\nname = "main"\n', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    records = scan("openclaw", str(tmp_path), home_dir=home)
+    assert len(records) >= 1
+    assert any(record.type == "permission" for record in records)
 
 
 def test_scan_empty_cwd(tmp_path: Path) -> None:

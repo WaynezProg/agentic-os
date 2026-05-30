@@ -205,3 +205,48 @@ command = ["/bin/echo", "hi"]
     assert agent.config_path is None
     assert agent.log_paths == []
     assert agent.default_provider is None
+
+
+def test_validate_registry_requires_health_command(tmp_path):
+    toml_path = tmp_path / "agents.toml"
+    toml_path.write_text(
+        """\
+[[agents]]
+id = "bad"
+label = "Bad"
+command = ["/bin/echo", "hi"]
+config_path = "~/.bad"
+default_provider = "x"
+version_command = ["/bin/echo", "1"]
+config_fingerprint_command = ["/bin/echo", "f"]
+""",
+        encoding="utf-8",
+    )
+    from agentic_os.registry import Registry, validate_registry
+
+    reg = Registry(toml_path)
+    errors, warnings = validate_registry(reg.list_agents())
+    assert any("health_command" in error for error in errors)
+
+
+def test_validate_registry_ok_for_profiled_agent(tmp_path):
+    toml_path = tmp_path / "agents.toml"
+    toml_path.write_text(
+        """\
+[[agents]]
+id = "good"
+label = "Good"
+command = ["/bin/echo", "hi"]
+health_command = ["/bin/echo", "OK"]
+version_command = ["/bin/echo", "1"]
+config_fingerprint_command = ["/bin/echo", "f"]
+config_path = "~/.good"
+default_provider = "openai"
+""",
+        encoding="utf-8",
+    )
+    from agentic_os.registry import Registry, validate_registry
+
+    reg = Registry(toml_path)
+    errors, _warnings = validate_registry(reg.list_agents())
+    assert errors == []

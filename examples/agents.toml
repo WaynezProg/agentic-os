@@ -9,12 +9,76 @@ version_command = ["/usr/bin/printf", "1.0.0"]
 config_fingerprint_command = ["/usr/bin/printf", "static"]
 
 [[agents]]
+id = "claude"
+label = "Claude Code"
+command = ["claude", "-p", "{{message}}", "--output-format", "text"]
+cwd_mode = "required"
+stop_policy = "process_group"
+health_command = ["claude", "--version"]
+version_command = ["claude", "--version"]
+config_fingerprint_command = ["claude", "--version"]
+config_path = "~/.claude"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.claude/projects"]
+default_provider = "anthropic"
+
+[[agents]]
+id = "codex"
+label = "Codex"
+command = ["codex", "exec", "{{message}}"]
+cwd_mode = "required"
+stop_policy = "process_group"
+health_command = ["codex", "--version"]
+version_command = ["codex", "--version"]
+config_fingerprint_command = ["codex", "--version"]
+config_path = "~/.codex"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.codex/log"]
+default_provider = "openai"
+
+[[agents]]
+id = "opencode"
+label = "OpenCode"
+command = ["opencode", "run", "{{message}}"]
+cwd_mode = "required"
+stop_policy = "process_group"
+health_command = ["opencode", "--version"]
+version_command = ["opencode", "--version"]
+config_fingerprint_command = ["opencode", "--version"]
+config_path = "~/.config/opencode"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.local/share/opencode/log"]
+default_provider = "openai"
+attach_command = ["opencode", "attach"]
+
+[[agents]]
+id = "qwen"
+label = "Qwen Code"
+command = ["qwen", "{{message}}"]
+cwd_mode = "required"
+stop_policy = "process_group"
+health_command = ["qwen", "--version"]
+version_command = ["qwen", "--version"]
+config_fingerprint_command = ["qwen", "--version"]
+config_path = "~/.qwen"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.qwen/debug"]
+default_provider = "qwen"
+
+[[agents]]
 id = "openclaw"
 label = "OpenClaw"
 command = ["openclaw", "agent", "--message", "{{message}}", "--json"]
 cwd_mode = "required"
 stop_policy = "process_group"
 health_command = ["openclaw", "status", "--json"]
+version_command = ["openclaw", "--version"]
+config_fingerprint_command = ["openclaw", "status", "--json"]
+config_path = "~/.openclaw"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.openclaw/logs"]
+default_provider = "openai"
+attach_command = ["openclaw", "attach"]
 
 [[agents]]
 id = "hermes"
@@ -23,3 +87,10 @@ command = ["hermes", "chat", "--query", "{{message}}", "--quiet", "--source", "a
 cwd_mode = "optional"
 stop_policy = "process_group"
 health_command = ["hermes", "status"]
+version_command = ["hermes", "--version"]
+config_fingerprint_command = ["hermes", "status"]
+config_path = "~/.hermes"
+workspace_roots = ["~/bootstrap", "~/work"]
+log_paths = ["~/.hermes/logs"]
+default_provider = "openai"
+attach_command = ["hermes", "--resume"]

@@ -62,6 +62,28 @@ class JsonlLogStore:
                 )
         return ReadResult(entries=entries, truncated=truncated)
 
+    def read_tail(self, path: Path, max_lines: int = 20) -> list[LogEntry]:
+        if not path.exists() or max_lines <= 0:
+            return []
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if not lines:
+            return []
+        tail_lines = lines[-max_lines:]
+        start_index = len(lines) - len(tail_lines)
+        entries: list[LogEntry] = []
+        for offset, line in enumerate(tail_lines):
+            raw = json.loads(line)
+            entries.append(
+                LogEntry(
+                    ts=raw["ts"],
+                    stream=raw["stream"],
+                    session_id=raw["session_id"],
+                    line=raw["line"],
+                    index=start_index + offset + 1,
+                )
+            )
+        return entries
+
     def read_merged(
         self,
         stdout_path: Path,

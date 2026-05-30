@@ -26,24 +26,31 @@ from agentic_os.control_plane import (
     SunsetChange,
 )
 from agentic_os.catalog import (
+    SUPPORTED_HARNESSES,
     SurfaceRecord,
     diff as catalog_diff,
     merge as catalog_merge,
     scan as catalog_scan,
+)
+from agentic_os.harness_config import (
+    diff as harness_config_diff,
+    effective as harness_config_effective,
+    explain as harness_config_explain,
 )
 from agentic_os.config_scope import (
     diff as config_diff,
     effective as config_effective,
     explain as config_explain,
 )
+from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
-from agentic_os.models import AgentDefinition, SessionRecord, SessionStatus
-from agentic_os.registry import Registry, RenderedRun
+from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
+from agentic_os.registry import Registry, RenderedRun, validate_registry
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
 
@@ -125,7 +132,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     audit_store.init()
     prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
-    supervisor = ProcessSupervisor(store=store, logs=logs, state_dir=state_dir)
+    supervisor = ProcessSupervisor(
+        store=store,
+        logs=logs,
+        state_dir=state_dir,
+        registry=registry,
+    )
     supervisor.reconcile()
 
     app = FastAPI(title="agentic-os")
@@ -194,6 +206,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def list_harnesses() -> dict[str, object]:
         return {"harnesses": [_harness_profile(a) for a in registry.list_agents()]}
 
+    @app.get("/harnesses/validate")
+    def validate_harnesses_registry() -> dict[str, object]:
+        errors, warnings = validate_registry(registry.list_agents())
+        return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
+
     @app.get("/harnesses/{harness_id}")
     def show_harness(harness_id: str) -> dict[str, object]:
         try:
@@ -236,6 +253,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def harness_activity(
         harness_id: str,
         event_type: str | None = Query(default=None),
+        limit: int = Query(default=100, ge=1, le=500),
+        before: str | None = Query(default=None),
     ) -> dict[str, object]:
         try:
             registry.get(harness_id)
@@ -279,8 +298,28 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     )
                 )
 
+        for fleet_event in fleet_store.list_events(agent_id=harness_id, limit=500):
+            fleet_type = fleet_event.event_type
+            if fleet_type in {"health_probe_requested", "health_probe_completed"}:
+                mapped_type = "health_probe"
+            else:
+                mapped_type = "fleet_event"
+            if event_type and mapped_type != event_type and fleet_type != event_type:
+                continue
+            entries.append(
+                _timeline_entry(
+                    fleet_event.created_at,
+                    mapped_type,
+                    "fleet",
+                    fleet_event.message,
+                    {"agent_id": fleet_event.agent_id, "event_type": fleet_type, **fleet_event.metadata},
+                )
+            )
+
+        if before:
+            entries = [entry for entry in entries if str(entry["timestamp"]) < before]
         entries.sort(key=lambda e: str(e["timestamp"]), reverse=True)
-        return {"harness_id": harness_id, "activity": entries[:100]}
+        return {"harness_id": harness_id, "activity": entries[:limit]}
 
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
@@ -441,6 +480,38 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 if not event_type or entry["type"] == event_type:
                     entries.append(entry)
 
+        for approval in approval_store.list():
+            if approval.source_session_id == session_id or approval.approved_session_id == session_id:
+                entry = _timeline_entry(
+                    approval.created_at,
+                    "approval",
+                    "approval",
+                    f"Approval {approval.status}: {approval.reason}",
+                    {
+                        "approval_id": approval.id,
+                        "status": approval.status.value,
+                        "source_session_id": approval.source_session_id,
+                        "approved_session_id": approval.approved_session_id,
+                    },
+                )
+                if not event_type or entry["type"] == event_type:
+                    entries.append(entry)
+
+        for stream_name, log_path in (
+            ("stdout", Path(session.stdout_log)),
+            ("stderr", Path(session.stderr_log)),
+        ):
+            for log_entry in logs.read_tail(log_path, max_lines=20):
+                entry = _timeline_entry(
+                    log_entry.ts,
+                    "log_chunk",
+                    stream_name,
+                    log_entry.line[:500],
+                    {"stream": stream_name, "index": log_entry.index},
+                )
+                if not event_type or entry["type"] == event_type:
+                    entries.append(entry)
+
         entries.sort(key=lambda e: str(e["timestamp"]))
         return {"timeline": entries}
 
@@ -500,6 +571,13 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         _check_capacity(previous.agent_id)
 
+        store.record_event(
+            session_id,
+            "retry_requested",
+            f"Retry requested for session {session_id}",
+            {"source_session_id": session_id},
+        )
+
         policy_result = _evaluate_session_policy(previous.agent_id, previous.cwd)
         if policy_result is not None:
             if policy_result.decision != "allow":
@@ -548,6 +626,71 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             )
             _wait_for_short_command(supervisor, session.id)
             return supervisor.store.get_session(session.id).model_dump()
+
+    @app.post("/sessions/{session_id}/attach")
+    def attach_session(
+        session_id: str,
+        request: SessionAttachRequest | None = None,
+    ) -> dict[str, object]:
+        body = request or SessionAttachRequest()
+        try:
+            session = store.get_session(session_id)
+            agent = registry.get(session.agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        decision, reason = evaluate_attach(agent, session)
+        attach_command = build_attach_command(agent, session)
+        response: dict[str, object] = {
+            "session_id": session_id,
+            "harness_id": agent.id,
+            "attach_command": attach_command,
+            "decision": decision,
+            "reason": reason,
+            "mode": body.mode,
+        }
+        if decision == "unsupported":
+            return response
+        if decision == "deny":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "decision": decision,
+                    "reason": reason,
+                    "session_id": session_id,
+                },
+            )
+        if body.mode == "preview":
+            return response
+
+        policy_result = _evaluate_session_policy(agent.id, session.cwd)
+        if policy_result is not None and policy_result.decision != "allow":
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "decision": policy_result.decision,
+                    "reason": policy_result.reason,
+                    "session_id": session_id,
+                },
+            )
+
+        proc = subprocess.Popen(
+            attach_command,
+            cwd=session.cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        store.update_session_attach(session_id, attach_status="attached")
+        audit_store.record(
+            "session",
+            session_id,
+            "attach_exec",
+            f"attach exec started for {session_id}",
+            metadata={"pid": proc.pid, "attach_command": attach_command},
+        )
+        response["pid"] = proc.pid
+        return response
 
     @app.get("/approvals")
     def list_approvals(
@@ -1052,6 +1195,16 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         coverage = audit_store.policy_coverage(agent_ids, session_ids_by_agent, policy_agent_ids)
         return {"coverage": coverage}
 
+    def _require_catalog_harness(harness: str) -> None:
+        if harness not in SUPPORTED_HARNESSES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"unsupported harness: {harness}",
+                    "supported": list(SUPPORTED_HARNESSES),
+                },
+            )
+
     @app.get("/catalog/{harness}/surfaces")
     def catalog_surfaces(
         harness: str,
@@ -1059,8 +1212,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         scope: str | None = Query(default=None),
         surface_type: str | None = Query(default=None),
     ) -> dict[str, object]:
-        if harness not in ("claude", "openclaw", "hermes"):
-            raise HTTPException(status_code=400, detail=f"unsupported harness: {harness}")
+        _require_catalog_harness(harness)
         records = catalog_scan(harness, cwd)
         if scope:
             records = [r for r in records if r.scope == scope]
@@ -1073,11 +1225,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         harness: str,
         cwd: str | None = Query(default=None),
     ) -> dict[str, object]:
-        if harness not in ("claude", "openclaw", "hermes"):
-            raise HTTPException(status_code=400, detail=f"unsupported harness: {harness}")
+        _require_catalog_harness(harness)
         records = catalog_scan(harness, cwd)
         merged = catalog_merge(records)
-        return {"surfaces": [_surface_record_dict(r) for r in merged]}
+        surfaces = [_surface_record_dict(r) for r in merged]
+        return {"surfaces": surfaces, "empty": len(surfaces) == 0}
 
     @app.get("/catalog/{harness}/diff")
     def catalog_diff_endpoint(
@@ -1087,8 +1239,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         scope_a: str | None = Query(default=None),
         scope_b: str | None = Query(default=None),
     ) -> dict[str, object]:
-        if harness not in ("claude", "openclaw", "hermes"):
-            raise HTTPException(status_code=400, detail=f"unsupported harness: {harness}")
+        _require_catalog_harness(harness)
         records_a = [r for r in catalog_scan(harness, cwd_a) if not scope_a or r.scope == scope_a]
         records_b = [r for r in catalog_scan(harness, cwd_b) if not scope_b or r.scope == scope_b]
         result = catalog_diff(records_a, records_b)
@@ -1124,6 +1275,51 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         cwd: str | None = Query(default=None),
     ) -> dict[str, object]:
         entries = config_explain(harness_id, cwd)
+        return {"harness_id": harness_id, "entries": entries}
+
+    def _require_harness_config_harness(harness_id: str) -> None:
+        if harness_id not in SUPPORTED_HARNESSES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"unsupported harness: {harness_id}",
+                    "supported": list(SUPPORTED_HARNESSES),
+                },
+            )
+
+    @app.get("/harness-config/{harness_id}/effective")
+    def harness_config_effective_endpoint(
+        harness_id: str,
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_harness_config_harness(harness_id)
+        view = harness_config_effective(harness_id, cwd)
+        return {
+            "harness_id": view.harness_id,
+            "scopes_present": view.scopes_present,
+            "entries": [
+                {"key": e.key, "value": e.value, "scope": e.scope, "source": e.source}
+                for e in view.entries
+            ],
+        }
+
+    @app.get("/harness-config/{harness_id}/diff")
+    def harness_config_diff_endpoint(
+        harness_id: str,
+        scope_a: str = Query(default="user"),
+        scope_b: str = Query(default="project"),
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_harness_config_harness(harness_id)
+        return harness_config_diff(harness_id, cwd, scope_a=scope_a, scope_b=scope_b)
+
+    @app.get("/harness-config/{harness_id}/explain")
+    def harness_config_explain_endpoint(
+        harness_id: str,
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_harness_config_harness(harness_id)
+        entries = harness_config_explain(harness_id, cwd)
         return {"harness_id": harness_id, "entries": entries}
 
     @app.get("/fleet/health")

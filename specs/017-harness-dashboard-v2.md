@@ -1,6 +1,6 @@
 # 017 — Harness Dashboard v2 (P9)
 
-Status: Implemented with gaps
+Status: Implemented
 Date: 2026-05-30
 
 ## Positioning

@@ -1,7 +1,11 @@
 # 007 — Harness Instance Profile (P3.7)
 
-Status: Draft
+Status: Implemented via 018
 Date: 2026-05-28
+
+> Schema in `AgentDefinition` / `_harness_profile()`; registry data in `examples/agents.toml`.
+> Canonical ids: `specs/018-multi-harness-registry-pack.md`. Schedule:
+> `docs/superpowers/specs/2026-05-30-spec-schedule-018-plus-design.md`.
 
 ## Positioning
 

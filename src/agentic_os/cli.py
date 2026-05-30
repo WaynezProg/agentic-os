@@ -45,6 +45,8 @@ catalog = typer.Typer(help="Scan and inspect workflow surfaces.")
 app.add_typer(catalog, name="catalog")
 config_cmd = typer.Typer(help="Inspect configuration scopes.")
 app.add_typer(config_cmd, name="config")
+harness_config_cmd = typer.Typer(help="Inspect harness-native configuration (read-only).")
+app.add_typer(harness_config_cmd, name="harness-config")
 
 T = TypeVar("T")
 
@@ -113,6 +115,19 @@ def agents_show(agent_id: str, api: str | None = _api_option()) -> None:
     _echo_json(data)
 
 
+@harnesses_cmd.command("validate")
+def harnesses_validate(api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).harnesses_validate())
+    if data.get("warnings"):
+        for warning in data["warnings"]:
+            typer.echo(f"warning: {warning}", err=True)
+    if not data.get("ok"):
+        for error in data.get("errors", []):
+            typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1)
+    typer.echo("registry validation ok")
+
+
 @harnesses_cmd.command("activity")
 def harness_activity_cmd(
     harness_id: str,
@@ -172,6 +187,16 @@ def sessions_timeline(
     data = _run_api_call(lambda: make_client(api).get_session_timeline(session_id))
     for entry in data.get("timeline", []):
         typer.echo(f"{entry['timestamp']}\t{entry['type']}\t{entry['source']}\t{entry['message']}")
+
+
+@sessions.command("attach")
+def sessions_attach(
+    session_id: str,
+    mode: str = typer.Option("preview", "--mode", help="preview or exec."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(lambda: make_client(api).attach_session(session_id, mode=mode))
+    _echo_json(data)
 
 
 @app.command()
@@ -782,5 +807,58 @@ def config_explain(
 ) -> None:
     resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
     data = _run_api_call(lambda: make_client(api).config_explain(harness_id, cwd=resolved_cwd))
+    for entry in data.get("entries", []):
+        typer.echo(f"{entry['key']}\t[{entry['scope']}]\t{entry['source']}")
+
+
+@harness_config_cmd.command("effective")
+def harness_config_effective_cmd(
+    harness_id: str,
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(
+        lambda: make_client(api).harness_config_effective(harness_id, cwd=resolved_cwd)
+    )
+    typer.echo(f"harness: {data['harness_id']}")
+    typer.echo(f"scopes: {', '.join(data.get('scopes_present', []))}")
+    typer.echo("")
+    for entry in data.get("entries", []):
+        typer.echo(f"{entry['key']}\t{entry['value']}\t[{entry['scope']}]\t{entry['source']}")
+
+
+@harness_config_cmd.command("diff")
+def harness_config_diff_cmd(
+    harness_id: str,
+    scope_a: str = typer.Option("user", "--scope-a", help="First scope."),
+    scope_b: str = typer.Option("project", "--scope-b", help="Second scope."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(
+        lambda: make_client(api).harness_config_diff(
+            harness_id, scope_a=scope_a, scope_b=scope_b, cwd=resolved_cwd
+        )
+    )
+    for item in data.get("added", []):
+        typer.echo(f"+ {item['key']}\t{item['value']}\t[{item['scope']}]")
+    for item in data.get("removed", []):
+        typer.echo(f"- {item['key']}\t{item['value']}\t[{item['scope']}]")
+    for item in data.get("modified", []):
+        typer.echo(f"~ {item['key']}\t{item['before']['value']} -> {item['after']['value']}")
+
+
+@harness_config_cmd.command("explain")
+def harness_config_explain_cmd(
+    harness_id: str,
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    data = _run_api_call(
+        lambda: make_client(api).harness_config_explain(harness_id, cwd=resolved_cwd)
+    )
     for entry in data.get("entries", []):
         typer.echo(f"{entry['key']}\t[{entry['scope']}]\t{entry['source']}")
