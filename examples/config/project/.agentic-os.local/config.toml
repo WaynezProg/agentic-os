@@ -1,0 +1,8 @@
+# Local configuration for agentic-os
+# Stored in <repo>/.agentic-os.local/config.toml
+# Highest priority — overrides all other scopes.
+# Use for temporary overrides during development.
+
+[openclaw]
+default_provider = "openai"
+workspace_roots = ["~/bootstrap/agentic-os"]

@@ -242,15 +242,11 @@ class AgenticClient:
     def harness_logs(self, harness_id: str) -> dict[str, Any]:
         return self._get(f"/harnesses/{_validate_path_id(harness_id)}/logs")
 
-    def harness_activity(
-        self, harness_id: str, event_type: str | None = None
-    ) -> dict[str, Any]:
+    def harness_activity(self, harness_id: str, event_type: str | None = None) -> dict[str, Any]:
         params: dict[str, object] = {}
         if event_type:
             params["event_type"] = event_type
-        return self._get(
-            f"/harnesses/{_validate_path_id(harness_id)}/activity", params=params
-        )
+        return self._get(f"/harnesses/{_validate_path_id(harness_id)}/activity", params=params)
 
     def catalog_surfaces(
         self,

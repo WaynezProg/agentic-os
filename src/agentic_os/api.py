@@ -1482,7 +1482,11 @@ def _truncate_output(text: str) -> tuple[str, bool]:
     encoded = text.encode("utf-8")
     if len(encoded) <= _HEALTH_OUTPUT_MAX:
         return text.strip(), False
-    return encoded[:_HEALTH_OUTPUT_MAX].decode("utf-8", errors="replace").strip(), True
+    # Truncate to valid UTF-8 boundary to avoid partial multibyte characters
+    truncated = encoded[:_HEALTH_OUTPUT_MAX]
+    # Find the last complete UTF-8 character by decoding and re-encoding
+    decoded = truncated.decode("utf-8", errors="ignore")
+    return decoded.strip(), True
 
 
 def _timeline_entry(

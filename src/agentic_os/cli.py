@@ -218,9 +218,7 @@ def approvals_list(
     api: str | None = _api_option(),
 ) -> None:
     data = _run_api_call(
-        lambda: make_client(api).list_approvals(
-            status=status, harness_id=harness_id, limit=limit
-        )
+        lambda: make_client(api).list_approvals(status=status, harness_id=harness_id, limit=limit)
     )
     for approval in data["approvals"]:
         typer.echo(

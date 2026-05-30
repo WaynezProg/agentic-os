@@ -1,0 +1,15 @@
+# Managed (org/machine baseline) configuration for agentic-os
+# Applied to all harness instances on this machine.
+# Lowest priority — overridden by user, project, and local scopes.
+
+[shell]
+label = "Shell Smoke"
+default_provider = "local"
+
+[openclaw]
+label = "OpenClaw"
+default_provider = "openai"
+
+[hermes]
+label = "Hermes"
+default_provider = "anthropic"
