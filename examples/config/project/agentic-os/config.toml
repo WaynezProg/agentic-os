@@ -1,0 +1,11 @@
+# Project-level configuration for agentic-os
+# Stored in <repo>/.agentic-os/config.toml
+# Overrides user scope, overridden by local scope.
+
+[openclaw]
+default_provider = "anthropic"
+workspace_roots = ["~/bootstrap/agentic-os"]
+
+[hermes]
+default_provider = "openai"
+workspace_roots = ["~/bootstrap/agentic-os", "~/bootstrap/browser-harness"]

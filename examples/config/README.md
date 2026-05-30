@@ -19,8 +19,10 @@ Higher priority scopes override lower ones for the same key.
 ```bash
 # Copy user + project + local samples into your real paths:
 cp examples/config/user/agentic-os.toml ~/.agentic-os/config.toml
-cp examples/config/project/.agentic-os/config.toml .agentic-os/
-cp examples/config/project/.agentic-os.local/config.toml .agentic-os.local/
+mkdir -p .agentic-os
+cp examples/config/project/agentic-os/config.toml .agentic-os/config.toml
+mkdir -p .agentic-os.local
+cp examples/config/project/agentic-os.local/config.toml .agentic-os.local/config.toml
 
 # See the merged effective config:
 uv run agentctl config effective openclaw --cwd .
@@ -34,9 +36,9 @@ uv run agentctl config explain openclaw --cwd .
 
 ## Version control
 
-Commit `project/.agentic-os/config.toml` so your team shares the same defaults.
+Commit `project/agentic-os/config.toml` (as `.agentic-os/config.toml`) so your team shares the same defaults.
 
-**Do NOT commit** `project/.agentic-os.local/config.toml`. It is for
+**Do NOT commit** `project/agentic-os.local/config.toml` (as `.agentic-os.local/config.toml`). It is for
 temporary development overrides only. Add this to your `.gitignore`:
 
 ```
