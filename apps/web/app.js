@@ -38,11 +38,9 @@ const ENDPOINTS = Object.freeze({
   auditPolicyCoverage: "/audit/policy-coverage",
   harnesses: "/harnesses",
   harnessHealth: "/harnesses/{harness_id}/health",
-  harnessInstanceHealth: "/harnesses/{agent_id}/health",
   catalogSurfaces: "/catalog/{harness}/surfaces",
   harnessConfigEffective: "/harness-config/{harness_id}/effective",
   approvalsFiltered: "/approvals",
-  auditEvents: "/audit/events",
 });
 
 const HTML_ENTITIES = Object.freeze({
@@ -311,7 +309,7 @@ function renderSessionRow(session) {
   const status = String(session.status || "unknown");
   const canStop = ["queued", "running", "stopping"].includes(status);
   const canRetry = !["queued", "running", "stopping"].includes(status);
-  const canAttach = session.attach_status === "available" || session.attachable === true;
+  const canAttach = session.attach_status === "available";
   return `
     <tr>
       <td class="cell-id">${escapeHtml(session.id)}</td>
