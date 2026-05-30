@@ -49,6 +49,21 @@ class FakeClient:
             ]
         }
 
+    def get_session_timeline(
+        self, session_id: str, event_type: str | None = None
+    ) -> dict[str, object]:
+        self.calls.append(("get_session_timeline", (session_id,), {"event_type": event_type}))
+        return {
+            "timeline": [
+                {
+                    "timestamp": "2026-05-30T00:00:00Z",
+                    "type": event_type or "session_event",
+                    "source": "session",
+                    "message": "timeline event",
+                }
+            ]
+        }
+
     def get_logs(
         self,
         session_id: str,
@@ -560,6 +575,20 @@ def test_sessions_events_prints_tab_separated_rows(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert result.output == "1\tpolicy_denied\tblocked\t2026-05-28 05:00:00\n"
     assert fake.calls == [("get_session_events", ("s_1",), {})]
+
+
+def test_sessions_timeline_passes_type_filter(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["sessions", "timeline", "s_1", "--type", "log_chunk"],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == "2026-05-30T00:00:00Z\tlog_chunk\tsession\ttimeline event\n"
+    assert fake.calls == [("get_session_timeline", ("s_1",), {"event_type": "log_chunk"})]
 
 
 def test_logs_prints_tab_separated_rows(monkeypatch: Any) -> None:
@@ -1088,6 +1117,23 @@ def test_client_get_session_events_builds_expected_request(monkeypatch: Any) -> 
             "base_url": "http://api.example",
             "path": "/sessions/s_1/events",
             "params": None,
+        }
+    ]
+
+
+def test_client_get_session_timeline_builds_type_query(monkeypatch: Any) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    assert client.get_session_timeline("s_1", event_type="log_chunk") == {"entries": []}
+
+    assert RecordingHttpxClient.requests == [
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/timeline",
+            "params": {"event_type": "log_chunk"},
         }
     ]
 

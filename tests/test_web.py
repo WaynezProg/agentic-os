@@ -282,6 +282,12 @@ def test_harness_native_config_panel_exists() -> None:
     assert "/harness-config/{harness_id}/effective" in js
 
 
+def test_javascript_does_not_pass_endpoint_keys_directly_to_api_fetch() -> None:
+    js = APP_JS.read_text(encoding="utf-8")
+
+    assert re.search(r'apiFetch\("[A-Za-z][A-Za-z0-9]*"', js) is None
+
+
 def test_fleet_tab_and_panel_exist() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
     assert 'data-tab="fleet"' in html

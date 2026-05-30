@@ -69,13 +69,22 @@ def test_scan_toml_config_redacts_secrets(tmp_path: Path, monkeypatch) -> None:
     Mirrors tests/test_harness_config.py::test_effective_redacts_secrets.
     """
     home = tmp_path / "home"
-    _write_toml_config(home / ".openclaw", '[auth]\ntoken = "sk-secret"\n')
+    _write_toml_config(
+        home / ".openclaw",
+        """[auth]
+token = "sk-secret"
+tokens = ["list-secret"]
+nested_token = { value = "nested-secret" }
+""",
+    )
     monkeypatch.setenv("HOME", str(home))
     records = scan("openclaw", str(tmp_path), home_dir=home)
     auth = [r for r in records if r.name == "auth"]
     assert auth, "expected a permission record for the [auth] section"
     raw = json.dumps(auth[0].metadata)
     assert "sk-secret" not in raw
+    assert "list-secret" not in raw
+    assert "nested-secret" not in raw
     assert "REDACTED" in raw
 
 

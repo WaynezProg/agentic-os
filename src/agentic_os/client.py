@@ -31,8 +31,15 @@ class AgenticClient:
     def get_session_events(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}/events")
 
-    def get_session_timeline(self, session_id: str) -> dict[str, Any]:
-        return self._get(f"/sessions/{_validate_path_id(session_id)}/timeline")
+    def get_session_timeline(
+        self,
+        session_id: str,
+        event_type: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if event_type is not None:
+            params["event_type"] = event_type
+        return self._get(f"/sessions/{_validate_path_id(session_id)}/timeline", params=params)
 
     def get_logs(
         self,

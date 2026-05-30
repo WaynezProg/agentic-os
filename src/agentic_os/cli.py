@@ -184,7 +184,9 @@ def sessions_timeline(
     event_type: str | None = typer.Option(None, "--type", help="Filter by event type."),
     api: str | None = _api_option(),
 ) -> None:
-    data = _run_api_call(lambda: make_client(api).get_session_timeline(session_id))
+    data = _run_api_call(
+        lambda: make_client(api).get_session_timeline(session_id, event_type=event_type)
+    )
     for entry in data.get("timeline", []):
         typer.echo(f"{entry['timestamp']}\t{entry['type']}\t{entry['source']}\t{entry['message']}")
 

@@ -1634,6 +1634,42 @@ def test_session_attach_exec_denied_by_policy(tmp_path: Path, monkeypatch: pytes
     assert detail["session_id"] == session_id
 
 
+def test_session_attach_exec_approval_required_returns_409(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "agentic_os.supervisor.capture_external_session_after_run",
+        lambda *args, **kwargs: None,
+    )
+    registry = tmp_path / "agents.toml"
+    _write_openclaw_registry(registry, attach_command=["/usr/bin/true"])
+    app = create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    client = TestClient(app)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "openclaw", "cwd": str(tmp_path), "message": "attach-approval"},
+    )
+    session_id = run.json()["id"]
+    app.state.store.update_session_attach(
+        session_id,
+        external_session_id="ext-approval-1",
+        attachable=True,
+        attach_status="available",
+    )
+    _set_shell_policy(
+        client,
+        cwd_roots=[str(tmp_path)],
+        approval_required_tool_names=["session.start"],
+    )
+
+    response = client.post(f"/sessions/{session_id}/attach", json={"mode": "exec"})
+
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["decision"] == "approval_required"
+    assert detail["session_id"] == session_id
+
+
 def test_catalog_surfaces_returns_valid_response(tmp_path: Path) -> None:
     """GET /catalog/{harness}/surfaces returns valid response structure."""
     client = make_client(tmp_path)

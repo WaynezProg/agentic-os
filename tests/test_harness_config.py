@@ -29,13 +29,21 @@ def test_effective_redacts_secrets(tmp_path: Path, monkeypatch) -> None:
     claude_home = home / ".claude"
     claude_home.mkdir(parents=True)
     (claude_home / "settings.json").write_text(
-        '{"api_key": "sk-secret-value"}',
+        json.dumps(
+            {
+                "api_key": "sk-secret-value",
+                "tokens": ["list-secret"],
+                "nested_token": {"value": "nested-secret"},
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("HOME", str(home))
     view = effective("claude", str(tmp_path), home_dir=home)
     raw = json.dumps([e.value for e in view.entries])
     assert "sk-secret-value" not in raw
+    assert "list-secret" not in raw
+    assert "nested-secret" not in raw
     assert "REDACTED" in raw
 
 

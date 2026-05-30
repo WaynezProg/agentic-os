@@ -665,8 +665,9 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
         policy_result = _evaluate_session_policy(agent.id, session.cwd)
         if policy_result is not None and policy_result.decision != "allow":
+            status_code = 403 if policy_result.decision == "deny" else 409
             raise HTTPException(
-                status_code=403,
+                status_code=status_code,
                 detail={
                     "decision": policy_result.decision,
                     "reason": policy_result.reason,

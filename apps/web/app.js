@@ -1053,7 +1053,7 @@ async function loadHarnessNativeConfig() {
 
 async function loadHarnesses() {
   try {
-    const data = await apiFetch("harnesses");
+    const data = await apiFetch(buildEndpoint("harnesses"));
     const body = byId("harnesses-body");
     const rows = asArray(data.harnesses);
     if (!rows.length) {
@@ -1086,7 +1086,7 @@ async function loadHarnesses() {
 async function loadHarnessHealth(harnessId) {
   try {
     if (harnessId) {
-      const data = await apiFetch("harnessInstanceHealth", { agent_id: harnessId });
+      const data = await apiFetch(buildEndpoint("harnessHealth", { harness_id: harnessId }));
       const body = byId("harness-health-body");
       body.innerHTML = `
         <tr>
@@ -1098,7 +1098,7 @@ async function loadHarnessHealth(harnessId) {
       `;
     } else {
       // Load all harness health checks
-      const allData = await apiFetch("harnesses");
+      const allData = await apiFetch(buildEndpoint("harnesses"));
       const body = byId("harness-health-body");
       const harnesses = asArray(allData.harnesses);
       if (!harnesses.length) {
@@ -1107,7 +1107,7 @@ async function loadHarnessHealth(harnessId) {
       }
       const results = await Promise.allSettled(
         harnesses.map((h) =>
-          apiFetch("harnessHealth", { harness_id: h.id })
+          apiFetch(buildEndpoint("harnessHealth", { harness_id: h.id }))
             .then((r) => ({ ...r, id: h.id }))
             .catch((e) => ({ id: h.id, state: "error", message: e.message }))
         )
@@ -1229,7 +1229,8 @@ async function loadAuditStandalone() {
     const limit = byId("audit-limit").value;
     const params = { limit: Number(limit) };
     if (domain) params.domain = domain;
-    const data = await apiFetch("auditEvents", params);
+    const query = new URLSearchParams(params);
+    const data = await apiFetch(`${buildEndpoint("auditEvents")}?${query}`);
     const body = byId("audit-standalone-body");
     const events = asArray(data.events);
     if (!events.length) {

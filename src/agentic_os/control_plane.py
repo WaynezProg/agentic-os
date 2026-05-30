@@ -926,12 +926,12 @@ def _redact_text(value: str) -> str:
 def _redact_value(value: Any, key: str | None = None) -> Any:
     """Recursively redact secrets in arbitrary config values.
 
-    A string under a secret-looking key is fully redacted; other strings are
+    Any value under a secret-looking key is fully redacted; other strings are
     scrubbed for embedded secrets. Dicts/lists are walked element-wise.
     """
+    if key and _SECRET_KEY_PATTERN.search(key):
+        return "[REDACTED]"
     if isinstance(value, str):
-        if key and _SECRET_KEY_PATTERN.search(key):
-            return "[REDACTED]"
         return _redact_text(value)
     if isinstance(value, dict):
         return {str(k): _redact_value(v, str(k)) for k, v in value.items()}
