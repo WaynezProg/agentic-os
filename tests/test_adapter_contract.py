@@ -149,6 +149,34 @@ def test_contract_v2_unknown_config_path_is_not_scannable() -> None:
     assert contract.capability_matrix["skill_scan"] is False
 
 
+@pytest.mark.parametrize(
+    ("harness_id", "native_files", "file_kinds"),
+    [
+        ("claude", [".claude/settings.json"], ["json"]),
+        ("codex", [".codex/config.toml"], ["toml"]),
+        (
+            "cursor",
+            [".cursor/cli-config.json", ".cursor/mcp.json", ".cursor/hooks.json"],
+            ["json"],
+        ),
+        ("hermes", [".hermes/config.toml"], ["toml"]),
+        ("openclaw", [".openclaw/config.toml"], ["toml"]),
+        ("opencode", [".opencode/config.json"], ["json"]),
+        ("qwen", [".qwen/settings.json"], ["json"]),
+    ],
+)
+def test_contract_v2_config_files_match_native_scan_contract(
+    harness_id: str,
+    native_files: list[str],
+    file_kinds: list[str],
+) -> None:
+    registry = Registry(Path("examples/agents.toml"))
+    contract = contract_from_agent_v2(registry.get(harness_id))
+
+    assert contract.config.native_files == native_files
+    assert contract.config.file_kinds == file_kinds
+
+
 @pytest.mark.parametrize("harness_id", SEMANTIC_HARNESS_IDS)
 def test_contract_v2_semantic_harnesses_round_trip_and_config_consistency(
     harness_id: str,
