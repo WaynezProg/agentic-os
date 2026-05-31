@@ -1,0 +1,103 @@
+{
+  "attach": {
+    "command_template": [],
+    "identity_kind": "none",
+    "requires_discovered_identity": false,
+    "strategy": "unsupported",
+    "supported": false
+  },
+  "capability_matrix": {
+    "attach": false,
+    "config_scopes": true,
+    "json_output": false,
+    "launch": true,
+    "mcp_scan": true,
+    "native_policy": false,
+    "resume": false,
+    "sandbox": false,
+    "skill_scan": true,
+    "usage_parse": true
+  },
+  "config": {
+    "file_kinds": [
+      "json"
+    ],
+    "native_files": [
+      ".claude/settings.json"
+    ],
+    "native_supported": true,
+    "primary_path": "~/.claude",
+    "redacts_secrets": true,
+    "scopes": [
+      "user",
+      "project",
+      "local"
+    ]
+  },
+  "contract_version": "v2",
+  "error_modes": [
+    "not_found",
+    "timeout",
+    "auth_error",
+    "parse_error"
+  ],
+  "harness_id": "claude",
+  "launch": {
+    "command_template": [
+      "claude",
+      "-p",
+      "{{message}}",
+      "--output-format",
+      "text"
+    ],
+    "cwd_mode": "required",
+    "output_mode": "plain_text",
+    "prompt_input_mode": "argv",
+    "requires_workspace": true,
+    "supported": true
+  },
+  "log": {
+    "event_timeline": "stdout_stderr_only",
+    "paths": [
+      "~/.claude/projects"
+    ],
+    "stderr_contract": "text",
+    "stdout_contract": "text"
+  },
+  "policy": {
+    "launch_gate": true,
+    "native_policy": false,
+    "notes": "agentic-os currently gates launch and preflight warnings only.",
+    "preflight_config_warning": true,
+    "runtime_enforcement": false
+  },
+  "required_env": [],
+  "resume": {
+    "command_template": [],
+    "identity_kind": "none",
+    "requires_discovered_identity": false,
+    "strategy": "unsupported",
+    "supported": false
+  },
+  "surface": {
+    "command_scan": true,
+    "hook_scan": true,
+    "mcp_scan": true,
+    "native_config_scan": true,
+    "skill_scan": true,
+    "subagent_scan": true
+  },
+  "usage": {
+    "evidence_mode": "text_regex",
+    "fields": [
+      "input_tokens",
+      "output_tokens",
+      "total_tokens",
+      "cost_usd",
+      "currency",
+      "raw_evidence"
+    ],
+    "source": "claude",
+    "supported": true
+  }
+}

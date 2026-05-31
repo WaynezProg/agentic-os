@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,9 @@ from agentic_os.adapter_contract import (
 )
 from agentic_os.models import AgentDefinition
 from agentic_os.registry import Registry
+
+
+FIXTURE_DIR = Path("tests/fixtures/adapter_contract_v2")
 
 
 def test_contract_from_agent_has_required_fields() -> None:
@@ -219,3 +223,21 @@ def test_contract_v2_semantic_harness_set_matches_registry_non_shell_ids() -> No
     )
 
     assert non_shell_ids == SEMANTIC_HARNESS_IDS
+
+
+@pytest.mark.parametrize("harness_id", SEMANTIC_HARNESS_IDS)
+def test_contract_v2_matches_golden_fixture(harness_id: str) -> None:
+    registry = Registry(Path("examples/agents.toml"))
+    contract = contract_from_agent_v2(registry.get(harness_id))
+    fixture_path = FIXTURE_DIR / f"{harness_id}.json"
+
+    expected = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    assert contract.model_dump(mode="json") == expected
+
+
+def test_contract_v2_fixtures_cover_only_semantic_harnesses() -> None:
+    fixture_ids = tuple(sorted(path.stem for path in FIXTURE_DIR.glob("*.json")))
+
+    assert fixture_ids == SEMANTIC_HARNESS_IDS
+    assert "shell" not in fixture_ids
