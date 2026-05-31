@@ -142,6 +142,7 @@ _CURSOR_NATIVE_FILES = [
 ]
 _JSON_CONFIG_HARNESSES = {"claude", "cursor"}
 _TOML_CONFIG_HARNESSES = {"codex", "hermes", "openclaw", "opencode", "qwen"}
+_NATIVE_CONFIG_HARNESSES = _JSON_CONFIG_HARNESSES | _TOML_CONFIG_HARNESSES
 _HOOK_SCAN_HARNESSES = {"claude", "cursor"}
 
 
@@ -186,7 +187,7 @@ def contract_from_agent_v2(agent: AgentDefinition) -> HarnessAdapterContractV2:
         else "none"
     )
     usage_supported = usage_evidence != "none"
-    native_supported = agent.config_path is not None
+    native_supported = agent.config_path is not None and agent.id in _NATIVE_CONFIG_HARNESSES
     config_scopes: list[ConfigScopeName] = ["user", "project", "local"] if native_supported else []
     native_files = _native_config_files(agent.id, native_supported)
     file_kinds = _config_file_kinds(agent.id, native_supported)
