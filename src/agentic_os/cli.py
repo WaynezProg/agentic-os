@@ -171,7 +171,9 @@ def profiles_set(
     message_prefix: str = typer.Option("", "--message-prefix"),
     max_tokens_budget: int | None = typer.Option(None, "--max-tokens-budget"),
     notes: str = typer.Option("", "--notes"),
-    global_scope: bool = typer.Option(False, "--global", help="Write to ~/.agentic-os/profiles.toml"),
+    global_scope: bool = typer.Option(
+        False, "--global", help="Write to ~/.agentic-os/profiles.toml"
+    ),
     cwd: Path | None = typer.Option(None, "--cwd", help="Repo path for local profile file."),
     api: str | None = _api_option(),
 ) -> None:

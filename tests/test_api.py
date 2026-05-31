@@ -1519,7 +1519,9 @@ def _set_shell_policy(client: TestClient, **overrides: object) -> None:
     assert response.status_code == 200
 
 
-def test_session_attach_preview_allow_openclaw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_session_attach_preview_allow_openclaw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(
         "agentic_os.supervisor.capture_external_session_after_run",
         lambda *args, **kwargs: None,
@@ -1606,7 +1608,9 @@ def test_session_attach_exec_records_audit(tmp_path: Path, monkeypatch: pytest.M
     assert session["attach_status"] == "attached"
 
 
-def test_session_attach_exec_denied_by_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_session_attach_exec_denied_by_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(
         "agentic_os.supervisor.capture_external_session_after_run",
         lambda *args, **kwargs: None,

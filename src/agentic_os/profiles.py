@@ -271,27 +271,27 @@ def _write_bundle(profile_path: Path, bundle: ProfileFileBundle) -> None:
     for profile_name in sorted(bundle.run_profiles.keys()):
         profile = bundle.run_profiles[profile_name]
         lines.append(f'[run_profiles."{_escape_toml_key(profile_name)}"]')
-        lines.append(f'harness_id = {json.dumps(profile.harness_id)}')
-        lines.append(f'provider = {json.dumps(profile.provider)}')
-        lines.append(f'model = {json.dumps(profile.model)}')
-        lines.append(f'message_prefix = {json.dumps(profile.message_prefix)}')
-        lines.append(f'default_env = {_format_inline_table(profile.default_env)}')
+        lines.append(f"harness_id = {json.dumps(profile.harness_id)}")
+        lines.append(f"provider = {json.dumps(profile.provider)}")
+        lines.append(f"model = {json.dumps(profile.model)}")
+        lines.append(f"message_prefix = {json.dumps(profile.message_prefix)}")
+        lines.append(f"default_env = {_format_inline_table(profile.default_env)}")
         if profile.max_tokens_budget is not None:
-            lines.append(f'max_tokens_budget = {profile.max_tokens_budget}')
+            lines.append(f"max_tokens_budget = {profile.max_tokens_budget}")
         if profile.cwd_root is not None:
-            lines.append(f'cwd_root = {json.dumps(profile.cwd_root)}')
+            lines.append(f"cwd_root = {json.dumps(profile.cwd_root)}")
         if profile.cwd_prefix is not None:
-            lines.append(f'cwd_prefix = {json.dumps(profile.cwd_prefix)}')
+            lines.append(f"cwd_prefix = {json.dumps(profile.cwd_prefix)}")
         if profile.repo_glob is not None:
-            lines.append(f'repo_glob = {json.dumps(profile.repo_glob)}')
+            lines.append(f"repo_glob = {json.dumps(profile.repo_glob)}")
         if profile.notes:
-            lines.append(f'notes = {json.dumps(profile.notes)}')
+            lines.append(f"notes = {json.dumps(profile.notes)}")
         lines.append("")
 
     for project_path, profile_name in bundle.project_bindings:
         lines.append("[[project_profiles]]")
-        lines.append(f'project_path = {json.dumps(project_path)}')
-        lines.append(f'run_profile = {json.dumps(profile_name)}')
+        lines.append(f"project_path = {json.dumps(project_path)}")
+        lines.append(f"run_profile = {json.dumps(profile_name)}")
         lines.append("")
 
     profile_path.parent.mkdir(parents=True, exist_ok=True)
@@ -306,4 +306,4 @@ def _format_inline_table(values: dict[str, str]) -> str:
 
 
 def _escape_toml_key(value: str) -> str:
-    return value.replace('\\', r'\\').replace('"', r'\"')
+    return value.replace("\\", r"\\").replace('"', r"\"")

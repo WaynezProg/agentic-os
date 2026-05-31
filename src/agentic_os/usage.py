@@ -50,7 +50,9 @@ class UsageParser(Protocol):
     harness_id: str
     source: str
 
-    def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord: ...
+    def extract(
+        self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]
+    ) -> UsageRecord: ...
 
 
 def _extract_json_line_usage(
@@ -111,7 +113,9 @@ class OpenclawUsageParser:
     harness_id = "openclaw"
     source = USAGE_PARSER_SOURCE_OPENCLAW
 
-    def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord:
+    def extract(
+        self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]
+    ) -> UsageRecord:
         return _extract_json_line_usage(
             session_id=session_id,
             harness_id=harness_id,
@@ -125,7 +129,9 @@ class JsonLineUsageParser:
         self.harness_id = harness_id
         self.source = source
 
-    def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord:
+    def extract(
+        self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]
+    ) -> UsageRecord:
         return _extract_json_line_usage(
             session_id=session_id,
             harness_id=harness_id,
@@ -138,7 +144,9 @@ class FallbackUsageParser:
     harness_id = "any"
     source = USAGE_PARSER_SOURCE_FALLBACK
 
-    def extract(self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]) -> UsageRecord:
+    def extract(
+        self, *, session_id: str, harness_id: str, lines: list[_ParsedLogLine]
+    ) -> UsageRecord:
         total_tokens = 0
         for entry in lines:
             match = _TOKEN_PATTERN.search(entry.line)
@@ -343,9 +351,7 @@ class UsageStore:
             ).fetchall()
         return [_usage_row_to_dict(row) for row in rows]
 
-    def list_profile_quotas_daily(
-        self, profiles: dict[str, object]
-    ) -> list[dict[str, object]]:
+    def list_profile_quotas_daily(self, profiles: dict[str, object]) -> list[dict[str, object]]:
         from agentic_os.profiles import RunProfileInput
 
         results: list[dict[str, object]] = []
@@ -371,9 +377,7 @@ class UsageStore:
             )
         return results
 
-    def list_profile_quotas_session(
-        self, profiles: dict[str, object]
-    ) -> list[dict[str, object]]:
+    def list_profile_quotas_session(self, profiles: dict[str, object]) -> list[dict[str, object]]:
         from agentic_os.profiles import RunProfileInput
 
         budgets = {
@@ -459,14 +463,20 @@ class UsageStore:
 
     def _migrate_usage_columns(self, conn: sqlite3.Connection) -> None:
         if not _table_has_column(conn, "usage_records", "currency"):
-            conn.execute("ALTER TABLE usage_records ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'")
+            conn.execute(
+                "ALTER TABLE usage_records ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'"
+            )
             conn.execute("UPDATE usage_records SET currency = 'USD'")
 
         if not _table_has_column(conn, "usage_records", "source"):
-            conn.execute("ALTER TABLE usage_records ADD COLUMN source TEXT NOT NULL DEFAULT 'fallback'")
+            conn.execute(
+                "ALTER TABLE usage_records ADD COLUMN source TEXT NOT NULL DEFAULT 'fallback'"
+            )
 
         if not _table_has_column(conn, "usage_records", "raw_evidence"):
-            conn.execute("ALTER TABLE usage_records ADD COLUMN raw_evidence TEXT NOT NULL DEFAULT '-'")
+            conn.execute(
+                "ALTER TABLE usage_records ADD COLUMN raw_evidence TEXT NOT NULL DEFAULT '-'"
+            )
 
 
 def _parse_json_line(raw_line: str) -> dict[str, Any] | None:

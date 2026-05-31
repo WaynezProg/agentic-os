@@ -62,7 +62,11 @@ class JsonlLogStore:
                 session_id = raw.get("session_id")
                 line = raw.get("line")
                 ts = raw.get("ts")
-                if not isinstance(session_id, str) or not isinstance(line, str) or not isinstance(ts, str):
+                if (
+                    not isinstance(session_id, str)
+                    or not isinstance(line, str)
+                    or not isinstance(ts, str)
+                ):
                     continue
                 entries.append(
                     LogEntry(
@@ -99,7 +103,11 @@ class JsonlLogStore:
             session_id = raw.get("session_id")
             content = raw.get("line")
             ts = raw.get("ts")
-            if not isinstance(session_id, str) or not isinstance(content, str) or not isinstance(ts, str):
+            if (
+                not isinstance(session_id, str)
+                or not isinstance(content, str)
+                or not isinstance(ts, str)
+            ):
                 continue
             entries.append(
                 LogEntry(

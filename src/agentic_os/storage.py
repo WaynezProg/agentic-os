@@ -425,7 +425,7 @@ class Store:
         )
         # Legacy rows with invalid statuses cannot satisfy the rebuilt CHECK constraint.
         conn.execute(
-                f"""
+            f"""
                 INSERT INTO sessions (
                   id, agent_id, cwd, argv_json, env_json, status, pid, pgid, exit_code,
                   artifact_dir, stdout_log, stderr_log, summary_one_liner,
@@ -440,8 +440,8 @@ class Store:
                 FROM sessions_without_status_check
                 WHERE status IN ({valid_status_placeholders})
                 """,
-                VALID_STATUS_VALUES,
-            )
+            VALID_STATUS_VALUES,
+        )
 
         conn.execute(EVENTS_SCHEMA)
         conn.execute(
@@ -474,12 +474,8 @@ class Store:
         if _table_has_column(conn, "sessions", "external_session_id"):
             return
         conn.execute("ALTER TABLE sessions ADD COLUMN external_session_id TEXT")
-        conn.execute(
-            "ALTER TABLE sessions ADD COLUMN attachable INTEGER NOT NULL DEFAULT 0"
-        )
-        conn.execute(
-            "ALTER TABLE sessions ADD COLUMN attach_status TEXT NOT NULL DEFAULT 'none'"
-        )
+        conn.execute("ALTER TABLE sessions ADD COLUMN attachable INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE sessions ADD COLUMN attach_status TEXT NOT NULL DEFAULT 'none'")
 
     def _migrate_sessions_resolved_fields(self, conn: sqlite3.Connection) -> None:
         if _table_has_column(conn, "sessions", "resolved_profile"):

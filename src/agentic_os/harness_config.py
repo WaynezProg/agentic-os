@@ -180,6 +180,7 @@ def diff(
 ) -> dict[str, list[dict[str, Any]]]:
     cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
     home = home_dir or Path.home()
+
     def _merged_scope_config(scope: str) -> dict[str, Any]:
         merged: dict[str, Any] = {}
         for path in _config_files_for_scope(harness_id, scope, cwd_path, home):

@@ -30,7 +30,9 @@ run_profile = "default"
     bundle = profiles._read_bundle(profile_path)
     bindings = bundle.project_bindings
     assert profiles.resolve_project_profile(str((app_a / "src").resolve()), bindings) == "default"
-    assert profiles.resolve_project_profile(str((app_root / "extra").resolve()), bindings) == "default"
+    assert (
+        profiles.resolve_project_profile(str((app_root / "extra").resolve()), bindings) == "default"
+    )
 
 
 def test_explicit_unknown_profile_raises_even_when_no_profiles_exist() -> None:
@@ -70,7 +72,9 @@ def test_stale_project_binding_raises_unknown_profile(tmp_path: Path) -> None:
 
 def test_upsert_run_profile_local_and_global(tmp_path: Path, monkeypatch) -> None:
     global_root = tmp_path / "global-home"
-    monkeypatch.setattr(profiles, "global_profile_path", lambda: global_root / ".agentic-os" / "profiles.toml")
+    monkeypatch.setattr(
+        profiles, "global_profile_path", lambda: global_root / ".agentic-os" / "profiles.toml"
+    )
 
     local_repo = tmp_path / "repo"
     local_repo.mkdir()

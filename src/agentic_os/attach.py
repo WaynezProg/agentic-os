@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from agentic_os.models import AgentDefinition, SessionRecord
+
 AttachDecision = Literal["allow", "deny", "unsupported"]
 AttachStatus = Literal["none", "available", "attached", "unsupported"]
 

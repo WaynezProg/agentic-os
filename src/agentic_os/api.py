@@ -338,7 +338,9 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     "available": sorted(profiles_module.list_profiles(resolved_project)),
                 },
             )
-        profiles_module.bind_project_profile(resolved_project, request.run_profile, resolved_project)
+        profiles_module.bind_project_profile(
+            resolved_project, request.run_profile, resolved_project
+        )
         return {
             "project_path": resolved_project,
             "run_profile": request.run_profile,
@@ -459,7 +461,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     mapped_type,
                     "fleet",
                     fleet_event.message,
-                    {"agent_id": fleet_event.agent_id, "event_type": fleet_type, **fleet_event.metadata},
+                    {
+                        "agent_id": fleet_event.agent_id,
+                        "event_type": fleet_type,
+                        **fleet_event.metadata,
+                    },
                 )
             )
 
@@ -627,7 +633,10 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     entries.append(entry)
 
         for approval in approval_store.list():
-            if approval.source_session_id == session_id or approval.approved_session_id == session_id:
+            if (
+                approval.source_session_id == session_id
+                or approval.approved_session_id == session_id
+            ):
                 entry = _timeline_entry(
                     approval.created_at,
                     "approval",
@@ -930,7 +939,9 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 resolved_provider=(
                     source_session.resolved_provider if source_session is not None else None
                 ),
-                resolved_model=source_session.resolved_model if source_session is not None else None,
+                resolved_model=source_session.resolved_model
+                if source_session is not None
+                else None,
             )
             audit_store.record(
                 "governance",
