@@ -14,7 +14,12 @@ from agentic_os.models import AgentDefinition
 from agentic_os.registry import Registry
 
 
-FIXTURE_DIR = Path("tests/fixtures/adapter_contract_v2")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "adapter_contract_v2"
+
+
+def example_registry() -> Registry:
+    return Registry(REPO_ROOT / "examples" / "agents.toml")
 
 
 def test_contract_from_agent_has_required_fields() -> None:
@@ -56,7 +61,7 @@ def test_contract_marks_external_session_id_capable_harnesses() -> None:
 
 
 def test_contract_v2_cursor_semantics() -> None:
-    registry = Registry(Path("examples/agents.toml"))
+    registry = example_registry()
     contract = contract_from_agent_v2(registry.get("cursor"))
 
     assert isinstance(contract, HarnessAdapterContractV2)
@@ -80,7 +85,7 @@ def test_contract_v2_cursor_semantics() -> None:
 
 
 def test_contract_v2_openclaw_declares_json_usage() -> None:
-    registry = Registry(Path("examples/agents.toml"))
+    registry = example_registry()
     contract = contract_from_agent_v2(registry.get("openclaw"))
 
     assert contract.launch.output_mode == "json"
@@ -174,7 +179,7 @@ def test_contract_v2_config_files_match_native_scan_contract(
     native_files: list[str],
     file_kinds: list[str],
 ) -> None:
-    registry = Registry(Path("examples/agents.toml"))
+    registry = example_registry()
     contract = contract_from_agent_v2(registry.get(harness_id))
 
     assert contract.config.native_files == native_files
@@ -185,7 +190,7 @@ def test_contract_v2_config_files_match_native_scan_contract(
 def test_contract_v2_semantic_harnesses_round_trip_and_config_consistency(
     harness_id: str,
 ) -> None:
-    registry = Registry(Path("examples/agents.toml"))
+    registry = example_registry()
     contract = contract_from_agent_v2(registry.get(harness_id))
 
     payload = contract.model_dump(mode="json")
@@ -217,7 +222,7 @@ def test_contract_v2_semantic_harnesses_round_trip_and_config_consistency(
 
 
 def test_contract_v2_semantic_harness_set_matches_registry_non_shell_ids() -> None:
-    registry = Registry(Path("examples/agents.toml"))
+    registry = example_registry()
     non_shell_ids = tuple(
         sorted(agent.id for agent in registry.list_agents() if agent.id != "shell")
     )
@@ -227,7 +232,7 @@ def test_contract_v2_semantic_harness_set_matches_registry_non_shell_ids() -> No
 
 @pytest.mark.parametrize("harness_id", SEMANTIC_HARNESS_IDS)
 def test_contract_v2_matches_golden_fixture(harness_id: str) -> None:
-    registry = Registry(Path("examples/agents.toml"))
+    registry = example_registry()
     contract = contract_from_agent_v2(registry.get(harness_id))
     fixture_path = FIXTURE_DIR / f"{harness_id}.json"
 
