@@ -123,6 +123,32 @@ def test_contract_v2_configless_agent_has_no_native_config_surfaces() -> None:
     assert contract.capability_matrix["skill_scan"] is False
 
 
+def test_contract_v2_unknown_config_path_is_not_scannable() -> None:
+    agent = AgentDefinition(
+        id="unknown",
+        label="Unknown",
+        command=["unknown", "{{message}}"],
+        config_path="~/.unknown",
+    )
+
+    contract = contract_from_agent_v2(agent)
+
+    assert contract.config.primary_path == "~/.unknown"
+    assert contract.config.native_supported is False
+    assert contract.config.scopes == []
+    assert contract.config.native_files == []
+    assert contract.config.file_kinds == []
+    assert contract.surface.hook_scan is False
+    assert contract.surface.native_config_scan is False
+    assert contract.surface.mcp_scan is False
+    assert contract.surface.skill_scan is False
+    assert contract.surface.command_scan is False
+    assert contract.surface.subagent_scan is False
+    assert contract.capability_matrix["config_scopes"] is False
+    assert contract.capability_matrix["mcp_scan"] is False
+    assert contract.capability_matrix["skill_scan"] is False
+
+
 @pytest.mark.parametrize("harness_id", SEMANTIC_HARNESS_IDS)
 def test_contract_v2_semantic_harnesses_round_trip_and_config_consistency(
     harness_id: str,
