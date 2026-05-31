@@ -140,8 +140,8 @@ _CURSOR_NATIVE_FILES = [
     ".cursor/mcp.json",
     ".cursor/hooks.json",
 ]
-_JSON_CONFIG_HARNESSES = {"claude", "cursor"}
-_TOML_CONFIG_HARNESSES = {"codex", "hermes", "openclaw", "opencode", "qwen"}
+_JSON_CONFIG_HARNESSES = {"claude", "cursor", "opencode", "qwen"}
+_TOML_CONFIG_HARNESSES = {"codex", "hermes", "openclaw"}
 _NATIVE_CONFIG_HARNESSES = _JSON_CONFIG_HARNESSES | _TOML_CONFIG_HARNESSES
 _HOOK_SCAN_HARNESSES = {"claude", "cursor"}
 
@@ -278,9 +278,9 @@ def _native_config_files(harness_id: str, native_supported: bool) -> list[str]:
     if harness_id == "codex":
         return [".codex/config.toml"]
     if harness_id == "opencode":
-        return [".opencode/config.toml"]
+        return [".opencode/config.json"]
     if harness_id == "qwen":
-        return [".qwen/config.toml"]
+        return [".qwen/settings.json"]
     if harness_id == "openclaw":
         return [".openclaw/config.toml"]
     if harness_id == "hermes":
