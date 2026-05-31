@@ -556,6 +556,25 @@ class FakeClient:
         }
 
 
+class LegacyHarnessContractClient(FakeClient):
+    def list_harness_contracts(self) -> dict[str, object]:
+        self.calls.append(("list_harness_contracts", (), {}))
+        return {
+            "contracts": [
+                {
+                    "harness_id": "shell",
+                    "contract_version": "v1",
+                    "required_env": [],
+                }
+            ],
+            "count": 1,
+        }
+
+    def show_harness_contract(self, harness_id: str) -> dict[str, object]:
+        self.calls.append(("show_harness_contract", (harness_id,), {}))
+        return {"harness_id": harness_id, "contract_version": "v1"}
+
+
 def install_fake_client(monkeypatch: Any, fake: FakeClient) -> None:
     monkeypatch.setattr(cli, "make_client", lambda api: fake)
 
@@ -1938,6 +1957,24 @@ def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
     assert fake.calls == [
         ("list_harness_contracts", (), {"version": "v2"}),
         ("show_harness_contract", ("shell",), {"version": "v2"}),
+    ]
+
+
+def test_cli_harness_contract_commands_keep_default_legacy_shape(monkeypatch: Any) -> None:
+    fake = LegacyHarnessContractClient()
+    install_fake_client(monkeypatch, fake)
+    runner = CliRunner()
+
+    list_result = runner.invoke(cli.app, ["harness-contracts", "list"])
+    assert list_result.exit_code == 0
+    assert "v1" in list_result.output
+
+    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell"])
+    assert show_result.exit_code == 0
+    assert "v1" in show_result.output
+    assert fake.calls == [
+        ("list_harness_contracts", (), {}),
+        ("show_harness_contract", ("shell",), {}),
     ]
 
 

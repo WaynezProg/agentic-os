@@ -139,7 +139,12 @@ def harness_contracts_list(
     version: str = typer.Option("v1", "--version", help="Harness contract version."),
     api: str | None = _api_option(),
 ) -> None:
-    data = _run_api_call(lambda: make_client(api).list_harness_contracts(version=version))
+    client = make_client(api)
+    data = _run_api_call(
+        client.list_harness_contracts
+        if version == "v1"
+        else lambda: client.list_harness_contracts(version=version)
+    )
     for contract in data.get("contracts", []):
         typer.echo(
             f"{contract['harness_id']}\t{contract['contract_version']}\t{contract['required_env']}"
@@ -152,8 +157,15 @@ def harness_contracts_show(
     version: str = typer.Option("v1", "--version", help="Harness contract version."),
     api: str | None = _api_option(),
 ) -> None:
+    client = make_client(api)
     _echo_json(
-        _run_api_call(lambda: make_client(api).show_harness_contract(harness_id, version=version))
+        _run_api_call(
+            lambda: (
+                client.show_harness_contract(harness_id)
+                if version == "v1"
+                else client.show_harness_contract(harness_id, version=version)
+            )
+        )
     )
 
 
