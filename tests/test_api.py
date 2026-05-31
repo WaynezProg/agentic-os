@@ -1977,6 +1977,21 @@ def test_harness_contracts_unsupported_version(tmp_path: Path) -> None:
     }
 
 
+def test_harness_contracts_show_unsupported_version_before_unknown_harness(
+    tmp_path: Path,
+) -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
+
+    response = client.get("/harness-contracts/missing?version=v3")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "message": "unsupported contract version: v3",
+        "supported": ["v1", "v2"],
+    }
+
+
 def test_harness_contracts_show_unknown(tmp_path: Path) -> None:
     examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
     client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
