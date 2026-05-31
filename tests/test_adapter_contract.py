@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from pydantic import BaseModel
 
 from agentic_os.adapter_contract import (
@@ -96,3 +97,71 @@ def test_contract_v2_semantic_harness_set_excludes_shell() -> None:
         "opencode",
         "qwen",
     )
+
+
+def test_contract_v2_configless_agent_has_no_native_config_surfaces() -> None:
+    agent = AgentDefinition(
+        id="claude",
+        label="Claude",
+        command=["claude", "--print", "{message}"],
+        config_path=None,
+    )
+
+    contract = contract_from_agent_v2(agent)
+
+    assert contract.config.native_supported is False
+    assert contract.config.native_files == []
+    assert contract.config.file_kinds == []
+    assert contract.surface.hook_scan is False
+    assert contract.surface.native_config_scan is False
+    assert contract.surface.mcp_scan is False
+    assert contract.surface.skill_scan is False
+    assert contract.surface.command_scan is False
+    assert contract.surface.subagent_scan is False
+    assert contract.capability_matrix["config_scopes"] is False
+    assert contract.capability_matrix["mcp_scan"] is False
+    assert contract.capability_matrix["skill_scan"] is False
+
+
+@pytest.mark.parametrize("harness_id", SEMANTIC_HARNESS_IDS)
+def test_contract_v2_semantic_harnesses_round_trip_and_config_consistency(
+    harness_id: str,
+) -> None:
+    registry = Registry(Path("examples/agents.toml"))
+    contract = contract_from_agent_v2(registry.get(harness_id))
+
+    payload = contract.model_dump(mode="json")
+    round_tripped = HarnessAdapterContractV2.model_validate(payload)
+
+    assert round_tripped == contract
+    if contract.config.native_supported:
+        assert contract.config.native_files
+        assert contract.config.file_kinds
+        assert contract.surface.native_config_scan is True
+        assert contract.surface.mcp_scan is True
+        assert contract.surface.skill_scan is True
+        assert contract.surface.command_scan is True
+        assert contract.surface.subagent_scan is True
+        assert contract.capability_matrix["config_scopes"] is True
+        assert contract.capability_matrix["mcp_scan"] is True
+        assert contract.capability_matrix["skill_scan"] is True
+    else:
+        assert contract.config.native_files == []
+        assert contract.config.file_kinds == []
+        assert contract.surface.native_config_scan is False
+        assert contract.surface.mcp_scan is False
+        assert contract.surface.skill_scan is False
+        assert contract.surface.command_scan is False
+        assert contract.surface.subagent_scan is False
+        assert contract.capability_matrix["config_scopes"] is False
+        assert contract.capability_matrix["mcp_scan"] is False
+        assert contract.capability_matrix["skill_scan"] is False
+
+
+def test_contract_v2_semantic_harness_set_matches_registry_non_shell_ids() -> None:
+    registry = Registry(Path("examples/agents.toml"))
+    non_shell_ids = tuple(
+        sorted(agent.id for agent in registry.list_agents() if agent.id != "shell")
+    )
+
+    assert non_shell_ids == SEMANTIC_HARNESS_IDS

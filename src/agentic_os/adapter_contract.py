@@ -188,7 +188,7 @@ def contract_from_agent_v2(agent: AgentDefinition) -> HarnessAdapterContractV2:
     usage_supported = usage_evidence != "none"
     native_supported = agent.config_path is not None
     config_scopes: list[ConfigScopeName] = ["user", "project", "local"] if native_supported else []
-    native_files = _native_config_files(agent.id)
+    native_files = _native_config_files(agent.id, native_supported)
     file_kinds = _config_file_kinds(agent.id, native_supported)
     resume = NativeSessionContractV2(
         supported=supports_native_identity,
@@ -212,7 +212,7 @@ def contract_from_agent_v2(agent: AgentDefinition) -> HarnessAdapterContractV2:
         mcp_scan=native_supported,
         skill_scan=native_supported,
         command_scan=native_supported,
-        hook_scan=agent.id in _HOOK_SCAN_HARNESSES,
+        hook_scan=native_supported and agent.id in _HOOK_SCAN_HARNESSES,
         subagent_scan=native_supported,
         native_config_scan=native_supported,
     )
@@ -267,7 +267,9 @@ def contract_from_agent_v2(agent: AgentDefinition) -> HarnessAdapterContractV2:
     )
 
 
-def _native_config_files(harness_id: str) -> list[str]:
+def _native_config_files(harness_id: str, native_supported: bool) -> list[str]:
+    if not native_supported:
+        return []
     if harness_id == "cursor":
         return list(_CURSOR_NATIVE_FILES)
     if harness_id == "claude":
