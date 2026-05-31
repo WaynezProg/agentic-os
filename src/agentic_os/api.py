@@ -68,7 +68,7 @@ SESSION_START_APPROVAL_TOOL = "session.start"
 _HEALTH_OUTPUT_MAX = 2048
 
 
-def _harness_contract_payload(agent: AgentDefinition, version: str) -> dict[str, Any]:
+def _require_contract_version(version: str) -> None:
     if version not in SUPPORTED_CONTRACT_VERSIONS:
         raise HTTPException(
             status_code=400,
@@ -77,6 +77,10 @@ def _harness_contract_payload(agent: AgentDefinition, version: str) -> dict[str,
                 "supported": list(SUPPORTED_CONTRACT_VERSIONS),
             },
         )
+
+
+def _harness_contract_payload(agent: AgentDefinition, version: str) -> dict[str, Any]:
+    _require_contract_version(version)
     if version == "v1":
         return contract_from_agent(agent).model_dump()
     return contract_from_agent_v2(agent).model_dump(mode="json")
@@ -252,6 +256,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.get("/harness-contracts")
     def list_harness_contracts(version: str = Query(default="v1")) -> dict[str, object]:
+        _require_contract_version(version)
         agents = registry.list_agents()
         contracts = [_harness_contract_payload(agent, version) for agent in agents]
         contracts.sort(key=lambda contract: contract["harness_id"])
@@ -261,6 +266,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def show_harness_contract(
         harness_id: str, version: str = Query(default="v1")
     ) -> dict[str, object]:
+        _require_contract_version(version)
         try:
             agent = registry.get(harness_id)
         except KeyError:
