@@ -92,17 +92,17 @@ def scan(harness: str, cwd: str | None = None, home_dir: Path | None = None) -> 
 
     # Scan user scope
     user_dir = base_home / scopes["user"]
-    records.extend(_scan_scope(harness, user_dir, "user", is_cwd_relative=False))
+    records.extend(_scan_scope(harness, user_dir, "user"))
 
     # Scan project scope
     project_rel = scopes["project"]
     project_dir = cwd_path / project_rel
-    records.extend(_scan_scope(harness, project_dir, "project", is_cwd_relative=True))
+    records.extend(_scan_scope(harness, project_dir, "project"))
 
     # Scan local scope
     local_rel = scopes["local"]
     local_dir = cwd_path / local_rel
-    records.extend(_scan_scope(harness, local_dir, "local", is_cwd_relative=True))
+    records.extend(_scan_scope(harness, local_dir, "local"))
 
     return records
 
@@ -206,15 +206,10 @@ def _scan_scope(
     harness: str,
     scope_dir: Path,
     scope_name: str,
-    is_cwd_relative: bool = False,
 ) -> list[SurfaceRecord]:
     records: list[SurfaceRecord] = []
 
-    # Determine base directory
-    if is_cwd_relative:
-        base = scope_dir
-    else:
-        base = scope_dir
+    base = scope_dir
 
     # Read settings.json / config file
     if harness in _JSON_SETTINGS_FILES:
