@@ -135,8 +135,11 @@ def harnesses_validate(api: str | None = _api_option()) -> None:
 
 
 @harness_contract_cmd.command("list")
-def harness_contracts_list(api: str | None = _api_option()) -> None:
-    data = _run_api_call(lambda: make_client(api).list_harness_contracts())
+def harness_contracts_list(
+    version: str = typer.Option("v1", "--version", help="Harness contract version."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(lambda: make_client(api).list_harness_contracts(version=version))
     for contract in data.get("contracts", []):
         typer.echo(
             f"{contract['harness_id']}\t{contract['contract_version']}\t{contract['required_env']}"
@@ -144,8 +147,14 @@ def harness_contracts_list(api: str | None = _api_option()) -> None:
 
 
 @harness_contract_cmd.command("show")
-def harness_contracts_show(harness_id: str, api: str | None = _api_option()) -> None:
-    _echo_json(_run_api_call(lambda: make_client(api).show_harness_contract(harness_id)))
+def harness_contracts_show(
+    harness_id: str,
+    version: str = typer.Option("v1", "--version", help="Harness contract version."),
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(
+        _run_api_call(lambda: make_client(api).show_harness_contract(harness_id, version=version))
+    )
 
 
 @profiles_cmd.command("list")
