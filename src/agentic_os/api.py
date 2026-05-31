@@ -43,7 +43,11 @@ from agentic_os.config_scope import (
     effective as config_effective,
     explain as config_explain,
 )
-from agentic_os.adapter_contract import contract_from_agent
+from agentic_os.adapter_contract import (
+    SUPPORTED_CONTRACT_VERSIONS,
+    contract_from_agent,
+    contract_from_agent_v2,
+)
 from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
@@ -62,6 +66,20 @@ from agentic_os.usage import UsageStore, usage_record_to_dict
 
 SESSION_START_APPROVAL_TOOL = "session.start"
 _HEALTH_OUTPUT_MAX = 2048
+
+
+def _harness_contract_payload(agent: AgentDefinition, version: str) -> dict[str, Any]:
+    if version not in SUPPORTED_CONTRACT_VERSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"unsupported contract version: {version}",
+                "supported": list(SUPPORTED_CONTRACT_VERSIONS),
+            },
+        )
+    if version == "v1":
+        return contract_from_agent(agent).model_dump()
+    return contract_from_agent_v2(agent).model_dump(mode="json")
 
 
 class SessionRunRequest(BaseModel):
@@ -233,14 +251,16 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/harness-contracts")
-    def list_harness_contracts() -> dict[str, object]:
+    def list_harness_contracts(version: str = Query(default="v1")) -> dict[str, object]:
         agents = registry.list_agents()
-        contracts = [contract_from_agent(agent).model_dump() for agent in agents]
+        contracts = [_harness_contract_payload(agent, version) for agent in agents]
         contracts.sort(key=lambda contract: contract["harness_id"])
         return {"contracts": contracts, "count": len(contracts)}
 
     @app.get("/harness-contracts/{harness_id}")
-    def show_harness_contract(harness_id: str) -> dict[str, object]:
+    def show_harness_contract(
+        harness_id: str, version: str = Query(default="v1")
+    ) -> dict[str, object]:
         try:
             agent = registry.get(harness_id)
         except KeyError:
@@ -251,7 +271,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     "supported": [agent.id for agent in registry.list_agents()],
                 },
             )
-        return contract_from_agent(agent).model_dump()
+        return _harness_contract_payload(agent, version)
 
     @app.get("/harnesses/{harness_id}/health")
     def harness_health(harness_id: str) -> dict[str, object]:

@@ -1929,6 +1929,54 @@ def test_harness_contracts_list_and_show(tmp_path: Path) -> None:
     assert shell.json()["harness_id"] == "shell"
 
 
+def test_harness_contracts_list_v2(tmp_path: Path) -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
+
+    response = client.get("/harness-contracts?version=v2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    contracts = {item["harness_id"]: item for item in payload["contracts"]}
+    assert all(item["contract_version"] == "v2" for item in payload["contracts"])
+    assert "cursor" in contracts
+    assert "shell" in contracts
+    cursor = contracts["cursor"]
+    assert cursor["launch"]["prompt_input_mode"] == "argv"
+    assert cursor["config"]["native_files"] == [
+        ".cursor/cli-config.json",
+        ".cursor/mcp.json",
+        ".cursor/hooks.json",
+    ]
+    assert cursor["policy"]["runtime_enforcement"] is False
+
+
+def test_harness_contracts_show_v2(tmp_path: Path) -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
+
+    response = client.get("/harness-contracts/openclaw?version=v2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["launch"]["output_mode"] == "json"
+    assert payload["usage"]["evidence_mode"] == "json"
+    assert payload["capability_matrix"]["json_output"] is True
+
+
+def test_harness_contracts_unsupported_version(tmp_path: Path) -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
+
+    response = client.get("/harness-contracts?version=v3")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "message": "unsupported contract version: v3",
+        "supported": ["v1", "v2"],
+    }
+
+
 def test_harness_contracts_show_unknown(tmp_path: Path) -> None:
     examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
     client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
