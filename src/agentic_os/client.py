@@ -278,11 +278,14 @@ class AgenticClient:
             params["event_type"] = event_type
         return self._get(f"/harnesses/{_validate_path_id(harness_id)}/activity", params=params)
 
-    def list_harness_contracts(self) -> dict[str, Any]:
-        return self._get("/harness-contracts")
+    def list_harness_contracts(self, version: str = "v1") -> dict[str, Any]:
+        return self._get("/harness-contracts", params={"version": version})
 
-    def show_harness_contract(self, harness_id: str) -> dict[str, Any]:
-        return self._get(f"/harness-contracts/{_validate_path_id(harness_id)}")
+    def show_harness_contract(self, harness_id: str, version: str = "v1") -> dict[str, Any]:
+        return self._get(
+            f"/harness-contracts/{_validate_path_id(harness_id)}",
+            params={"version": version},
+        )
 
     def list_profiles(self, cwd: str | None = None) -> dict[str, Any]:
         params: dict[str, object] = {}

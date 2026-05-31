@@ -34,22 +34,22 @@ class FakeClient:
         self.calls.append(("run_session", (agent_id, cwd, message), {"profile": profile}))
         return {"id": "s_1", "agent_id": agent_id, "cwd": cwd, "status": "succeeded"}
 
-    def list_harness_contracts(self) -> dict[str, object]:
-        self.calls.append(("list_harness_contracts", (), {}))
+    def list_harness_contracts(self, version: str = "v1") -> dict[str, object]:
+        self.calls.append(("list_harness_contracts", (), {"version": version}))
         return {
             "contracts": [
                 {
                     "harness_id": "shell",
-                    "contract_version": "v1",
+                    "contract_version": version,
                     "required_env": [],
                 }
             ],
             "count": 1,
         }
 
-    def show_harness_contract(self, harness_id: str) -> dict[str, object]:
-        self.calls.append(("show_harness_contract", (harness_id,), {}))
-        return {"harness_id": harness_id, "contract_version": "v1"}
+    def show_harness_contract(self, harness_id: str, version: str = "v1") -> dict[str, object]:
+        self.calls.append(("show_harness_contract", (harness_id,), {"version": version}))
+        return {"harness_id": harness_id, "contract_version": version}
 
     def list_profiles(self, cwd: str | None = None) -> dict[str, object]:
         self.calls.append(("list_profiles", (), {"cwd": cwd}))
@@ -1906,15 +1906,21 @@ def test_client_calls_harness_contract_endpoints(monkeypatch: Any) -> None:
     client = AgenticClient(base_url="http://example.com")
     responses: list[dict[str, object]] = [
         {"contracts": [], "count": 0},
-        {"harness_id": "shell", "contract_version": "v1"},
+        {"harness_id": "shell", "contract_version": "v2"},
     ]
+    calls: list[tuple[str, dict[str, object] | None]] = []
 
     def fake_get(path: str, params: dict[str, object] | None = None) -> dict[str, object]:
+        calls.append((path, params))
         return responses.pop(0)
 
     monkeypatch.setattr(client, "_get", fake_get)
-    assert client.list_harness_contracts()["contracts"] == []
-    assert client.show_harness_contract("shell")["harness_id"] == "shell"
+    assert client.list_harness_contracts(version="v2")["contracts"] == []
+    assert client.show_harness_contract("shell", version="v2")["harness_id"] == "shell"
+    assert calls == [
+        ("/harness-contracts", {"version": "v2"}),
+        ("/harness-contracts/shell", {"version": "v2"}),
+    ]
 
 
 def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
@@ -1922,11 +1928,17 @@ def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
     install_fake_client(monkeypatch, fake)
     runner = CliRunner()
 
-    list_result = runner.invoke(cli.app, ["harness-contracts", "list"])
+    list_result = runner.invoke(cli.app, ["harness-contracts", "list", "--version", "v2"])
     assert list_result.exit_code == 0
+    assert "v2" in list_result.output
 
-    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell"])
+    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell", "--version", "v2"])
     assert show_result.exit_code == 0
+    assert "v2" in show_result.output
+    assert fake.calls == [
+        ("list_harness_contracts", (), {"version": "v2"}),
+        ("show_harness_contract", ("shell",), {"version": "v2"}),
+    ]
 
 
 def test_run_command_passes_profile_flag(monkeypatch: Any) -> None:
