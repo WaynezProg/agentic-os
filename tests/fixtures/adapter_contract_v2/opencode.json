@@ -1,0 +1,107 @@
+{
+  "attach": {
+    "command_template": [
+      "opencode",
+      "attach"
+    ],
+    "identity_kind": "upstream_session_id",
+    "requires_discovered_identity": true,
+    "strategy": "command",
+    "supported": true
+  },
+  "capability_matrix": {
+    "attach": true,
+    "config_scopes": true,
+    "json_output": false,
+    "launch": true,
+    "mcp_scan": true,
+    "native_policy": false,
+    "resume": true,
+    "sandbox": false,
+    "skill_scan": true,
+    "usage_parse": true
+  },
+  "config": {
+    "file_kinds": [
+      "json"
+    ],
+    "native_files": [
+      ".opencode/config.json"
+    ],
+    "native_supported": true,
+    "primary_path": "~/.config/opencode",
+    "redacts_secrets": true,
+    "scopes": [
+      "user",
+      "project",
+      "local"
+    ]
+  },
+  "contract_version": "v2",
+  "error_modes": [
+    "not_found",
+    "timeout",
+    "auth_error",
+    "parse_error"
+  ],
+  "harness_id": "opencode",
+  "launch": {
+    "command_template": [
+      "opencode",
+      "run",
+      "{{message}}"
+    ],
+    "cwd_mode": "required",
+    "output_mode": "plain_text",
+    "prompt_input_mode": "argv",
+    "requires_workspace": true,
+    "supported": true
+  },
+  "log": {
+    "event_timeline": "stdout_stderr_only",
+    "paths": [
+      "~/.local/share/opencode/log"
+    ],
+    "stderr_contract": "text",
+    "stdout_contract": "text"
+  },
+  "policy": {
+    "launch_gate": true,
+    "native_policy": false,
+    "notes": "agentic-os currently gates launch and preflight warnings only.",
+    "preflight_config_warning": true,
+    "runtime_enforcement": false
+  },
+  "required_env": [],
+  "resume": {
+    "command_template": [
+      "opencode",
+      "attach"
+    ],
+    "identity_kind": "upstream_session_id",
+    "requires_discovered_identity": true,
+    "strategy": "command",
+    "supported": true
+  },
+  "surface": {
+    "command_scan": true,
+    "hook_scan": false,
+    "mcp_scan": true,
+    "native_config_scan": true,
+    "skill_scan": true,
+    "subagent_scan": true
+  },
+  "usage": {
+    "evidence_mode": "text_regex",
+    "fields": [
+      "input_tokens",
+      "output_tokens",
+      "total_tokens",
+      "cost_usd",
+      "currency",
+      "raw_evidence"
+    ],
+    "source": "opencode",
+    "supported": true
+  }
+}

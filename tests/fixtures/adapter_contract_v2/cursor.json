@@ -1,0 +1,115 @@
+{
+  "attach": {
+    "command_template": [
+      "cursor",
+      "agent",
+      "--resume"
+    ],
+    "identity_kind": "upstream_session_id",
+    "requires_discovered_identity": true,
+    "strategy": "command",
+    "supported": true
+  },
+  "capability_matrix": {
+    "attach": true,
+    "config_scopes": true,
+    "json_output": false,
+    "launch": true,
+    "mcp_scan": true,
+    "native_policy": false,
+    "resume": true,
+    "sandbox": false,
+    "skill_scan": true,
+    "usage_parse": true
+  },
+  "config": {
+    "file_kinds": [
+      "json"
+    ],
+    "native_files": [
+      ".cursor/cli-config.json",
+      ".cursor/mcp.json",
+      ".cursor/hooks.json"
+    ],
+    "native_supported": true,
+    "primary_path": "~/.cursor",
+    "redacts_secrets": true,
+    "scopes": [
+      "user",
+      "project",
+      "local"
+    ]
+  },
+  "contract_version": "v2",
+  "error_modes": [
+    "not_found",
+    "timeout",
+    "auth_error",
+    "parse_error"
+  ],
+  "harness_id": "cursor",
+  "launch": {
+    "command_template": [
+      "cursor",
+      "agent",
+      "--print",
+      "--trust",
+      "--output-format",
+      "text",
+      "{{message}}"
+    ],
+    "cwd_mode": "required",
+    "output_mode": "plain_text",
+    "prompt_input_mode": "argv",
+    "requires_workspace": true,
+    "supported": true
+  },
+  "log": {
+    "event_timeline": "stdout_stderr_only",
+    "paths": [
+      "~/.cursor/projects"
+    ],
+    "stderr_contract": "text",
+    "stdout_contract": "text"
+  },
+  "policy": {
+    "launch_gate": true,
+    "native_policy": false,
+    "notes": "agentic-os currently gates launch and preflight warnings only.",
+    "preflight_config_warning": true,
+    "runtime_enforcement": false
+  },
+  "required_env": [],
+  "resume": {
+    "command_template": [
+      "cursor",
+      "agent",
+      "--resume"
+    ],
+    "identity_kind": "upstream_session_id",
+    "requires_discovered_identity": true,
+    "strategy": "command",
+    "supported": true
+  },
+  "surface": {
+    "command_scan": true,
+    "hook_scan": true,
+    "mcp_scan": true,
+    "native_config_scan": true,
+    "skill_scan": true,
+    "subagent_scan": true
+  },
+  "usage": {
+    "evidence_mode": "text_regex",
+    "fields": [
+      "input_tokens",
+      "output_tokens",
+      "total_tokens",
+      "cost_usd",
+      "currency",
+      "raw_evidence"
+    ],
+    "source": "cursor",
+    "supported": true
+  }
+}

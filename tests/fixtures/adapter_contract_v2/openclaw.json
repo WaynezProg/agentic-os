@@ -1,0 +1,109 @@
+{
+  "attach": {
+    "command_template": [
+      "openclaw",
+      "attach"
+    ],
+    "identity_kind": "upstream_session_id",
+    "requires_discovered_identity": true,
+    "strategy": "command",
+    "supported": true
+  },
+  "capability_matrix": {
+    "attach": true,
+    "config_scopes": true,
+    "json_output": true,
+    "launch": true,
+    "mcp_scan": true,
+    "native_policy": false,
+    "resume": true,
+    "sandbox": false,
+    "skill_scan": true,
+    "usage_parse": true
+  },
+  "config": {
+    "file_kinds": [
+      "toml"
+    ],
+    "native_files": [
+      ".openclaw/config.toml"
+    ],
+    "native_supported": true,
+    "primary_path": "~/.openclaw",
+    "redacts_secrets": true,
+    "scopes": [
+      "user",
+      "project",
+      "local"
+    ]
+  },
+  "contract_version": "v2",
+  "error_modes": [
+    "not_found",
+    "timeout",
+    "auth_error",
+    "parse_error"
+  ],
+  "harness_id": "openclaw",
+  "launch": {
+    "command_template": [
+      "openclaw",
+      "agent",
+      "--message",
+      "{{message}}",
+      "--json"
+    ],
+    "cwd_mode": "required",
+    "output_mode": "json",
+    "prompt_input_mode": "argv",
+    "requires_workspace": true,
+    "supported": true
+  },
+  "log": {
+    "event_timeline": "stdout_stderr_only",
+    "paths": [
+      "~/.openclaw/logs"
+    ],
+    "stderr_contract": "text",
+    "stdout_contract": "text"
+  },
+  "policy": {
+    "launch_gate": true,
+    "native_policy": false,
+    "notes": "agentic-os currently gates launch and preflight warnings only.",
+    "preflight_config_warning": true,
+    "runtime_enforcement": false
+  },
+  "required_env": [],
+  "resume": {
+    "command_template": [
+      "openclaw",
+      "attach"
+    ],
+    "identity_kind": "upstream_session_id",
+    "requires_discovered_identity": true,
+    "strategy": "command",
+    "supported": true
+  },
+  "surface": {
+    "command_scan": true,
+    "hook_scan": false,
+    "mcp_scan": true,
+    "native_config_scan": true,
+    "skill_scan": true,
+    "subagent_scan": true
+  },
+  "usage": {
+    "evidence_mode": "json",
+    "fields": [
+      "input_tokens",
+      "output_tokens",
+      "total_tokens",
+      "cost_usd",
+      "currency",
+      "raw_evidence"
+    ],
+    "source": "openclaw",
+    "supported": true
+  }
+}
