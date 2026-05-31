@@ -145,6 +145,9 @@ def harness_contracts_list(
         if version == "v1"
         else lambda: client.list_harness_contracts(version=version)
     )
+    if version == "v2":
+        _echo_json(data)
+        return
     for contract in data.get("contracts", []):
         typer.echo(
             f"{contract['harness_id']}\t{contract['contract_version']}\t{contract['required_env']}"

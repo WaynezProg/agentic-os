@@ -1949,11 +1949,14 @@ def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
 
     list_result = runner.invoke(cli.app, ["harness-contracts", "list", "--version", "v2"])
     assert list_result.exit_code == 0
-    assert "v2" in list_result.output
+    list_payload = json.loads(list_result.output)
+    assert list_payload["contracts"][0]["contract_version"] == "v2"
+    assert list_payload["count"] == 1
 
     show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell", "--version", "v2"])
     assert show_result.exit_code == 0
-    assert "v2" in show_result.output
+    show_payload = json.loads(show_result.output)
+    assert show_payload["contract_version"] == "v2"
     assert fake.calls == [
         ("list_harness_contracts", (), {"version": "v2"}),
         ("show_harness_contract", ("shell",), {"version": "v2"}),
