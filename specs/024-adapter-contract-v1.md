@@ -21,3 +21,10 @@ Design: `docs/superpowers/specs/2026-05-30-024-026-debt-closure-design.md`
 uv run pytest tests/test_api.py -k harness_contract -q
 uv run agentctl harness-contracts list
 ```
+
+## v2 follow-up
+
+Adapter Contract v2 is additive and exposed only when callers request `version=v2` or
+`--version v2`. v1 remains the default compatibility response.
+
+Design: `docs/superpowers/specs/2026-05-31-adapter-contract-v2-design.md`
