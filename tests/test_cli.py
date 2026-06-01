@@ -39,7 +39,7 @@ class FakeClient:
         return {
             "contracts": [
                 {
-                    "harness_id": "shell",
+                    "harness_id": "cursor",
                     "contract_version": version,
                     "required_env": [],
                 }
@@ -1925,7 +1925,7 @@ def test_client_calls_harness_contract_endpoints(monkeypatch: Any) -> None:
     client = AgenticClient(base_url="http://example.com")
     responses: list[dict[str, object]] = [
         {"contracts": [], "count": 0},
-        {"harness_id": "shell", "contract_version": "v2"},
+        {"harness_id": "cursor", "contract_version": "v2"},
     ]
     calls: list[tuple[str, dict[str, object] | None]] = []
 
@@ -1935,10 +1935,10 @@ def test_client_calls_harness_contract_endpoints(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(client, "_get", fake_get)
     assert client.list_harness_contracts(version="v2")["contracts"] == []
-    assert client.show_harness_contract("shell", version="v2")["harness_id"] == "shell"
+    assert client.show_harness_contract("cursor", version="v2")["harness_id"] == "cursor"
     assert calls == [
         ("/harness-contracts", {"version": "v2"}),
-        ("/harness-contracts/shell", {"version": "v2"}),
+        ("/harness-contracts/cursor", {"version": "v2"}),
     ]
 
 
@@ -1953,13 +1953,13 @@ def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
     assert list_payload["contracts"][0]["contract_version"] == "v2"
     assert list_payload["count"] == 1
 
-    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell", "--version", "v2"])
+    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "cursor", "--version", "v2"])
     assert show_result.exit_code == 0
     show_payload = json.loads(show_result.output)
     assert show_payload["contract_version"] == "v2"
     assert fake.calls == [
         ("list_harness_contracts", (), {"version": "v2"}),
-        ("show_harness_contract", ("shell",), {"version": "v2"}),
+        ("show_harness_contract", ("cursor",), {"version": "v2"}),
     ]
 
 

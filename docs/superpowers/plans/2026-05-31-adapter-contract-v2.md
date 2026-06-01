@@ -337,9 +337,13 @@ def _native_config_files(harness_id: str) -> list[str]:
     if harness_id == "codex":
         return [".codex/config.toml"]
     if harness_id == "opencode":
-        return [".opencode/config.toml"]
+        return [
+            ".config/opencode/config.json",
+            ".opencode/config.json",
+            ".opencode/local/config.json",
+        ]
     if harness_id == "qwen":
-        return [".qwen/config.toml"]
+        return [".qwen/settings.json"]
     if harness_id == "openclaw":
         return [".openclaw/config.toml"]
     if harness_id == "hermes":
@@ -499,8 +503,8 @@ def test_harness_contracts_list_v2(tmp_path: Path) -> None:
     contracts = payload["contracts"]
     harness_ids = {item["harness_id"] for item in contracts}
     assert "cursor" in harness_ids
-    assert "shell" in harness_ids
-    assert payload["count"] >= 8
+    assert "shell" not in harness_ids
+    assert payload["count"] == 7
     assert all(item["contract_version"] == "v2" for item in contracts)
     cursor = next(item for item in contracts if item["harness_id"] == "cursor")
     assert cursor["launch"]["prompt_input_mode"] == "argv"
@@ -642,7 +646,7 @@ Update `FakeClient` in `tests/test_cli.py`:
         return {
             "contracts": [
                 {
-                    "harness_id": "shell",
+                    "harness_id": "cursor",
                     "contract_version": version,
                     "required_env": [],
                 }
@@ -663,7 +667,7 @@ def test_client_calls_harness_contract_endpoints(monkeypatch: Any) -> None:
     calls: list[tuple[str, dict[str, object] | None]] = []
     responses: list[dict[str, object]] = [
         {"contracts": [], "count": 0},
-        {"harness_id": "shell", "contract_version": "v2"},
+        {"harness_id": "cursor", "contract_version": "v2"},
     ]
 
     def fake_get(path: str, params: dict[str, object] | None = None) -> dict[str, object]:
@@ -672,10 +676,10 @@ def test_client_calls_harness_contract_endpoints(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(client, "_get", fake_get)
     assert client.list_harness_contracts(version="v2")["contracts"] == []
-    assert client.show_harness_contract("shell", version="v2")["harness_id"] == "shell"
+    assert client.show_harness_contract("cursor", version="v2")["harness_id"] == "cursor"
     assert calls == [
         ("/harness-contracts", {"version": "v2"}),
-        ("/harness-contracts/shell", {"version": "v2"}),
+        ("/harness-contracts/cursor", {"version": "v2"}),
     ]
 ```
 
@@ -689,14 +693,16 @@ def test_cli_harness_contract_commands(monkeypatch: Any) -> None:
 
     list_result = runner.invoke(cli.app, ["harness-contracts", "list", "--version", "v2"])
     assert list_result.exit_code == 0
-    assert "shell\tv2" in list_result.output
+    list_payload = json.loads(list_result.output)
+    assert list_payload["contracts"][0]["contract_version"] == "v2"
 
-    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "shell", "--version", "v2"])
+    show_result = runner.invoke(cli.app, ["harness-contracts", "show", "cursor", "--version", "v2"])
     assert show_result.exit_code == 0
-    assert '"contract_version": "v2"' in show_result.output
+    show_payload = json.loads(show_result.output)
+    assert show_payload["contract_version"] == "v2"
     assert fake.calls[-2:] == [
         ("list_harness_contracts", (), {"version": "v2"}),
-        ("show_harness_contract", ("shell",), {"version": "v2"}),
+        ("show_harness_contract", ("cursor",), {"version": "v2"}),
     ]
 ```
 
@@ -848,8 +854,7 @@ Expected: branch is ahead of origin by the new plan/spec/implementation commits,
 - The plan implements every locked scope item in `docs/superpowers/specs/2026-05-31-adapter-contract-v2-design.md`.
 - v1 remains default for API and CLI.
 - v2 must be explicit through `version=v2` or `--version v2`.
-- `shell` can appear in API v2 list because registry still lists it, but fixture coverage excludes it from the semantic matrix.
+- `shell` is excluded from API v2 list/show because v2 represents the semantic harness matrix.
 - Golden fixtures cover exactly the seven semantic harnesses.
 - Runtime policy enforcement remains false and documented.
 - No SessionRecord schema or supervisor lifecycle changes are included.
-

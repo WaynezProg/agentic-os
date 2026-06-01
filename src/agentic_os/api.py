@@ -44,6 +44,7 @@ from agentic_os.config_scope import (
     explain as config_explain,
 )
 from agentic_os.adapter_contract import (
+    SEMANTIC_HARNESS_IDS,
     SUPPORTED_CONTRACT_VERSIONS,
     contract_from_agent,
     contract_from_agent_v2,
@@ -75,6 +76,17 @@ def _require_contract_version(version: str) -> None:
             detail={
                 "message": f"unsupported contract version: {version}",
                 "supported": list(SUPPORTED_CONTRACT_VERSIONS),
+            },
+        )
+
+
+def _require_v2_semantic_harness(harness_id: str) -> None:
+    if harness_id not in SEMANTIC_HARNESS_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"unsupported harness for contract v2: {harness_id}",
+                "supported": list(SEMANTIC_HARNESS_IDS),
             },
         )
 
@@ -258,6 +270,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def list_harness_contracts(version: str = Query(default="v1")) -> dict[str, object]:
         _require_contract_version(version)
         agents = registry.list_agents()
+        if version == "v2":
+            agents = [agent for agent in agents if agent.id in SEMANTIC_HARNESS_IDS]
         contracts = [_harness_contract_payload(agent, version) for agent in agents]
         contracts.sort(key=lambda contract: contract["harness_id"])
         return {"contracts": contracts, "count": len(contracts)}
@@ -267,6 +281,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         harness_id: str, version: str = Query(default="v1")
     ) -> dict[str, object]:
         _require_contract_version(version)
+        if version == "v2":
+            _require_v2_semantic_harness(harness_id)
         try:
             agent = registry.get(harness_id)
         except KeyError:

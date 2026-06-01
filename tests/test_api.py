@@ -1940,7 +1940,8 @@ def test_harness_contracts_list_v2(tmp_path: Path) -> None:
     contracts = {item["harness_id"]: item for item in payload["contracts"]}
     assert all(item["contract_version"] == "v2" for item in payload["contracts"])
     assert "cursor" in contracts
-    assert "shell" in contracts
+    assert "shell" not in contracts
+    assert payload["count"] == 7
     cursor = contracts["cursor"]
     assert cursor["launch"]["prompt_input_mode"] == "argv"
     assert cursor["config"]["native_files"] == [
@@ -1989,6 +1990,19 @@ def test_harness_contracts_show_unsupported_version_before_unknown_harness(
     assert response.json()["detail"] == {
         "message": "unsupported contract version: v3",
         "supported": ["v1", "v2"],
+    }
+
+
+def test_harness_contracts_show_shell_v2_is_unsupported(tmp_path: Path) -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples" / "agents.toml"
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=examples))
+
+    response = client.get("/harness-contracts/shell?version=v2")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "message": "unsupported harness for contract v2: shell",
+        "supported": ["claude", "codex", "cursor", "hermes", "openclaw", "opencode", "qwen"],
     }
 
 

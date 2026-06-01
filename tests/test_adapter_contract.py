@@ -170,7 +170,15 @@ def test_contract_v2_unknown_config_path_is_not_scannable() -> None:
         ),
         ("hermes", [".hermes/config.toml"], ["toml"]),
         ("openclaw", [".openclaw/config.toml"], ["toml"]),
-        ("opencode", [".opencode/config.json"], ["json"]),
+        (
+            "opencode",
+            [
+                ".config/opencode/config.json",
+                ".opencode/config.json",
+                ".opencode/local/config.json",
+            ],
+            ["json"],
+        ),
         ("qwen", [".qwen/settings.json"], ["json"]),
     ],
 )
