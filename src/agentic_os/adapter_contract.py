@@ -278,7 +278,11 @@ def _native_config_files(harness_id: str, native_supported: bool) -> list[str]:
     if harness_id == "codex":
         return [".codex/config.toml"]
     if harness_id == "opencode":
-        return [".opencode/config.json"]
+        return [
+            ".config/opencode/config.json",
+            ".opencode/config.json",
+            ".opencode/local/config.json",
+        ]
     if harness_id == "qwen":
         return [".qwen/settings.json"]
     if harness_id == "openclaw":

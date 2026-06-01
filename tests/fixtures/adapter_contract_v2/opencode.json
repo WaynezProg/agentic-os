@@ -26,7 +26,9 @@
       "json"
     ],
     "native_files": [
-      ".opencode/config.json"
+      ".config/opencode/config.json",
+      ".opencode/config.json",
+      ".opencode/local/config.json"
     ],
     "native_supported": true,
     "primary_path": "~/.config/opencode",

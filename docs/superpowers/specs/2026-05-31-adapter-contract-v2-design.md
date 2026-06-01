@@ -65,7 +65,7 @@ agentctl harness-contracts show claude --version v2
 Unsupported versions return `400` with:
 
 ```json
-{"detail":"unsupported contract version: v3","supported":["v1","v2"]}
+{"detail":{"message":"unsupported contract version: v3","supported":["v1","v2"]}}
 ```
 
 ## Contract Shape
@@ -274,6 +274,9 @@ def show_harness_contract(harness_id: str, version: str = Query(default="v1")) -
     ...
 ```
 
+For `version=v2`, API list/show only expose the seven semantic harnesses; `shell` remains v1-only
+smoke coverage.
+
 CLI:
 
 - `agentctl harness-contracts list --version v2` prints `{"contracts":[...],"count":...}`.
@@ -306,4 +309,3 @@ rtk uv run ruff format --check .
    artifacts manifest, and resume strategy.
 3. Runtime Policy Evolution: preflight policy first, config diff warnings second, runtime proxy or
    native enforcer only after harness-specific evidence exists.
-
