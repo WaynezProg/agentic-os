@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from agentic_os.adapter_contract import SEMANTIC_HARNESS_IDS
-from agentic_os.control_plane import _redact_value
+from agentic_os.control_plane import _SECRET_FLAGS, _redact_value
 from agentic_os.models import SessionRecord
 
 EvidenceSeverity = Literal["debug", "info", "warning", "error"]
@@ -76,7 +76,7 @@ class EvidenceStore:
             "harness_id": session.agent_id,
             "status": session.status.value,
             "cwd": session.cwd,
-            "argv": list(session.argv),
+            "argv": _redact_argv(session.argv),
             "required_env": sorted(session.env.keys()),
             "pid": session.pid,
             "pgid": session.pgid,
@@ -113,7 +113,7 @@ class EvidenceStore:
             "harness_id": session.agent_id,
             "event_type": event_type,
             "severity": severity,
-            "message": message,
+            "message": str(_redact_value(message)),
             "metadata": _redact_metadata(metadata or {}),
         }
         with paths.events.open("a", encoding="utf-8") as handle:
@@ -265,7 +265,31 @@ def _event_from_raw(raw: dict[str, Any], index: int) -> EvidenceEvent | None:
 
 
 def _redact_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-    return {str(key): _redact_value(value, str(key)) for key, value in metadata.items()}
+    return {str(key): _redact_evidence_value(value, str(key)) for key, value in metadata.items()}
+
+
+def _redact_evidence_value(value: Any, key: str | None = None) -> Any:
+    if isinstance(value, list):
+        return _redact_value(_redact_argv(value), key)
+    if isinstance(value, dict):
+        return _redact_value(_redact_metadata(value), key)
+    return _redact_value(value, key)
+
+
+def _redact_argv(values: list[Any]) -> list[Any]:
+    redacted: list[Any] = []
+    redact_next = False
+    for value in values:
+        if redact_next:
+            redacted.append("[REDACTED]")
+            redact_next = False
+            continue
+        if isinstance(value, str) and value.lower() in _SECRET_FLAGS:
+            redacted.append(value)
+            redact_next = True
+            continue
+        redacted.append(_redact_evidence_value(value))
+    return redacted
 
 
 def _working_tree_snapshot(cwd: Path) -> dict[str, Any]:

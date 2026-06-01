@@ -8,7 +8,7 @@ from agentic_os.models import SessionCreate
 from agentic_os.storage import Store
 
 
-def make_session(tmp_path: Path, *, agent_id: str = "codex"):
+def make_session(tmp_path: Path, *, agent_id: str = "codex", argv: list[str] | None = None):
     store = Store(tmp_path / "agentic-os.db")
     store.init()
     session_dir = tmp_path / "sessions" / "s_manual"
@@ -16,7 +16,7 @@ def make_session(tmp_path: Path, *, agent_id: str = "codex"):
         SessionCreate(
             agent_id=agent_id,
             cwd=str(tmp_path),
-            argv=["/bin/sh", "-lc", "printf OK"],
+            argv=argv or ["/bin/sh", "-lc", "printf OK"],
             env={"SECRET_TOKEN": "hidden", "VISIBLE_NAME": "shown"},
             artifact_dir=str(session_dir / "artifacts"),
             stdout_log=str(session_dir / "stdout.jsonl"),
@@ -65,6 +65,31 @@ def test_evidence_metadata_redacts_env_values_and_records_paths(tmp_path: Path) 
     assert payload["evidence_paths"]["artifact_manifest"].endswith("/artifacts/manifest.json")
 
 
+def test_evidence_metadata_redacts_split_argv_and_key_value_secrets(
+    tmp_path: Path,
+) -> None:
+    session = make_session(
+        tmp_path,
+        argv=["codex", "exec", "--api-key", "sk-test-secret", "api_key=SECRET_QS"],
+    )
+    evidence = EvidenceStore(state_dir=tmp_path)
+
+    payload = evidence.write_metadata(session)
+
+    metadata_text = (Path(session.stdout_log).parent / "metadata.json").read_text(encoding="utf-8")
+    assert payload["argv"] == [
+        "codex",
+        "exec",
+        "--api-key",
+        "[REDACTED]",
+        "api_key=[REDACTED]",
+    ]
+    assert "sk-test-secret" not in metadata_text
+    assert "SECRET_QS" not in metadata_text
+    assert "sk-test-secret" not in json.dumps(payload)
+    assert "SECRET_QS" not in json.dumps(payload)
+
+
 def test_evidence_metadata_uses_v1_for_non_semantic_harness(tmp_path: Path) -> None:
     session = make_session(tmp_path, agent_id="shell")
     evidence = EvidenceStore(state_dir=tmp_path)
@@ -88,6 +113,35 @@ def test_evidence_events_append_and_read_with_truncation(tmp_path: Path) -> None
     assert result.events[0].severity == "info"
     assert result.events[0].metadata == {"argv": session.argv}
     assert result.events[0].index == 1
+
+
+def test_evidence_event_message_is_redacted(tmp_path: Path) -> None:
+    session = make_session(tmp_path)
+    evidence = EvidenceStore(state_dir=tmp_path)
+
+    evidence.append_event(session, "auth_failed", "token=SECRET_MESSAGE")
+
+    event_text = (Path(session.stdout_log).parent / "events.jsonl").read_text(encoding="utf-8")
+    result = evidence.read_events(session)
+    assert "SECRET_MESSAGE" not in event_text
+    assert result.events[0].message == "token=[REDACTED]"
+
+
+def test_evidence_event_metadata_redacts_split_argv_secrets(tmp_path: Path) -> None:
+    session = make_session(tmp_path)
+    evidence = EvidenceStore(state_dir=tmp_path)
+
+    evidence.append_event(
+        session,
+        "run_accepted",
+        "run accepted",
+        {"argv": ["--api-key", "sk-test-secret"]},
+    )
+
+    event_text = (Path(session.stdout_log).parent / "events.jsonl").read_text(encoding="utf-8")
+    result = evidence.read_events(session)
+    assert "sk-test-secret" not in event_text
+    assert result.events[0].metadata == {"argv": ["--api-key", "[REDACTED]"]}
 
 
 def test_evidence_event_reader_skips_malformed_jsonl(tmp_path: Path) -> None:
