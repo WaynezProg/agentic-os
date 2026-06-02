@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from agentic_os.adapter_contract import SEMANTIC_HARNESS_IDS
 from agentic_os.control_plane import _SECRET_FLAGS, _redact_value
+from agentic_os.jsonio import atomic_write_json
 from agentic_os.models import SessionRecord
 
 EvidenceSeverity = Literal["debug", "info", "warning", "error"]
@@ -236,13 +237,7 @@ class EvidenceStore:
         return str(resolved)
 
     def _write_json(self, path: Path, payload: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_name(f".{path.name}.tmp")
-        tmp_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        tmp_path.replace(path)
+        atomic_write_json(path, payload)
 
 
 def _event_from_raw(raw: dict[str, Any], index: int) -> EvidenceEvent | None:

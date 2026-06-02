@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from agentic_os.jsonio import atomic_write_json
 from agentic_os.models import AttachStatus, EventRecord, SessionCreate, SessionRecord, SessionStatus
 
 
@@ -361,12 +362,7 @@ class Store:
         payload = session.model_dump(mode="json")
         payload["session_dir"] = str(path.parent)
         payload.pop("env", None)
-        tmp_path = path.with_name(".session.json.tmp")
-        tmp_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        tmp_path.replace(path)
+        atomic_write_json(path, payload)
 
     def _set_status(self, session_id: str, status: SessionStatus) -> SessionRecord:
         return self._transition_session(session_id, status)
