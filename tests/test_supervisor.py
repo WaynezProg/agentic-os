@@ -13,6 +13,7 @@ from agentic_os.logs import JsonlLogStore
 from agentic_os.models import SessionCreate, SessionRecord, SessionStatus
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
+from agentic_os.usage import UsageStore
 
 
 def make_supervisor(tmp_path: Path) -> ProcessSupervisor:
@@ -59,6 +60,39 @@ def wait_until_file_exists(path: Path, timeout_seconds: float = 2.0) -> None:
             return
         time.sleep(0.02)
     raise AssertionError(f"{path} was not created")
+
+
+def read_evidence_events(session: SessionRecord) -> list[dict[str, object]]:
+    events_path = Path(session.stdout_log).parent / "events.jsonl"
+    return [
+        json.loads(line)
+        for line in events_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def read_evidence_metadata(session: SessionRecord) -> dict[str, object]:
+    metadata_path = Path(session.stdout_log).parent / "metadata.json"
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
+
+
+def wait_until_evidence_event(
+    supervisor: ProcessSupervisor,
+    session_id: str,
+    event_type: str,
+    timeout_seconds: float = 2.0,
+) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        session = supervisor.store.get_session(session_id)
+        try:
+            events = read_evidence_events(session)
+        except FileNotFoundError:
+            events = []
+        if any(event["event_type"] == event_type for event in events):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"evidence event {event_type} was not recorded")
 
 
 def wait_until_session_status(
@@ -328,6 +362,144 @@ def test_supervisor_writes_session_json_after_terminal_state(tmp_path: Path) -> 
     assert payload["stderr_log"] == finished.stderr_log
     assert payload["session_dir"] == str(session_json.parent)
     assert "env" not in payload
+
+
+def test_supervisor_writes_evidence_bundle_for_successful_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+    usage_store = UsageStore(tmp_path / "agentic-os.db")
+    usage_store.init()
+    supervisor = ProcessSupervisor(
+        store=store,
+        logs=JsonlLogStore(),
+        state_dir=tmp_path,
+        usage_store=usage_store,
+    )
+
+    def capture_upstream_session(
+        store: object,
+        session_id: str,
+        *,
+        has_attach_command: bool = False,
+    ) -> None:
+        assert has_attach_command is False
+        if isinstance(store, Store):
+            store.update_session_attach(
+                session_id,
+                external_session_id="upstream-42",
+                attachable=True,
+                attach_status="available",
+            )
+
+    monkeypatch.setattr(
+        "agentic_os.supervisor.capture_external_session_after_run",
+        capture_upstream_session,
+    )
+    usage_line = json.dumps(
+        {
+            "provider": "openai",
+            "model": "gpt-5",
+            "usage": {"input_tokens": 2, "output_tokens": 3},
+            "cost": {"usd": 0.0005},
+        }
+    )
+
+    session = supervisor.start(
+        agent_id="openclaw",
+        cwd=str(tmp_path),
+        argv=[sys.executable, "-c", f"print({usage_line!r})"],
+        env={"SECRET_TOKEN": "hidden"},
+        resolved_profile="default",
+        resolved_provider="openai",
+        resolved_model="gpt-5",
+    )
+    wait_until_done(supervisor, session.id)
+    wait_until_evidence_event(supervisor, session.id, "usage_reported")
+
+    finished = supervisor.store.get_session(session.id)
+    session_dir = Path(finished.stdout_log).parent
+    metadata = read_evidence_metadata(finished)
+    event_types = [event["event_type"] for event in read_evidence_events(finished)]
+
+    assert (session_dir / "metadata.json").exists()
+    assert (session_dir / "events.jsonl").exists()
+    assert (Path(finished.artifact_dir) / "manifest.json").exists()
+    assert metadata["status"] == "succeeded"
+    assert metadata["adapter_contract_version"] == "v2"
+    assert metadata["required_env"] == ["SECRET_TOKEN"]
+    assert metadata["resolved_provider"] == "openai"
+    assert metadata["resolved_model"] == "gpt-5"
+    assert metadata["upstream_session_id"] == "upstream-42"
+    assert "hidden" not in json.dumps(metadata)
+    assert "run_accepted" in event_types
+    assert "launch_started" in event_types
+    assert "process_started" in event_types
+    assert "process_exited" in event_types
+    assert "upstream_session_discovered" in event_types
+    assert "usage_reported" in event_types
+
+
+def test_supervisor_writes_evidence_for_rejected_run(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+
+    session = supervisor.start_rejected(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=["/bin/sh", "-lc", "printf rejected"],
+        env={"TOKEN": "hidden"},
+    )
+
+    finished = supervisor.store.get_session(session.id)
+    metadata = read_evidence_metadata(finished)
+    event_types = [event["event_type"] for event in read_evidence_events(finished)]
+
+    assert finished.status == SessionStatus.FAILED
+    assert metadata["status"] == "failed"
+    assert metadata["adapter_contract_version"] == "v1"
+    assert "hidden" not in json.dumps(metadata)
+    assert "run_accepted" in event_types
+    assert "launch_rejected" in event_types
+
+
+def test_supervisor_writes_evidence_for_launch_failure(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+
+    session = supervisor.start(agent_id="shell", cwd=str(tmp_path), argv=[])
+    finished = supervisor.store.get_session(session.id)
+    event_types = [event["event_type"] for event in read_evidence_events(finished)]
+    metadata = read_evidence_metadata(finished)
+
+    assert finished.status == SessionStatus.FAILED
+    assert "launch_failed" in event_types
+    assert metadata["status"] == "failed"
+    assert "empty argv" in Path(finished.stderr_log).read_text(encoding="utf-8")
+
+
+def test_supervisor_writes_evidence_for_stopped_run(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    ready_path = tmp_path / "child-ready"
+    session = supervisor.start(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=child_ignores_sigterm_argv(ready_path),
+    )
+    wait_until_file_exists(ready_path)
+    running = supervisor.store.get_session(session.id)
+
+    try:
+        stopped = supervisor.stop(session.id, timeout_seconds=0.1)
+        event_types = [event["event_type"] for event in read_evidence_events(stopped)]
+        metadata = read_evidence_metadata(stopped)
+
+        assert stopped.status == SessionStatus.STOPPED
+        assert "run_stopping" in event_types
+        assert "run_stopped" in event_types
+        assert metadata["status"] == "stopped"
+    finally:
+        cleanup_process_group(running.pgid, running.pid)
 
 
 def test_supervisor_retries_session_with_same_command(tmp_path: Path) -> None:

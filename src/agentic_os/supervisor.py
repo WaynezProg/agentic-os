@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TextIO
 
 from agentic_os.attach import capture_external_session_after_run
+from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.models import SessionCreate, SessionRecord, SessionStatus
 from agentic_os.registry import Registry
@@ -44,6 +45,7 @@ class ProcessSupervisor:
         self.state_dir = state_dir
         self.registry = registry
         self.usage_store = usage_store
+        self.evidence = EvidenceStore(state_dir)
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._reader_threads: dict[str, list[threading.Thread]] = {}
         self._lock = threading.Lock()
@@ -82,7 +84,23 @@ class ProcessSupervisor:
         session = self.store.get_session(session.id)
         Path(session.stdout_log).touch()
         Path(session.stderr_log).touch()
-        return self.store.mark_failed(session.id)
+        self._ensure_evidence(session)
+        self._append_evidence_event(
+            session,
+            "run_accepted",
+            "run accepted by supervisor",
+            {"status": session.status.value},
+        )
+        self._append_evidence_event(
+            session,
+            "launch_rejected",
+            "run rejected before process launch",
+            {"status": SessionStatus.FAILED.value},
+            severity="warning",
+        )
+        failed = self.store.mark_failed(session.id)
+        self._rewrite_evidence_metadata(failed)
+        return failed
 
     def start(
         self,
@@ -118,6 +136,19 @@ class ProcessSupervisor:
         session = self.store.get_session(session.id)
         Path(session.stdout_log).touch()
         Path(session.stderr_log).touch()
+        self._ensure_evidence(session)
+        self._append_evidence_event(
+            session,
+            "run_accepted",
+            "run accepted by supervisor",
+            {"status": session.status.value},
+        )
+        self._append_evidence_event(
+            session,
+            "launch_started",
+            "process launch started",
+            {"cwd": cwd, "argv": argv},
+        )
 
         try:
             _validate_argv(argv)
@@ -134,7 +165,16 @@ class ProcessSupervisor:
         except (OSError, LaunchFailure) as exc:
             self.store.record_event(session.id, "launch_failed", str(exc), {"argv": argv})
             self.logs.append(Path(session.stderr_log), session.id, "stderr", str(exc))
-            return self.store.mark_failed(session.id)
+            self._append_evidence_event(
+                session,
+                "launch_failed",
+                str(exc),
+                {"argv": argv},
+                severity="error",
+            )
+            failed = self.store.mark_failed(session.id)
+            self._rewrite_evidence_metadata(failed)
+            return failed
 
         # start_new_session=True makes the child the leader of its own process group.
         # Using pid avoids a race where a very short command exits before os.getpgid().
@@ -142,6 +182,13 @@ class ProcessSupervisor:
         with self._lock:
             self._processes[session.id] = process
         session = self.store.mark_running(session.id, pid=process.pid, pgid=pgid)
+        self._append_evidence_event(
+            session,
+            "process_started",
+            "process started",
+            {"pid": session.pid, "pgid": session.pgid},
+        )
+        self._rewrite_evidence_metadata(session)
 
         reader_threads = [
             threading.Thread(
@@ -174,6 +221,13 @@ class ProcessSupervisor:
             session = current
         else:
             session = self.store.mark_stopping(session_id)
+        self._append_evidence_event(
+            session,
+            "run_stopping",
+            "stop requested",
+            {"pid": session.pid, "pgid": session.pgid},
+        )
+        self._rewrite_evidence_metadata(session)
 
         with self._lock:
             process = self._processes.get(session_id)
@@ -271,9 +325,23 @@ class ProcessSupervisor:
                 self._wait_until_process_group_gone(current.pgid, timeout_seconds=None)
                 current = self.store.get_session(session_id)
                 if current.status == SessionStatus.RUNNING:
-                    self.store.mark_finished(session_id, exit_code)
+                    current = self.store.mark_finished(session_id, exit_code)
             else:
-                self.store.mark_finished(session_id, exit_code)
+                current = self.store.mark_finished(session_id, exit_code)
+
+        current = self.store.get_session(session_id)
+        self._append_evidence_event(
+            current,
+            "process_exited",
+            "process exited",
+            {
+                "pid": process.pid,
+                "pgid": current.pgid,
+                "exit_code": exit_code,
+                "status": current.status.value,
+            },
+        )
+        self._rewrite_evidence_metadata(current)
 
         self._cleanup_process_tracking(session_id)
         has_attach_command = False
@@ -287,14 +355,49 @@ class ProcessSupervisor:
             session_id,
             has_attach_command=has_attach_command,
         )
+        attached = self.store.get_session(session_id)
+        if (
+            attached.external_session_id
+            and attached.external_session_id != current.external_session_id
+        ):
+            self._append_evidence_event(
+                attached,
+                "upstream_session_discovered",
+                "upstream session id discovered",
+                {
+                    "upstream_session_id": attached.external_session_id,
+                    "attach_status": attached.attach_status,
+                },
+            )
+            self._rewrite_evidence_metadata(attached)
         try:
-            self._collect_usage_for_session(session_id)
+            usage = self._collect_usage_for_session(session_id)
         except Exception as exc:  # noqa: BLE001
             log.warning("failed to collect usage for %s: %s", session_id, exc)
+        else:
+            if usage is not None:
+                current = self.store.get_session(session_id)
+                self._append_evidence_event(
+                    current,
+                    "usage_reported",
+                    "usage reported",
+                    {
+                        "provider": usage.provider,
+                        "model": usage.model,
+                        "run_profile": usage.run_profile,
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "cost_usd": usage.cost_usd,
+                        "currency": usage.currency,
+                        "source": usage.source,
+                    },
+                )
+                self._rewrite_evidence_metadata(current)
 
-    def _collect_usage_for_session(self, session_id: str) -> None:
+    def _collect_usage_for_session(self, session_id: str) -> UsageRecord | None:
         if self.usage_store is None:
-            return
+            return None
         session = self.store.get_session(session_id)
         lines = parse_logs_for_usage(
             [Path(session.stdout_log), Path(session.stderr_log)],
@@ -323,6 +426,53 @@ class ProcessSupervisor:
             raw_evidence=usage.raw_evidence,
         )
         self.usage_store.upsert(usage)
+        return usage
+
+    def _ensure_evidence(self, session: SessionRecord) -> None:
+        try:
+            self.evidence.ensure_bundle(session)
+            self.evidence.write_metadata(session)
+        except Exception as exc:  # noqa: BLE001
+            self._record_evidence_write_failed(session.id, "ensure_bundle", exc)
+
+    def _append_evidence_event(
+        self,
+        session: SessionRecord,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object] | None = None,
+        *,
+        severity: EvidenceSeverity = "info",
+    ) -> None:
+        try:
+            self.evidence.append_event(
+                session,
+                event_type,
+                message,
+                metadata or {},
+                severity=severity,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._record_evidence_write_failed(session.id, f"event:{event_type}", exc)
+
+    def _rewrite_evidence_metadata(self, session: SessionRecord) -> None:
+        try:
+            self.evidence.write_metadata(session)
+        except Exception as exc:  # noqa: BLE001
+            self._record_evidence_write_failed(session.id, "write_metadata", exc)
+
+    def _record_evidence_write_failed(
+        self,
+        session_id: str,
+        phase: str,
+        exc: Exception,
+    ) -> None:
+        self.store.record_event(
+            session_id,
+            "evidence_write_failed",
+            str(exc),
+            {"phase": phase},
+        )
 
     def _cleanup_process_tracking(self, session_id: str) -> None:
         with self._lock:
@@ -331,12 +481,20 @@ class ProcessSupervisor:
 
     def _mark_stopped_once(self, session_id: str) -> SessionRecord:
         try:
-            return self.store.mark_stopped(session_id)
+            stopped = self.store.mark_stopped(session_id)
         except ValueError:
             current = self.store.get_session(session_id)
             if current.status == SessionStatus.STOPPED:
                 return current
             raise
+        self._append_evidence_event(
+            stopped,
+            "run_stopped",
+            "run stopped",
+            {"pid": stopped.pid, "pgid": stopped.pgid},
+        )
+        self._rewrite_evidence_metadata(stopped)
+        return stopped
 
     def _mark_stop_failed(
         self,
