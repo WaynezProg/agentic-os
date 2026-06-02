@@ -502,6 +502,35 @@ def test_supervisor_writes_evidence_for_stopped_run(tmp_path: Path) -> None:
         cleanup_process_group(running.pgid, running.pid)
 
 
+def test_supervisor_evidence_write_failure_is_non_fatal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supervisor = make_supervisor(tmp_path)
+
+    def fail_bundle(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("disk denied")
+
+    monkeypatch.setattr(supervisor.evidence, "ensure_bundle", fail_bundle)
+
+    session = supervisor.start_rejected(
+        agent_id="shell",
+        cwd=str(tmp_path),
+        argv=["/bin/sh", "-lc", "printf rejected"],
+        env={},
+    )
+
+    assert session.status == SessionStatus.FAILED
+    events = supervisor.store.list_events(session.id)
+    failure_events = [event for event in events if event.event_type == "evidence_write_failed"]
+    assert failure_events
+    assert {event.metadata["phase"] for event in failure_events} >= {
+        "ensure_bundle",
+        "event:run_accepted",
+        "event:launch_rejected",
+    }
+
+
 def test_supervisor_retries_session_with_same_command(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
 
