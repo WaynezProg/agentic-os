@@ -1070,20 +1070,29 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions/{session_id}/memory/summary")
     def create_session_memory_summary(session_id: str) -> dict[str, Any]:
-        return _asdict(_build_and_store_summary(session_id))
+        return _with_memory_boundary(
+            _asdict(_build_and_store_summary(session_id)),
+            "summary_pointer",
+        )
 
     @app.get("/sessions/{session_id}/memory/summary")
     def show_session_memory_summary(session_id: str) -> dict[str, Any]:
         _get_session_or_404(session_id)
         try:
-            return _asdict(memory_store.get_summary(session_id))
+            return _with_memory_boundary(
+                _asdict(memory_store.get_summary(session_id)),
+                "summary_pointer",
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/sessions/{session_id}/memory/review")
     def create_session_memory_review(session_id: str) -> dict[str, Any]:
         summary = _get_or_create_summary(session_id)
-        return _asdict(memory_store.create_review_item(summary))
+        return _with_memory_boundary(
+            _asdict(memory_store.create_review_item(summary)),
+            "review_pointer",
+        )
 
     @app.get("/memory/review")
     def list_memory_review() -> dict[str, object]:
@@ -1913,6 +1922,14 @@ def _asdict(record: object) -> dict[str, Any]:
     if not is_dataclass(record):
         raise TypeError(f"Expected dataclass record, got {type(record).__name__}")
     return asdict(record)
+
+
+def _with_memory_boundary(payload: dict[str, Any], ownership: str) -> dict[str, Any]:
+    return {
+        **payload,
+        "ownership": ownership,
+        "formal_memory_owner": "session2memory",
+    }
 
 
 def _deprecated_reset_metadata(

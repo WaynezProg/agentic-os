@@ -3,6 +3,11 @@
 Status: Draft
 Date: 2026-05-28
 
+> Superseded boundary note (2026-06-02): this spec remains the compatibility contract for
+> deterministic summary/review pointer APIs. Formal durable memory compilation is owned by
+> session2memory. New agentic-os work must use Session Evidence v1 as the source evidence
+> contract.
+
 ## Positioning
 
 P1 adds a deterministic Harness Run evidence pipeline on top of the P0 daemon.
@@ -19,7 +24,7 @@ or automatic policy decisions.
 The goal is to make session output reviewable and promotable:
 
 ```text
-session logs -> session summary -> review queue -> approved memory -> searchable KB
+session evidence -> summary/review pointer -> session2memory compiler -> durable memory
 ```
 
 The pipeline must keep humans in the loop. Raw process logs remain the source of
