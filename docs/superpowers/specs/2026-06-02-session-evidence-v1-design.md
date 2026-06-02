@@ -155,7 +155,8 @@ Session Evidence v1 must emit these lifecycle events when applicable:
 
 | Event type | Emitted when |
 |------------|--------------|
-| `run_accepted` | daemon creates a session record |
+| `run_accepted` | daemon accepts a run for launch |
+| `session_record_created` | daemon creates a session record for a rejected run |
 | `launch_rejected` | launch policy rejects a run before process start |
 | `launch_started` | process launch is about to execute |
 | `launch_failed` | process creation fails |
@@ -329,9 +330,9 @@ session logs -> agentic-os memory -> searchable KB
 
 1. API validates the run request and policy.
 2. Supervisor creates a session directory and base evidence files.
-3. Evidence writer appends `run_accepted`.
-4. For launch-gate rejection, evidence writer appends `launch_rejected`, writes metadata, and the
-   session becomes failed.
+3. For an accepted run, evidence writer appends `run_accepted`.
+4. For launch-gate rejection, evidence writer appends `session_record_created` then `launch_rejected`,
+   writes metadata, and the session becomes failed.
 5. For process launch, evidence writer appends `launch_started` and then `process_started`.
 6. stdout/stderr continue writing to their existing logs.
 7. Process exit updates session status, appends `process_exited`, captures upstream session id when

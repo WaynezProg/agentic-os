@@ -659,7 +659,8 @@ def test_supervisor_writes_evidence_for_rejected_run(tmp_path: Path) -> None:
     assert finished.status == SessionStatus.FAILED
     assert metadata["status"] == "failed"
     assert metadata["adapter_contract_version"] == "v1"
-    assert "run_accepted" in event_types
+    assert "session_record_created" in event_types
+    assert "run_accepted" not in event_types
     assert "launch_rejected" in event_types
 
 
@@ -784,8 +785,8 @@ Modify `start_rejected()` after `Path(session.stderr_log).touch()`:
         self._ensure_evidence(session)
         self._append_evidence_event(
             session,
-            "run_accepted",
-            "run accepted",
+            "session_record_created",
+            "session record created for rejected run",
             {"argv": argv, "cwd": cwd},
         )
         self._append_evidence_event(

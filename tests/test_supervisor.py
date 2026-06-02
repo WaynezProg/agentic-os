@@ -460,7 +460,8 @@ def test_supervisor_writes_evidence_for_rejected_run(tmp_path: Path) -> None:
     assert metadata["status"] == "failed"
     assert metadata["adapter_contract_version"] == "v1"
     assert "hidden" not in json.dumps(metadata)
-    assert "run_accepted" in event_types
+    assert "session_record_created" in event_types
+    assert "run_accepted" not in event_types
     assert "launch_rejected" in event_types
 
 
@@ -526,7 +527,7 @@ def test_supervisor_evidence_write_failure_is_non_fatal(
     assert failure_events
     assert {event.metadata["phase"] for event in failure_events} >= {
         "ensure_bundle",
-        "event:run_accepted",
+        "event:session_record_created",
         "event:launch_rejected",
     }
     assert "evidence_write_failed" in Path(session.stderr_log).read_text(encoding="utf-8")

@@ -87,8 +87,8 @@ class ProcessSupervisor:
         self._ensure_evidence(session)
         self._append_evidence_event(
             session,
-            "run_accepted",
-            "run accepted by supervisor",
+            "session_record_created",
+            "session record created for rejected run",
             {"status": session.status.value},
         )
         self._append_evidence_event(
