@@ -52,6 +52,7 @@ from agentic_os.adapter_contract import (
 from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
+from agentic_os.evidence import EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
@@ -178,6 +179,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     usage_store.init()
     prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
+    evidence_store = EvidenceStore(state_dir)
     supervisor = ProcessSupervisor(
         store=store,
         logs=logs,
@@ -587,6 +589,30 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         events = store.list_events(session_id)
         return {"events": [event.model_dump() for event in events]}
+
+    @app.get("/sessions/{session_id}/evidence")
+    def session_evidence(session_id: str) -> dict[str, object]:
+        try:
+            session = store.get_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return evidence_store.evidence_index(session)
+
+    @app.get("/sessions/{session_id}/evidence/events")
+    def session_evidence_events(
+        session_id: str,
+        after: int = Query(default=0, ge=0),
+        max_lines: int = Query(default=5000, ge=1, le=50000),
+    ) -> dict[str, object]:
+        try:
+            session = store.get_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        result = evidence_store.read_events(session, after=after, max_lines=max_lines)
+        return {
+            "events": [event.model_dump(mode="json") for event in result.events],
+            "truncated": result.truncated,
+        }
 
     @app.get("/sessions/{session_id}/timeline")
     def session_timeline(

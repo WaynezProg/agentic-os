@@ -1144,6 +1144,8 @@ class RecordingHttpxClient:
         self.requests.append(
             {"method": "GET", "base_url": self.base_url, "path": path, "params": params}
         )
+        if path.endswith("/evidence") and not path.endswith("/events"):
+            return FakeResponse({"session_id": "s_1"})
         if path.endswith("/events"):
             return FakeResponse({"events": []})
         return FakeResponse({"entries": []})
@@ -1214,6 +1216,42 @@ def test_client_get_session_events_builds_expected_request(monkeypatch: Any) -> 
             "base_url": "http://api.example",
             "path": "/sessions/s_1/events",
             "params": None,
+        }
+    ]
+
+
+def test_client_get_session_evidence_builds_expected_request(monkeypatch: Any) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    assert client.get_session_evidence("s_1") == {"session_id": "s_1"}
+
+    assert RecordingHttpxClient.requests == [
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/evidence",
+            "params": None,
+        }
+    ]
+
+
+def test_client_get_session_evidence_events_builds_expected_request(
+    monkeypatch: Any,
+) -> None:
+    RecordingHttpxClient.requests = []
+    monkeypatch.setattr("agentic_os.client.httpx.Client", RecordingHttpxClient)
+
+    client = AgenticClient("http://api.example/")
+    assert client.get_session_evidence_events("s_1", after=2, max_lines=3) == {"events": []}
+
+    assert RecordingHttpxClient.requests == [
+        {
+            "method": "GET",
+            "base_url": "http://api.example",
+            "path": "/sessions/s_1/evidence/events",
+            "params": {"after": 2, "max_lines": 3},
         }
     ]
 

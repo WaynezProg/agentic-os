@@ -45,6 +45,20 @@ class AgenticClient:
     def get_session_events(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}/events")
 
+    def get_session_evidence(self, session_id: str) -> dict[str, Any]:
+        return self._get(f"/sessions/{_validate_path_id(session_id)}/evidence")
+
+    def get_session_evidence_events(
+        self,
+        session_id: str,
+        after: int = 0,
+        max_lines: int = 5000,
+    ) -> dict[str, Any]:
+        return self._get(
+            f"/sessions/{_validate_path_id(session_id)}/evidence/events",
+            params={"after": after, "max_lines": max_lines},
+        )
+
     def get_session_timeline(
         self,
         session_id: str,

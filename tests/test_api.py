@@ -1401,6 +1401,79 @@ def test_session_timeline_404(tmp_path: Path) -> None:
     assert response.status_code == 404
 
 
+def test_session_evidence_endpoint_returns_metadata_and_paths(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "evidence"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    response = client.get(f"/sessions/{session_id}/evidence")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == session_id
+    assert payload["harness_id"] == "shell"
+    assert payload["metadata"]["schema_version"] == "session_evidence.v1"
+    assert payload["metadata"]["status"] == "succeeded"
+    assert payload["paths"]["events"].endswith("/events.jsonl")
+    assert payload["paths"]["artifact_manifest"].endswith("/artifacts/manifest.json")
+
+
+def test_session_evidence_events_endpoint_returns_normalized_events(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "events"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    response = client.get(f"/sessions/{session_id}/evidence/events")
+
+    assert response.status_code == 200
+    payload = response.json()
+    event_types = [event["event_type"] for event in payload["events"]]
+    assert payload["truncated"] is False
+    assert "run_accepted" in event_types
+    assert "process_started" in event_types
+    assert "process_exited" in event_types
+    assert all("index" in event for event in payload["events"])
+
+
+def test_session_evidence_events_endpoint_supports_after_and_max_lines(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "events cursor"},
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    response = client.get(
+        f"/sessions/{session_id}/evidence/events",
+        params={"after": 0, "max_lines": 1},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["events"]) == 1
+    assert response.json()["truncated"] is True
+
+
+def test_session_evidence_endpoints_return_404_for_unknown_session(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    index_response = client.get("/sessions/missing/evidence")
+    events_response = client.get("/sessions/missing/evidence/events")
+
+    assert index_response.status_code == 404
+    assert events_response.status_code == 404
+
+
 def test_session_timeline_includes_log_chunks(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     run = client.post(
