@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,36 @@ def make_client(
 def _toml_inline_table(values: dict[str, str]) -> str:
     entries = ", ".join(f"{json.dumps(key)} = {json.dumps(value)}" for key, value in values.items())
     return f"{{ {entries} }}"
+
+
+def wait_for_session_evidence(
+    client: TestClient,
+    session_id: str,
+    *,
+    status: str = "succeeded",
+    required_events: set[str] | None = None,
+    timeout_seconds: float = 2.0,
+) -> dict[str, object]:
+    deadline = time.monotonic() + timeout_seconds
+    last_payload: dict[str, object] | None = None
+    while time.monotonic() < deadline:
+        response = client.get(f"/sessions/{session_id}/evidence")
+        assert response.status_code == 200
+        payload = response.json()
+        last_payload = payload
+        metadata = payload["metadata"]
+        if not isinstance(metadata, dict) or metadata.get("status") != status:
+            time.sleep(0.025)
+            continue
+        if required_events:
+            events_response = client.get(f"/sessions/{session_id}/evidence/events")
+            assert events_response.status_code == 200
+            event_types = {event["event_type"] for event in events_response.json()["events"]}
+            if not required_events <= event_types:
+                time.sleep(0.025)
+                continue
+        return payload
+    raise AssertionError(f"evidence for {session_id} did not reach {status}: {last_payload}")
 
 
 @pytest.fixture()
@@ -1414,10 +1445,7 @@ def test_session_evidence_endpoint_returns_metadata_and_paths(tmp_path: Path) ->
     assert run.status_code == 200
     session_id = run.json()["id"]
 
-    response = client.get(f"/sessions/{session_id}/evidence")
-
-    assert response.status_code == 200
-    payload = response.json()
+    payload = wait_for_session_evidence(client, session_id)
     assert payload["session_id"] == session_id
     assert payload["harness_id"] == "shell"
     assert payload["metadata"]["schema_version"] == "session_evidence.v1"
@@ -1435,8 +1463,12 @@ def test_session_evidence_events_endpoint_returns_normalized_events(tmp_path: Pa
     assert run.status_code == 200
     session_id = run.json()["id"]
 
+    wait_for_session_evidence(
+        client,
+        session_id,
+        required_events={"run_accepted", "process_started", "process_exited"},
+    )
     response = client.get(f"/sessions/{session_id}/evidence/events")
-
     assert response.status_code == 200
     payload = response.json()
     event_types = [event["event_type"] for event in payload["events"]]
@@ -1457,6 +1489,7 @@ def test_session_evidence_events_endpoint_supports_after_and_max_lines(
     )
     assert run.status_code == 200
     session_id = run.json()["id"]
+    wait_for_session_evidence(client, session_id, required_events={"run_accepted"})
 
     response = client.get(
         f"/sessions/{session_id}/evidence/events",
