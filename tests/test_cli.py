@@ -116,6 +116,43 @@ class FakeClient:
             ]
         }
 
+    def get_session_evidence(self, session_id: str) -> dict[str, object]:
+        self.calls.append(("get_session_evidence", (session_id,), {}))
+        return {
+            "session_id": session_id,
+            "harness_id": "shell",
+            "metadata": {"schema_version": "session_evidence.v1", "session_id": session_id},
+            "paths": {
+                "metadata": ".agentic-os/sessions/s_1/metadata.json",
+                "events": ".agentic-os/sessions/s_1/events.jsonl",
+            },
+        }
+
+    def get_session_evidence_events(
+        self,
+        session_id: str,
+        after: int = 0,
+        max_lines: int = 5000,
+    ) -> dict[str, object]:
+        self.calls.append(
+            ("get_session_evidence_events", (session_id,), {"after": after, "max_lines": max_lines})
+        )
+        return {
+            "events": [
+                {
+                    "ts": "2026-06-02T00:00:00+00:00",
+                    "session_id": session_id,
+                    "harness_id": "shell",
+                    "event_type": "process_started",
+                    "severity": "info",
+                    "message": "process started",
+                    "metadata": {"pid": 123},
+                    "index": 1,
+                }
+            ],
+            "truncated": False,
+        }
+
     def get_session_timeline(
         self, session_id: str, event_type: str | None = None
     ) -> dict[str, object]:
@@ -661,6 +698,45 @@ def test_sessions_events_prints_tab_separated_rows(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert result.output == "1\tpolicy_denied\tblocked\t2026-05-28 05:00:00\n"
     assert fake.calls == [("get_session_events", ("s_1",), {})]
+
+
+def test_sessions_evidence_prints_json(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["sessions", "evidence", "s_1"])
+
+    assert result.exit_code == 0
+    assert '"schema_version": "session_evidence.v1"' in result.output
+    assert '"events": ".agentic-os/sessions/s_1/events.jsonl"' in result.output
+    assert fake.calls == [("get_session_evidence", ("s_1",), {})]
+
+
+def test_sessions_evidence_events_prints_jsonl_by_default(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(
+        cli.app,
+        ["sessions", "evidence-events", "s_1", "--after", "2", "--max-lines", "3"],
+    )
+
+    assert result.exit_code == 0
+    line = json.loads(result.output)
+    assert line["event_type"] == "process_started"
+    assert fake.calls == [("get_session_evidence_events", ("s_1",), {"after": 2, "max_lines": 3})]
+
+
+def test_sessions_evidence_events_json_flag_prints_envelope(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["sessions", "evidence-events", "s_1", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["events"][0]["event_type"] == "process_started"
+    assert payload["truncated"] is False
 
 
 def test_sessions_timeline_passes_type_filter(monkeypatch: Any) -> None:
