@@ -308,6 +308,8 @@ def test_api_creates_and_reads_session_memory_summary(tmp_path: Path) -> None:
     assert created.json()["one_liner"] == "remember alpha"
     assert created.json()["stdout_lines"] == 1
     assert created.json()["stderr_lines"] == 0
+    assert created.json()["ownership"] == "summary_pointer"
+    assert created.json()["formal_memory_owner"] == "session2memory"
 
 
 def test_api_returns_404_for_unknown_session_memory_summary(tmp_path: Path) -> None:
@@ -337,6 +339,8 @@ def test_api_creates_memory_review_from_current_session_logs(tmp_path: Path) -> 
     assert created.json()["session_id"] == session_id
     assert created.json()["status"] == "pending"
     assert created.json()["title"] == "review me"
+    assert created.json()["ownership"] == "review_pointer"
+    assert created.json()["formal_memory_owner"] == "session2memory"
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()["items"]] == [created.json()["id"]]
     assert summary.status_code == 200

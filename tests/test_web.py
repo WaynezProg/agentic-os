@@ -124,6 +124,20 @@ def test_memory_controls_contract_exists() -> None:
     assert 'data-action="view-summary"' in js
 
 
+def test_memory_copy_identifies_summary_review_pointers() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert "證據摘要" in html
+    assert "review pointer" in html
+
+
+def test_readme_positions_session2memory_as_formal_memory_owner() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "session2memory owns formal memory compilation" in readme
+    assert "agentic-os owns harness-run evidence" in readme
+
+
 def test_skills_mcp_placeholder_panels_exist() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 

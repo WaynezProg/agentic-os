@@ -26,7 +26,7 @@ Phase positioning:
 | Phase | Existing result | Harness Manager substrate role | Owns | Does not own |
 |-------|-----------------|--------------------------------|------|--------------|
 | P0 | daemon, CLI, configured runners, process/log/session records | Harness Instance Registry and Harness Run lifecycle | local launch, stop, retry, logs, artifacts | harness internals, planning, tool execution |
-| P1 | deterministic session-to-memory pipeline | auditable run evidence and approved local knowledge | summaries, review queue, approved memory | autonomous memory reasoning, embeddings, RAG |
+| P1 | deterministic session evidence and review pointers | auditable run evidence for downstream compilers | summaries, review pointers, evidence paths | durable memory compilation, embeddings, RAG |
 | P2 | thin static UI | operator control surface over daemon APIs | status, bounded logs, review UI, catalog placeholders | browser subprocesses, IDE, chat UI |
 | P3 | catalog/policy registries and evaluator | Shared Capability Catalog plus Harness Launch Policy | descriptive capability records, deterministic policy decisions | installing capabilities, starting MCP servers, live tool enforcement |
 | P3.5 | launch policy gate on run creation | Harness Launch Policy applied before spawning a run | allow / deny / approval-required audit trail | per-tool runtime enforcement |
@@ -44,6 +44,12 @@ Phase positioning:
 | P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
 | P10 | adapter contract, run profiles, usage ledger | seventh harness (`cursor`), profile upsert, multi-harness usage parsers, profile-budget quotas | provider billing APIs, harness-internal tool enforcement, Cursor json output default |
+
+Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
+bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
+review-first durable suggestions, and downstream HKS ingestion. The compatibility `agentctl memory`
+commands remain available, but new workflows must consume `metadata.json`, `events.jsonl`,
+stdout/stderr JSONL, and `artifacts/manifest.json`.
 
 ## P0 Scope
 

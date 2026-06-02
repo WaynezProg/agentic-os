@@ -90,6 +90,8 @@ The first screen is the usable control panel, not a landing page.
 
 ### Memory
 
+- Provide summary/review pointer views for completed sessions. These views are compatibility
+  surfaces; formal durable memory belongs to session2memory.
 - review queue list;
 - approve/reject actions;
 - approved memory list;
