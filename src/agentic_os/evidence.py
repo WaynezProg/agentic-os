@@ -15,6 +15,7 @@ from agentic_os.control_plane import _SECRET_FLAGS, _redact_value
 from agentic_os.models import SessionRecord
 
 EvidenceSeverity = Literal["debug", "info", "warning", "error"]
+_PUBLIC_USAGE_COUNT_KEYS = {"input_tokens", "output_tokens", "total_tokens"}
 
 
 class EvidenceEvent(BaseModel):
@@ -269,6 +270,12 @@ def _redact_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
 
 
 def _redact_evidence_value(value: Any, key: str | None = None) -> Any:
+    if (
+        key in _PUBLIC_USAGE_COUNT_KEYS
+        and isinstance(value, (int, float))
+        and not isinstance(value, bool)
+    ):
+        return value
     if isinstance(value, list):
         return _redact_value(_redact_argv(value), key)
     if isinstance(value, dict):

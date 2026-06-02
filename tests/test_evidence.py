@@ -144,6 +144,26 @@ def test_evidence_event_metadata_redacts_split_argv_secrets(tmp_path: Path) -> N
     assert result.events[0].metadata == {"argv": ["--api-key", "[REDACTED]"]}
 
 
+def test_evidence_event_metadata_preserves_usage_token_counts(tmp_path: Path) -> None:
+    session = make_session(tmp_path)
+    evidence = EvidenceStore(state_dir=tmp_path)
+
+    evidence.append_event(
+        session,
+        "usage_reported",
+        "usage reported",
+        {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+    )
+
+    result = evidence.read_events(session)
+
+    assert result.events[0].metadata == {
+        "input_tokens": 2,
+        "output_tokens": 3,
+        "total_tokens": 5,
+    }
+
+
 def test_evidence_event_reader_skips_malformed_jsonl(tmp_path: Path) -> None:
     session = make_session(tmp_path)
     evidence = EvidenceStore(state_dir=tmp_path)
