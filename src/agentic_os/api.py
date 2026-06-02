@@ -52,7 +52,7 @@ from agentic_os.adapter_contract import (
 from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
-from agentic_os.evidence import EvidenceStore
+from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
@@ -982,6 +982,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     else f"no policy configured for {approval.agent_id}"
                 )
                 approval_store.expire(approval_id, reason)
+                _append_approval_resolution_event(
+                    approval.source_session_id,
+                    approval_id=approval_id,
+                    status="expired",
+                    reason=reason,
+                )
                 audit_store.record(
                     "governance",
                     approval.agent_id,
@@ -1022,6 +1028,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 approval_id,
                 approved_session_id=session.id,
             )
+            _append_approval_resolution_event(
+                claimed.source_session_id,
+                approval_id=approval_id,
+                status="approved",
+                approved_session_id=session.id,
+            )
             audit_store.record(
                 "governance",
                 claimed.agent_id,
@@ -1051,6 +1063,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def reject_approval(approval_id: str, request: ApprovalRejectRequest) -> dict[str, Any]:
         try:
             rejected = approval_store.reject(approval_id, request.reason)
+            _append_approval_resolution_event(
+                rejected.source_session_id,
+                approval_id=approval_id,
+                status="rejected",
+                reason=request.reason,
+            )
             audit_store.record(
                 "governance",
                 rejected.agent_id,
@@ -1774,6 +1792,55 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def _apply_sunset_with_audit() -> None:
         _record_sunset_changes(control_plane.apply_sunset())
 
+    def _append_session_evidence_event(
+        session_id: str,
+        event_type: str,
+        message: str,
+        metadata: dict[str, object],
+        *,
+        severity: EvidenceSeverity = "info",
+    ) -> None:
+        try:
+            session = store.get_session(session_id)
+            evidence_store.append_event(
+                session,
+                event_type,
+                message,
+                metadata,
+                severity=severity,
+            )
+            evidence_store.write_metadata(session)
+        except Exception as exc:  # noqa: BLE001
+            try:
+                store.record_event(
+                    session_id,
+                    "evidence_write_failed",
+                    str(exc),
+                    {"phase": f"api_event:{event_type}"},
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _append_approval_resolution_event(
+        session_id: str,
+        *,
+        approval_id: str,
+        status: str,
+        reason: str | None = None,
+        approved_session_id: str | None = None,
+    ) -> None:
+        metadata: dict[str, object] = {"approval_id": approval_id, "status": status}
+        if reason is not None:
+            metadata["reason"] = reason
+        if approved_session_id is not None:
+            metadata["approved_session_id"] = approved_session_id
+        _append_session_evidence_event(
+            session_id,
+            "approval_resolved",
+            f"approval {approval_id} {status}",
+            metadata,
+        )
+
     def _refresh_approval(approval: ApprovalRecord) -> ApprovalRecord:
         if approval.status != ApprovalStatus.PENDING:
             return approval
@@ -1791,6 +1858,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             else f"no policy configured for {approval.agent_id}"
         )
         expired = approval_store.expire(approval.id, reason)
+        _append_approval_resolution_event(
+            approval.source_session_id,
+            approval_id=approval.id,
+            status="expired",
+            reason=reason,
+        )
         audit_store.record(
             "governance",
             approval.agent_id,
@@ -1842,6 +1915,17 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             )
             approval_id = approval.id
             metadata["approval_id"] = approval.id
+            _append_session_evidence_event(
+                session.id,
+                "approval_required",
+                result.reason,
+                {
+                    "decision": result.decision,
+                    "approval_id": approval.id,
+                    "agent_id": result.agent_id,
+                },
+                severity="warning",
+            )
             audit_store.record(
                 "governance",
                 rendered.agent.id,

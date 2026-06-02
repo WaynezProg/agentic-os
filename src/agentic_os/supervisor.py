@@ -276,15 +276,36 @@ class ProcessSupervisor:
             if _session_process_exists(session):
                 continue
             if session.status == SessionStatus.RUNNING and session.exit_code is not None:
-                self.store.mark_finished(session.id, session.exit_code)
+                finished = self.store.mark_finished(session.id, session.exit_code)
+                self._append_evidence_event(
+                    finished,
+                    "process_exited",
+                    "process reconciled from recorded root exit",
+                    {
+                        "pid": finished.pid,
+                        "pgid": finished.pgid,
+                        "exit_code": finished.exit_code,
+                        "status": finished.status.value,
+                    },
+                )
+                self._rewrite_evidence_metadata(finished)
                 continue
+            metadata = {"pid": session.pid, "pgid": session.pgid}
             self.store.record_event(
                 session.id,
                 "daemon_reconciled_missing_process",
                 "recorded process is gone",
-                {"pid": session.pid, "pgid": session.pgid},
+                metadata,
             )
-            self.store.mark_failed(session.id)
+            failed = self.store.mark_failed(session.id)
+            self._append_evidence_event(
+                failed,
+                "daemon_reconciled_missing_process",
+                "recorded process is gone",
+                metadata,
+                severity="warning",
+            )
+            self._rewrite_evidence_metadata(failed)
 
     def _pipe_reader(
         self,
@@ -473,6 +494,16 @@ class ProcessSupervisor:
             str(exc),
             {"phase": phase},
         )
+        try:
+            session = self.store.get_session(session_id)
+            self.logs.append(
+                Path(session.stderr_log),
+                session_id,
+                "stderr",
+                f"evidence_write_failed[{phase}]: {exc}",
+            )
+        except Exception as log_exc:  # noqa: BLE001
+            log.warning("failed to write evidence failure log for %s: %s", session_id, log_exc)
 
     def _cleanup_process_tracking(self, session_id: str) -> None:
         with self._lock:
@@ -503,7 +534,16 @@ class ProcessSupervisor:
         metadata: dict[str, object],
     ) -> SessionRecord:
         self.store.record_event(session_id, "stop_failed", message, metadata)
-        return self.store.mark_failed(session_id)
+        failed = self.store.mark_failed(session_id)
+        self._append_evidence_event(
+            failed,
+            "stop_failed",
+            message,
+            metadata,
+            severity="error",
+        )
+        self._rewrite_evidence_metadata(failed)
+        return failed
 
     def _repair_terminal_live_process_group(self, session: SessionRecord) -> SessionRecord:
         if (

@@ -529,6 +529,7 @@ def test_supervisor_evidence_write_failure_is_non_fatal(
         "event:run_accepted",
         "event:launch_rejected",
     }
+    assert "evidence_write_failed" in Path(session.stderr_log).read_text(encoding="utf-8")
 
 
 def test_supervisor_retries_session_with_same_command(tmp_path: Path) -> None:
@@ -609,6 +610,36 @@ def test_supervisor_rejects_repeated_stop_of_stopped_session(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="Cannot stop terminal session"):
         supervisor.stop(session.id, timeout_seconds=0.1)
+
+
+def test_supervisor_writes_evidence_for_stop_failure(tmp_path: Path) -> None:
+    supervisor = make_supervisor(tmp_path)
+    session = supervisor.store.create_session(
+        SessionCreate(
+            agent_id="shell",
+            cwd=str(tmp_path),
+            argv=["/bin/sh", "-lc", "sleep 10"],
+            artifact_dir=str(tmp_path / "sessions" / "stop-fail" / "artifacts"),
+            stdout_log=str(tmp_path / "sessions" / "stop-fail" / "stdout.jsonl"),
+            stderr_log=str(tmp_path / "sessions" / "stop-fail" / "stderr.jsonl"),
+        )
+    )
+    supervisor.evidence.ensure_bundle(session)
+    missing = missing_process_id()
+    running = supervisor.store.mark_running(session.id, pid=missing, pgid=missing)
+    with supervisor.store.connect() as conn:
+        conn.execute("UPDATE sessions SET pgid = NULL WHERE id = ?", (session.id,))
+    running = supervisor.store.get_session(session.id)
+    supervisor.evidence.write_metadata(running)
+
+    failed = supervisor.stop(session.id, timeout_seconds=0.1)
+
+    event_types = [event["event_type"] for event in read_evidence_events(failed)]
+    metadata = read_evidence_metadata(failed)
+    assert failed.status == SessionStatus.FAILED
+    assert "run_stopping" in event_types
+    assert "stop_failed" in event_types
+    assert metadata["status"] == "failed"
 
 
 def test_stop_does_not_mark_stopped_before_process_group_is_gone(tmp_path: Path) -> None:
@@ -760,13 +791,18 @@ def test_reconcile_marks_missing_running_session_failed(tmp_path: Path) -> None:
     supervisor = make_supervisor(tmp_path)
     missing = missing_process_id()
     session = create_running_session(supervisor.store, tmp_path, pid=missing, pgid=missing)
+    supervisor.evidence.ensure_bundle(session)
 
     supervisor.reconcile()
 
     reconciled = supervisor.store.get_session(session.id)
     events = supervisor.store.list_events(session.id)
+    evidence_events = read_evidence_events(reconciled)
+    metadata = read_evidence_metadata(reconciled)
     assert reconciled.status == SessionStatus.FAILED
     assert events[-1].event_type == "daemon_reconciled_missing_process"
+    assert evidence_events[-1]["event_type"] == "daemon_reconciled_missing_process"
+    assert metadata["status"] == "failed"
 
 
 def test_reconcile_settles_recorded_root_exit_when_process_group_is_gone(
@@ -775,15 +811,20 @@ def test_reconcile_settles_recorded_root_exit_when_process_group_is_gone(
     supervisor = make_supervisor(tmp_path)
     missing = missing_process_id()
     session = create_running_session(supervisor.store, tmp_path, pid=missing, pgid=missing)
+    supervisor.evidence.ensure_bundle(session)
     supervisor.store.record_root_exit(session.id, exit_code=7)
 
     supervisor.reconcile()
 
     reconciled = supervisor.store.get_session(session.id)
     events = supervisor.store.list_events(session.id)
+    evidence_events = read_evidence_events(reconciled)
+    metadata = read_evidence_metadata(reconciled)
     assert reconciled.status == SessionStatus.FAILED
     assert reconciled.exit_code == 7
     assert not events
+    assert evidence_events[-1]["event_type"] == "process_exited"
+    assert metadata["status"] == "failed"
 
 
 def test_reconcile_keeps_running_session_when_pgid_is_alive(tmp_path: Path) -> None:

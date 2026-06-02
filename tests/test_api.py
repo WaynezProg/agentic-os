@@ -956,18 +956,28 @@ def test_approval_required_run_creates_durable_approval_and_approved_session(
     )
     assert blocked.status_code == 409
     approval_id = blocked.json()["approval_id"]
+    source_session_id = blocked.json()["session_id"]
+    source_events = client.get(f"/sessions/{source_session_id}/evidence/events").json()["events"]
 
     listed = client.get("/approvals")
     shown = client.get(f"/approvals/{approval_id}")
     approved = client.post(f"/approvals/{approval_id}/approve")
     sessions = client.get("/sessions").json()["sessions"]
+    resolved_events = client.get(f"/sessions/{source_session_id}/evidence/events").json()["events"]
 
     assert [item["id"] for item in listed.json()["approvals"]] == [approval_id]
-    assert shown.json()["source_session_id"] == blocked.json()["session_id"]
+    assert shown.json()["source_session_id"] == source_session_id
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
-    assert approved.json()["approved_session_id"] != blocked.json()["session_id"]
+    assert approved.json()["approved_session_id"] != source_session_id
     assert any(session["id"] == approved.json()["approved_session_id"] for session in sessions)
+    assert any(event["event_type"] == "approval_required" for event in source_events)
+    assert any(
+        event["event_type"] == "approval_resolved"
+        and event["metadata"]["status"] == "approved"
+        and event["metadata"]["approved_session_id"] == approved.json()["approved_session_id"]
+        for event in resolved_events
+    )
 
     events = client.get("/audit/events", params={"domain": "governance"}).json()["events"]
     event_types = [event["event_type"] for event in events]
@@ -993,6 +1003,7 @@ def test_approval_required_run_can_be_rejected_without_starting_followup_session
         "/sessions",
         json={"agent_id": "shell", "cwd": str(tmp_path), "message": "reject me"},
     )
+    source_session_id = blocked.json()["session_id"]
     before_sessions = client.get("/sessions").json()["sessions"]
 
     rejected = client.post(
@@ -1000,11 +1011,18 @@ def test_approval_required_run_can_be_rejected_without_starting_followup_session
         json={"reason": "not needed"},
     )
     after_sessions = client.get("/sessions").json()["sessions"]
+    events = client.get(f"/sessions/{source_session_id}/evidence/events").json()["events"]
 
     assert rejected.status_code == 200
     assert rejected.json()["status"] == "rejected"
     assert rejected.json()["decision_reason"] == "not needed"
     assert len(after_sessions) == len(before_sessions)
+    assert any(
+        event["event_type"] == "approval_resolved"
+        and event["metadata"]["status"] == "rejected"
+        and event["metadata"]["reason"] == "not needed"
+        for event in events
+    )
 
 
 def test_pending_approval_expires_on_read_when_policy_now_denies(
@@ -1025,16 +1043,24 @@ def test_pending_approval_expires_on_read_when_policy_now_denies(
         json={"agent_id": "shell", "cwd": str(tmp_path), "message": "stale approval"},
     )
     approval_id = blocked.json()["approval_id"]
+    source_session_id = blocked.json()["session_id"]
     client.post(
         "/policy/shell",
         json={"enabled": False, "allowed_tool_names": ["*"], "cwd_roots": [str(tmp_path)]},
     )
 
     shown = client.get(f"/approvals/{approval_id}")
+    events = client.get(f"/sessions/{source_session_id}/evidence/events").json()["events"]
 
     assert shown.status_code == 200
     assert shown.json()["status"] == "expired"
     assert shown.json()["decision_reason"] == "policy disabled for shell"
+    assert any(
+        event["event_type"] == "approval_resolved"
+        and event["metadata"]["status"] == "expired"
+        and event["metadata"]["reason"] == "policy disabled for shell"
+        for event in events
+    )
 
 
 def test_retry_uses_approval_request_path_when_policy_requires_approval(
