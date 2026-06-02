@@ -328,6 +328,34 @@ def sessions_events(session_id: str, api: str | None = _api_option()) -> None:
         )
 
 
+@sessions.command("evidence")
+def sessions_evidence(session_id: str, api: str | None = _api_option()) -> None:
+    data = _run_api_call(lambda: make_client(api).get_session_evidence(session_id))
+    _echo_json(data)
+
+
+@sessions.command("evidence-events")
+def sessions_evidence_events(
+    session_id: str,
+    after: int = typer.Option(0, "--after", help="Skip events through this line index."),
+    max_lines: int = typer.Option(5000, "--max-lines", help="Maximum events to read."),
+    json_output: bool = typer.Option(False, "--json", help="Print API envelope JSON."),
+    api: str | None = _api_option(),
+) -> None:
+    data = _run_api_call(
+        lambda: make_client(api).get_session_evidence_events(
+            session_id,
+            after=after,
+            max_lines=max_lines,
+        )
+    )
+    if json_output:
+        _echo_json(data)
+        return
+    for event in data.get("events", []):
+        typer.echo(json.dumps(event, ensure_ascii=False, sort_keys=True))
+
+
 @sessions.command("timeline")
 def sessions_timeline(
     session_id: str,
