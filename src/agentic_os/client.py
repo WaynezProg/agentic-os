@@ -399,6 +399,49 @@ class AgenticClient:
             params["scope_b"] = scope_b
         return self._get(f"/catalog/{_validate_path_id(harness)}/diff", params=params)
 
+    def catalog_patch(
+        self,
+        harness: str,
+        ops: list[dict[str, object]],
+        *,
+        cwd: str | None = None,
+        dry_run: bool = False,
+        source: str = "cli",
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {}
+        if cwd is not None:
+            params["cwd"] = cwd
+        if dry_run:
+            params["dry_run"] = True
+        return self._post(
+            f"/catalog/{_validate_path_id(harness)}/surfaces/patch",
+            {"ops": ops, "source": source},
+            params=params or None,
+        )
+
+    def patches_list(
+        self,
+        harness: str | None = None,
+        cwd: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"limit": limit}
+        if harness is not None:
+            params["harness"] = harness
+        if cwd is not None:
+            params["cwd"] = cwd
+        return self._get("/patches", params=params)
+
+    def patches_show(self, patch_id: str) -> dict[str, Any]:
+        return self._get(f"/patches/{_validate_path_id(patch_id)}")
+
+    def patches_rollback(self, patch_id: str, *, source: str = "cli") -> dict[str, Any]:
+        return self._post(
+            f"/patches/{_validate_path_id(patch_id)}/rollback",
+            {},
+            params={"source": source},
+        )
+
     def config_effective(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
         params: dict[str, object] = {}
         if cwd:
@@ -422,6 +465,31 @@ class AgenticClient:
         if cwd:
             params["cwd"] = cwd
         return self._get(f"/config/{_validate_path_id(harness_id)}/explain", params=params)
+
+    def config_patch(
+        self,
+        harness_id: str,
+        ops: list[dict[str, object]],
+        *,
+        scope: str = "user",
+        cwd: str | None = None,
+        dry_run: bool = False,
+        source: str = "cli",
+        base_mtime: float | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope": scope}
+        if cwd is not None:
+            params["cwd"] = cwd
+        if dry_run:
+            params["dry_run"] = True
+        payload: dict[str, object] = {"ops": ops, "source": source}
+        if base_mtime is not None:
+            payload["base_mtime"] = base_mtime
+        return self._post(
+            f"/config/{_validate_path_id(harness_id)}/patch",
+            payload,
+            params=params,
+        )
 
     def harness_config_effective(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
         params: dict[str, object] = {}
@@ -453,6 +521,34 @@ class AgenticClient:
             params["cwd"] = cwd
         return self._get(
             f"/harness-config/{_validate_path_id(harness_id)}/explain",
+            params=params,
+        )
+
+    def harness_config_patch(
+        self,
+        harness_id: str,
+        ops: list[dict[str, object]],
+        *,
+        scope: str = "project",
+        cwd: str | None = None,
+        dry_run: bool = False,
+        file: str | None = None,
+        source: str = "cli",
+        base_mtime: float | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope": scope}
+        if cwd is not None:
+            params["cwd"] = cwd
+        if dry_run:
+            params["dry_run"] = True
+        if file is not None:
+            params["file"] = file
+        payload: dict[str, object] = {"ops": ops, "source": source}
+        if base_mtime is not None:
+            payload["base_mtime"] = base_mtime
+        return self._post(
+            f"/harness-config/{_validate_path_id(harness_id)}/patch",
+            payload,
             params=params,
         )
 

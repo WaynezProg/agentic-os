@@ -223,3 +223,58 @@ def explain(
         }
         for entry in view.entries
     ]
+
+
+def _default_config_file_name(harness: str, file_name: str | None = None) -> str:
+    if harness == "cursor":
+        return file_name or "cli-config.json"
+    if harness in _JSON_SETTINGS_NAME:
+        return _JSON_SETTINGS_NAME[harness]
+    return _TOML_CONFIG_NAME
+
+
+def resolve_write_path(
+    harness: str,
+    scope: str,
+    cwd: Path,
+    *,
+    home: Path | None = None,
+    file_name: str | None = None,
+) -> tuple[Path, str]:
+    """Return (path, format) for harness-native config writes."""
+    if harness not in SUPPORTED_HARNESSES:
+        msg = f"unsupported harness: {harness}"
+        raise ValueError(msg)
+    if scope not in HARNESS_CONFIG_SCOPES:
+        msg = f"invalid scope: {scope}"
+        raise ValueError(msg)
+    home_path = home or Path.home()
+    base = _scope_base_dir(harness, scope, cwd, home_path)
+    if base is None:
+        msg = f"unsupported harness: {harness}"
+        raise ValueError(msg)
+
+    resolved_name = _default_config_file_name(harness, file_name)
+    if harness == "cursor" and resolved_name not in _CURSOR_CONFIG_FILES:
+        msg = f"unsupported cursor config file: {resolved_name}"
+        raise ValueError(msg)
+    expected_name = _default_config_file_name(harness)
+    if harness != "cursor" and file_name is not None and file_name != expected_name:
+        msg = f"unsupported config file for {harness}: {file_name}"
+        raise ValueError(msg)
+
+    path = base / resolved_name
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    fmt = "toml" if path.suffix == ".toml" else "json"
+    return path, fmt
+
+
+def infer_patch_kind(harness: str, file_path: Path) -> str:
+    """Map a harness config file to schema-registry kind."""
+    if harness == "cursor":
+        if file_path.name == "mcp.json":
+            return "mcp_server"
+        if file_path.name == "hooks.json":
+            return "hook"
+    return "harness_config"

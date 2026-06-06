@@ -43,9 +43,11 @@ audit = typer.Typer(help="Query governance audit trail.")
 app.add_typer(audit, name="audit")
 catalog = typer.Typer(help="Scan and inspect workflow surfaces.")
 app.add_typer(catalog, name="catalog")
+patches_cmd = typer.Typer(help="Inspect and rollback config patches.")
+app.add_typer(patches_cmd, name="patches")
 config_cmd = typer.Typer(help="Inspect configuration scopes.")
 app.add_typer(config_cmd, name="config")
-harness_config_cmd = typer.Typer(help="Inspect harness-native configuration (read-only).")
+harness_config_cmd = typer.Typer(help="Inspect and patch harness-native configuration.")
 app.add_typer(harness_config_cmd, name="harness-config")
 harness_contract_cmd = typer.Typer(help="Inspect harness adapter contracts.")
 app.add_typer(harness_contract_cmd, name="harness-contracts")
@@ -942,6 +944,63 @@ def catalog_diff_cmd(
         typer.echo(f"~ {m['surface']['id']}")
 
 
+@catalog.command("patch")
+def catalog_patch_cmd(
+    harness: str,
+    op: list[str] = typer.Option(..., "--op", help="JSON semantic op (repeatable)."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without writing."),
+    api: str | None = _api_option(),
+) -> None:
+    ops = [json.loads(item) for item in op]
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else str(Path.cwd())
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).catalog_patch(
+                harness,
+                ops,
+                cwd=resolved_cwd,
+                dry_run=dry_run,
+            )
+        )
+    )
+
+
+@patches_cmd.command("list")
+def patches_list_cmd(
+    harness: str | None = typer.Option(None, "--harness", help="Filter by harness id."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Filter by project directory."),
+    limit: int = typer.Option(50, "--limit", help="Maximum entries to return."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).patches_list(
+                harness=harness,
+                cwd=resolved_cwd,
+                limit=limit,
+            )
+        )
+    )
+
+
+@patches_cmd.command("show")
+def patches_show_cmd(
+    patch_id: str,
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).patches_show(patch_id)))
+
+
+@patches_cmd.command("rollback")
+def patches_rollback_cmd(
+    patch_id: str,
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).patches_rollback(patch_id)))
+
+
 @config_cmd.command("effective")
 def config_effective(
     harness_id: str,
@@ -989,6 +1048,37 @@ def config_explain(
     data = _run_api_call(lambda: make_client(api).config_explain(harness_id, cwd=resolved_cwd))
     for entry in data.get("entries", []):
         typer.echo(f"{entry['key']}\t[{entry['scope']}]\t{entry['source']}")
+
+
+@config_cmd.command("patch")
+def config_patch_cmd(
+    harness_id: str,
+    scope: str = typer.Option(..., "--scope", help="Config scope: user, project, or local."),
+    op: list[str] | None = typer.Option(None, "--op", help="JSON patch op (repeatable)."),
+    file: Path | None = typer.Option(None, "--file", help="JSON file with ops array or {ops: [...]}."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without writing."),
+    api: str | None = _api_option(),
+) -> None:
+    if file is None and not op:
+        raise typer.BadParameter("provide --file or at least one --op")
+    if file is not None:
+        payload = json.loads(file.read_text(encoding="utf-8"))
+        ops = payload["ops"] if isinstance(payload, dict) and "ops" in payload else payload
+    else:
+        ops = [json.loads(item) for item in op or []]
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else str(Path.cwd())
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).config_patch(
+                harness_id,
+                ops,
+                scope=scope,
+                cwd=resolved_cwd,
+                dry_run=dry_run,
+            )
+        )
+    )
 
 
 @harness_config_cmd.command("effective")
@@ -1042,3 +1132,34 @@ def harness_config_explain_cmd(
     )
     for entry in data.get("entries", []):
         typer.echo(f"{entry['key']}\t[{entry['scope']}]\t{entry['source']}")
+
+
+@harness_config_cmd.command("patch")
+def harness_config_patch_cmd(
+    harness_id: str,
+    scope: str = typer.Option(..., "--scope", help="Config scope: user, project, or local."),
+    op: list[str] | None = typer.Option(None, "--op", help="JSON patch op (repeatable)."),
+    file: Path | None = typer.Option(None, "--file", help="JSON file with ops array or {ops: [...]}."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without writing."),
+    api: str | None = _api_option(),
+) -> None:
+    if file is None and not op:
+        raise typer.BadParameter("provide --file or at least one --op")
+    if file is not None:
+        payload = json.loads(file.read_text(encoding="utf-8"))
+        ops = payload["ops"] if isinstance(payload, dict) and "ops" in payload else payload
+    else:
+        ops = [json.loads(item) for item in op or []]
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else str(Path.cwd())
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).harness_config_patch(
+                harness_id,
+                ops,
+                scope=scope,
+                cwd=resolved_cwd,
+                dry_run=dry_run,
+            )
+        )
+    )

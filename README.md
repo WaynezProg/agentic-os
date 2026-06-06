@@ -43,7 +43,7 @@ Phase positioning:
 | P7+ | evidence and audit timeline | chronological view of all events per session/harness | timeline construction, event correlation, per-session history | modifying source events, live event streaming |
 | P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
-| P10 | adapter contract, run profiles, usage ledger | seventh harness (`cursor`), profile upsert, multi-harness usage parsers, profile-budget quotas | provider billing APIs, harness-internal tool enforcement, Cursor json output default |
+| P10 | safe native config editing | safe write layer for workflow surfaces, harness-native config, and agentic-os config | dry-run patch, schema validation, hybrid backup, rollback, surface/config writers, audit | harness runtime, P7 approval for config writes, desktop app (P11), iOS remote (P12), cloud sync |
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
