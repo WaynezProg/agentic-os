@@ -62,6 +62,27 @@ def test_upsert_skill_compiles_to_standalone_target() -> None:
     ]
 
 
+def test_upsert_hook_compiles_to_merge_op() -> None:
+    compiled = compile_semantic_ops(
+        "claude",
+        [
+            {
+                "op": "upsert_hook",
+                "event": "PreToolUse",
+                "matcher": "Bash",
+                "command": "echo check",
+            }
+        ],
+    )
+    assert compiled.patch_ops == [
+        PatchOp(
+            op="merge",
+            path="hooks.PreToolUse",
+            value=[{"matcher": "Bash", "command": "echo check"}],
+        )
+    ]
+
+
 def test_upsert_command_compiles_to_standalone_target() -> None:
     compiled = compile_semantic_ops(
         "claude",

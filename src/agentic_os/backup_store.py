@@ -19,6 +19,7 @@ class PatchIndexEntry:
     target_path: str
     source: str
     created_at: str
+    target_existed_before: bool = True
     rolled_back_at: str | None = None
     rollback_of: str | None = None
 
@@ -60,6 +61,7 @@ class BackupStore:
             target_path=str(target_path),
             source=source,
             created_at=datetime.now(UTC).isoformat(),
+            target_existed_before=target_path.exists(),
         )
         self._append_index(entry)
         return entry
@@ -97,6 +99,7 @@ class BackupStore:
             target_path=str(target_path),
             source=source,
             created_at=datetime.now(UTC).isoformat(),
+            target_existed_before=target_path.exists(),
         )
         self._append_index(entry)
         return entry
@@ -105,7 +108,7 @@ class BackupStore:
         target = Path(entry.target_path)
         backup = Path(entry.backup_paths[0])
         target.parent.mkdir(parents=True, exist_ok=True)
-        if backup.exists() and backup.read_text(encoding="utf-8") == "":
+        if not entry.target_existed_before:
             if target.exists():
                 target.unlink()
             return
@@ -119,7 +122,7 @@ class BackupStore:
                 continue
             data = json.loads(line)
             if data["patch_id"] == patch_id:
-                return PatchIndexEntry(**data)
+                return _entry_from_index_data(data)
         return None
 
     def list_entries(
@@ -131,7 +134,7 @@ class BackupStore:
         for line in reversed(self.index_path.read_text(encoding="utf-8").splitlines()):
             if not line.strip():
                 continue
-            entry = PatchIndexEntry(**json.loads(line))
+            entry = _entry_from_index_data(json.loads(line))
             if harness_id and entry.harness_id != harness_id:
                 continue
             if cwd and entry.cwd != str(Path(cwd).resolve()):
@@ -168,8 +171,15 @@ class BackupStore:
             "target_path": entry.target_path,
             "source": entry.source,
             "created_at": entry.created_at,
+            "target_existed_before": entry.target_existed_before,
             "rolled_back_at": entry.rolled_back_at,
             "rollback_of": entry.rollback_of,
         }
         with self.index_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload) + "\n")
+
+
+def _entry_from_index_data(data: dict[str, object]) -> PatchIndexEntry:
+    if "target_existed_before" not in data:
+        data = {**data, "target_existed_before": True}
+    return PatchIndexEntry(**data)  # type: ignore[arg-type]

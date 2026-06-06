@@ -58,6 +58,17 @@ def _parse_tokens(path: str) -> list[str | int]:
     return tokens
 
 
+def _deep_merge_dict(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(base)
+    for key, overlay_value in overlay.items():
+        current = result.get(key)
+        if isinstance(current, dict) and isinstance(overlay_value, dict):
+            result[key] = _deep_merge_dict(current, overlay_value)
+        else:
+            result[key] = copy.deepcopy(overlay_value)
+    return result
+
+
 def _set_at_path(doc: dict[str, Any], path: str, value: Any, *, merge: bool) -> None:
     tokens = _parse_tokens(path)
     if not tokens:
@@ -67,15 +78,12 @@ def _set_at_path(doc: dict[str, Any], path: str, value: Any, *, merge: bool) -> 
     for token in tokens[:-1]:
         cursor = _descend(cursor, token, create=True)
     last = tokens[-1]
-    if merge and isinstance(cursor.get(last), dict) and isinstance(value, dict):
-        cursor[last] = PatchEngine.apply(cursor[last], [PatchOp(op="merge", path="", value=value)])
+    existing = cursor.get(last) if isinstance(cursor, dict) else None
+    if merge and isinstance(existing, dict) and isinstance(value, dict):
+        cursor[last] = _deep_merge_dict(existing, value)
         return
-    if last == "":
-        if not isinstance(value, dict):
-            msg = "root merge requires object value"
-            raise ValueError(msg)
-        doc.clear()
-        doc.update(copy.deepcopy(value))
+    if merge and isinstance(existing, list) and isinstance(value, list):
+        cursor[last] = copy.deepcopy(existing) + copy.deepcopy(value)
         return
     cursor[last] = copy.deepcopy(value)
 

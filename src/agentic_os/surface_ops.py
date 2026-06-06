@@ -77,7 +77,5 @@ def _compile_hook(harness: str, raw: dict[str, Any]) -> list[PatchOp]:
         entry["matcher"] = raw["matcher"]
     if raw.get("command") is not None:
         entry["command"] = raw["command"]
-    if harness == "cursor":
-        # cursor hooks.json: hooks.EventName is a list; append entry
-        return [PatchOp(op="merge", path=f"hooks.{event}", value=[entry])]
+    # hooks.{event} is a list; merge appends when the target list already exists.
     return [PatchOp(op="merge", path=f"hooks.{event}", value=[entry])]
