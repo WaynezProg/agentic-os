@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any
 
 SCOPES = ("managed", "user", "project", "local")
+CONFIG_PATCH_SCOPES = ("user", "project", "local")
 SCOPE_PRIORITY = {"local": 4, "project": 3, "user": 2, "managed": 1}
+AGENTIC_CONFIG_SCHEMA_HARNESS = "agentic_os"
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,25 @@ class ConfigView:
     harness_id: str
     entries: list[ConfigEntry] = field(default_factory=list)
     scopes_present: list[str] = field(default_factory=list)
+
+
+def resolve_write_path(
+    scope: str,
+    cwd: str | None = None,
+    home_dir: Path | None = None,
+) -> Path:
+    """Return config.toml path for a writable scope (user/project/local)."""
+    if scope not in CONFIG_PATCH_SCOPES:
+        msg = f"invalid scope: {scope}"
+        raise ValueError(msg)
+    paths = resolve_paths("shell", cwd, home_dir)
+    path = paths.get(scope)
+    if path is None:
+        msg = f"invalid scope: {scope}"
+        raise ValueError(msg)
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def resolve_paths(

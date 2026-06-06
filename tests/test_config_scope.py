@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_os.config_scope import diff, effective, explain, read_config
+from fastapi.testclient import TestClient
+
+from agentic_os.api import create_app
+from agentic_os.config_scope import diff, effective, explain, read_config, resolve_write_path
 
 
 def _write_config(path: Path, data: dict) -> Path:
@@ -101,6 +104,55 @@ def test_diff_no_changes() -> None:
     assert result["added"] == []
     assert result["removed"] == []
     assert result["modified"] == []
+
+
+def _make_client(tmp_path: Path) -> TestClient:
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "%s", "{{message}}"]
+cwd_mode = "optional"
+stop_policy = "process_group"
+""",
+        encoding="utf-8",
+    )
+    return TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+
+def test_resolve_write_path_user_scope(tmp_path: Path) -> None:
+    """resolve_write_path returns user config path and creates parent dirs."""
+    home = tmp_path / "home"
+    path = resolve_write_path("user", home_dir=home)
+    assert path == home / ".agentic-os" / "config.toml"
+    assert path.parent.is_dir()
+
+
+def test_config_patch_user_scope(tmp_path: Path, monkeypatch) -> None:
+    """PATCH /config/{id}/patch updates effective user-scope config."""
+    home = tmp_path / "home"
+    ao = home / ".agentic-os"
+    ao.mkdir(parents=True)
+    (ao / "config.toml").write_text("[daemon]\nport = 8767\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    client = _make_client(tmp_path)
+    response = client.post(
+        "/config/shell/patch",
+        params={"scope": "user"},
+        json={"ops": [{"op": "merge", "path": "daemon.port", "value": 8768}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    effective_response = client.get("/config/shell/effective")
+    assert effective_response.status_code == 200
+    daemon_entries = [
+        e for e in effective_response.json()["entries"] if e["key"] == "daemon"
+    ]
+    assert len(daemon_entries) == 1
+    assert daemon_entries[0]["value"]["port"] == 8768
+    assert daemon_entries[0]["scope"] == "user"
 
 
 def test_explain_returns_entries(tmp_path: Path) -> None:

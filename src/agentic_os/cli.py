@@ -1050,6 +1050,37 @@ def config_explain(
         typer.echo(f"{entry['key']}\t[{entry['scope']}]\t{entry['source']}")
 
 
+@config_cmd.command("patch")
+def config_patch_cmd(
+    harness_id: str,
+    scope: str = typer.Option(..., "--scope", help="Config scope: user, project, or local."),
+    op: list[str] | None = typer.Option(None, "--op", help="JSON patch op (repeatable)."),
+    file: Path | None = typer.Option(None, "--file", help="JSON file with ops array or {ops: [...]}."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without writing."),
+    api: str | None = _api_option(),
+) -> None:
+    if file is None and not op:
+        raise typer.BadParameter("provide --file or at least one --op")
+    if file is not None:
+        payload = json.loads(file.read_text(encoding="utf-8"))
+        ops = payload["ops"] if isinstance(payload, dict) and "ops" in payload else payload
+    else:
+        ops = [json.loads(item) for item in op or []]
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else str(Path.cwd())
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).config_patch(
+                harness_id,
+                ops,
+                scope=scope,
+                cwd=resolved_cwd,
+                dry_run=dry_run,
+            )
+        )
+    )
+
+
 @harness_config_cmd.command("effective")
 def harness_config_effective_cmd(
     harness_id: str,

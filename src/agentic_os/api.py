@@ -46,9 +46,12 @@ from agentic_os.harness_config import (
 )
 from agentic_os.patch_engine import PatchOp
 from agentic_os.config_scope import (
+    AGENTIC_CONFIG_SCHEMA_HARNESS,
+    CONFIG_PATCH_SCOPES,
     diff as config_diff,
     effective as config_effective,
     explain as config_explain,
+    resolve_write_path as config_resolve_write_path,
 )
 from agentic_os.adapter_contract import (
     SEMANTIC_HARNESS_IDS,
@@ -1718,6 +1721,72 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     ) -> dict[str, object]:
         entries = config_explain(harness_id, cwd)
         return {"harness_id": harness_id, "entries": entries}
+
+    @app.post("/config/{harness_id}/patch")
+    def config_patch_endpoint(
+        harness_id: str,
+        body: PatchOpsRequest,
+        scope: str = Query(default="user"),
+        cwd: str | None = Query(default=None),
+        dry_run: bool = Query(default=False),
+    ) -> dict[str, object]:
+        if scope not in CONFIG_PATCH_SCOPES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"invalid scope: {scope}",
+                    "supported": list(CONFIG_PATCH_SCOPES),
+                },
+            )
+        if not body.ops:
+            raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        home_dir = Path.home()
+        try:
+            file_path = config_resolve_write_path(scope, cwd=str(cwd_path), home_dir=home_dir)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
+        patch_ops = [
+            PatchOp(
+                op=str(raw["op"]),
+                path=str(raw.get("path", "")),
+                value=raw.get("value"),
+            )
+            for raw in body.ops
+        ]
+        target = PatchTarget(
+            harness_id=AGENTIC_CONFIG_SCHEMA_HARNESS,
+            cwd=cwd_path,
+            scope=scope,
+            target_kind="agentic_config",
+            kind="config",
+            file_path=file_path,
+            file_format="toml",
+        )
+        try:
+            result = safe_edit_engine.apply(
+                target,
+                patch_ops,
+                source=body.source,
+                dry_run=dry_run,
+                base_mtime=body.base_mtime,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
+        response = _patch_result_dict(result)
+        response["harness_id"] = harness_id
+        return response
 
     def _require_harness_config_harness(harness_id: str) -> None:
         if harness_id not in SUPPORTED_HARNESSES:

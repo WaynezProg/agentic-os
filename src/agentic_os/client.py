@@ -466,6 +466,31 @@ class AgenticClient:
             params["cwd"] = cwd
         return self._get(f"/config/{_validate_path_id(harness_id)}/explain", params=params)
 
+    def config_patch(
+        self,
+        harness_id: str,
+        ops: list[dict[str, object]],
+        *,
+        scope: str = "user",
+        cwd: str | None = None,
+        dry_run: bool = False,
+        source: str = "cli",
+        base_mtime: float | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope": scope}
+        if cwd is not None:
+            params["cwd"] = cwd
+        if dry_run:
+            params["dry_run"] = True
+        payload: dict[str, object] = {"ops": ops, "source": source}
+        if base_mtime is not None:
+            payload["base_mtime"] = base_mtime
+        return self._post(
+            f"/config/{_validate_path_id(harness_id)}/patch",
+            payload,
+            params=params,
+        )
+
     def harness_config_effective(self, harness_id: str, cwd: str | None = None) -> dict[str, Any]:
         params: dict[str, object] = {}
         if cwd:
