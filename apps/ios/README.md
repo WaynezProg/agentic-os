@@ -3,6 +3,10 @@
 Minimal SwiftUI client for the Remote Access Adapter. All traffic goes to
 `remote_gateway` with `Authorization: Bearer` — never to the Mac LAN IP.
 
+**Transport (P15):** `remote_gateway` must be `https://` except `http://127.0.0.1`,
+`http://localhost`, or `http://[::1]` for local smoke. Cleartext to any other host is
+rejected before pairing, probe, or Keychain write.
+
 Clients must **not** send `X-Agentic-OS-Gateway`. That header is a gateway →
 agentd trust marker: the reference gateway strips inbound values and sets
 `X-Agentic-OS-Gateway: 1` on upstream requests.

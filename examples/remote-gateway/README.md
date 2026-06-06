@@ -6,7 +6,8 @@ enforces Bearer tokens on all gateway-marked API traffic.
 
 ## Requirements
 
-1. External clients reach **`remote_gateway`** over HTTPS.
+1. External clients reach **`remote_gateway`** over HTTPS. Desktop and iOS clients
+   (P15) reject cleartext `http://` to non-loopback hosts before sending Bearer tokens.
 2. Gateway forwards to **`http://127.0.0.1:8767`** (agentd stays on loopback).
 3. Gateway **strips** inbound `X-Agentic-OS-Gateway` and **sets** `X-Agentic-OS-Gateway: 1`
    on upstream requests it forwards (never accept client-spoofed values).

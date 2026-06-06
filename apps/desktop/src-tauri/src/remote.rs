@@ -1,5 +1,57 @@
 use std::io::Read;
 
+const GATEWAY_TRANSPORT_ERROR: &str =
+    "remote gateway must use https; http:// is allowed only for localhost";
+
+pub fn validate_remote_gateway(gateway: &str) -> Result<String, String> {
+    let normalized = gateway.trim().trim_end_matches('/');
+    if normalized.is_empty() {
+        return Err("remote_gateway is required".to_string());
+    }
+
+    let (scheme, host) = parse_gateway_scheme_and_host(normalized)?;
+    if scheme == "http" && !is_loopback_host(&host) {
+        return Err(GATEWAY_TRANSPORT_ERROR.to_string());
+    }
+    if scheme != "http" && scheme != "https" {
+        return Err(GATEWAY_TRANSPORT_ERROR.to_string());
+    }
+
+    Ok(normalized.to_string())
+}
+
+fn parse_gateway_scheme_and_host(gateway: &str) -> Result<(String, String), String> {
+    let lower = gateway.to_ascii_lowercase();
+    let (scheme, rest) = if let Some(rest) = lower.strip_prefix("https://") {
+        ("https", rest)
+    } else if let Some(rest) = lower.strip_prefix("http://") {
+        ("http", rest)
+    } else {
+        return Err(GATEWAY_TRANSPORT_ERROR.to_string());
+    };
+
+    let authority = rest.split('/').next().unwrap_or(rest);
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    let host = if host_port.starts_with('[') {
+        let close = host_port
+            .find(']')
+            .ok_or_else(|| GATEWAY_TRANSPORT_ERROR.to_string())?;
+        host_port[1..close].to_string()
+    } else {
+        host_port
+            .split(':')
+            .next()
+            .unwrap_or(host_port)
+            .to_string()
+    };
+
+    Ok((scheme.to_string(), host))
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
+}
+
 pub fn local_api_url() -> String {
     std::env::var("AGENTIC_OS_API_URL").unwrap_or_else(|_| "http://127.0.0.1:8767".to_string())
 }
@@ -61,11 +113,7 @@ pub fn complete_pairing(pairing_code: &str, device_name: &str) -> Result<String,
 }
 
 fn gateway_url(settings: &crate::settings::DesktopSettings) -> Result<String, String> {
-    let gateway = settings.remote.remote_gateway.trim().trim_end_matches('/');
-    if gateway.is_empty() {
-        return Err("remote_gateway is required".to_string());
-    }
-    Ok(gateway.to_string())
+    validate_remote_gateway(&settings.remote.remote_gateway)
 }
 
 pub fn gateway_request(
@@ -85,7 +133,8 @@ pub fn gateway_get_with_token(gateway: &str, path: &str, token: &str) -> Result<
 }
 
 pub fn gateway_events_probe(gateway: &str, token: &str) -> Result<bool, String> {
-    let url = format!("{}{}", gateway.trim_end_matches('/'), "/events");
+    let gateway = validate_remote_gateway(gateway)?;
+    let url = format!("{gateway}/events");
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
@@ -126,12 +175,13 @@ fn gateway_request_with_token(
     body: Option<&str>,
     token: &str,
 ) -> Result<String, String> {
+    let gateway = validate_remote_gateway(gateway)?;
     let normalized_path = if path.starts_with('/') {
         path.to_string()
     } else {
         format!("/{path}")
     };
-    let url = format!("{}{}", gateway.trim_end_matches('/'), normalized_path);
+    let url = format!("{gateway}{normalized_path}");
     let client = reqwest::blocking::Client::new();
     let mut request = match method.to_uppercase().as_str() {
         "GET" => client.get(&url),
@@ -150,4 +200,45 @@ fn gateway_request_with_token(
         return Err(response_error(response));
     }
     response.text().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_rejects_cleartext_non_loopback() {
+        let error = validate_remote_gateway("http://evil.example").unwrap_err();
+        assert!(error.contains("https"));
+        assert!(validate_remote_gateway("http://0.0.0.0:8443").is_err());
+    }
+
+    #[test]
+    fn validate_accepts_https_remote() {
+        assert_eq!(
+            validate_remote_gateway("https://gw.example/").unwrap(),
+            "https://gw.example"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_http_localhost() {
+        assert_eq!(
+            validate_remote_gateway("http://127.0.0.1:8443").unwrap(),
+            "http://127.0.0.1:8443"
+        );
+        assert_eq!(
+            validate_remote_gateway("http://localhost:8443").unwrap(),
+            "http://localhost:8443"
+        );
+        assert_eq!(
+            validate_remote_gateway("http://[::1]:8443").unwrap(),
+            "http://[::1]:8443"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_missing_scheme() {
+        assert!(validate_remote_gateway("gw.example").is_err());
+    }
 }

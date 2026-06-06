@@ -22,16 +22,13 @@ pub struct RemoteProbeResult {
 pub fn connection_profile() -> Result<ConnectionProfile, String> {
     let settings = settings::load_settings()?;
     if settings.connection.mode == "remote" {
-        let gateway = settings.remote.remote_gateway.trim().trim_end_matches('/');
-        if gateway.is_empty() {
-            return Err("remote mode requires remote_gateway".to_string());
-        }
-        let token_present = keychain::load_remote_token(gateway, &settings.remote.device_id)?
+        let gateway = remote::validate_remote_gateway(&settings.remote.remote_gateway)?;
+        let token_present = keychain::load_remote_token(&gateway, &settings.remote.device_id)?
             .is_some();
         Ok(ConnectionProfile {
             mode: "remote".to_string(),
-            api_url: gateway.to_string(),
-            event_stream_url: settings::event_stream_url(gateway),
+            api_url: gateway.clone(),
+            event_stream_url: settings::event_stream_url(&gateway),
             token_present,
         })
     } else {
@@ -58,16 +55,12 @@ pub fn probe_remote_connection() -> Result<RemoteProbeResult, String> {
     if settings.connection.mode != "remote" {
         return Err("connection mode is not remote".to_string());
     }
-    let gateway = settings.remote.remote_gateway.trim().trim_end_matches('/');
-    if gateway.is_empty() {
-        return Err("remote_gateway is required".to_string());
-    }
-    let token = keychain::load_remote_token(gateway, &settings.remote.device_id)?
+    let gateway = remote::validate_remote_gateway(&settings.remote.remote_gateway)?;
+    let token = keychain::load_remote_token(&gateway, &settings.remote.device_id)?
         .ok_or_else(|| "missing remote token in Keychain".to_string())?;
 
-    let health_ok = remote::gateway_get_with_token(gateway, "/health", &token).is_ok();
-    let events_ok =
-        remote::gateway_events_probe(gateway, &token).unwrap_or(false);
+    let health_ok = remote::gateway_get_with_token(&gateway, "/health", &token).is_ok();
+    let events_ok = remote::gateway_events_probe(&gateway, &token).unwrap_or(false);
 
     let detail = if health_ok && events_ok {
         "connected".to_string()

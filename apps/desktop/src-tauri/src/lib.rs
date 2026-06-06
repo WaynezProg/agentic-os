@@ -67,9 +67,7 @@ fn remote_token_status(remote_gateway: String, device_id: String) -> Result<bool
 #[tauri::command]
 fn complete_remote_pairing(pairing_code: String, device_name: String) -> Result<String, String> {
     let settings = settings::load_settings()?;
-    if settings.remote.remote_gateway.trim().is_empty() {
-        return Err("remote_gateway is required before pairing".to_string());
-    }
+    let gateway = remote::validate_remote_gateway(&settings.remote.remote_gateway)?;
     if device_name.trim().is_empty() {
         return Err("device_name is required".to_string());
     }
@@ -86,11 +84,7 @@ fn complete_remote_pairing(pairing_code: String, device_name: String) -> Result<
         .and_then(|value| value.as_str())
         .ok_or_else(|| "pairing response missing auth_token".to_string())?;
 
-    keychain::save_remote_token(
-        &settings.remote.remote_gateway,
-        device_id,
-        auth_token,
-    )?;
+    keychain::save_remote_token(&gateway, device_id, auth_token)?;
 
     let mut updated = settings;
     updated.remote.device_id = device_id.to_string();
