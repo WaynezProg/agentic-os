@@ -32,6 +32,8 @@ def is_remote_admin_route(method: str, path: str) -> bool:
         return True
     if method == "DELETE" and path.startswith("/remote/devices/") and len(path) > len("/remote/devices/"):
         return True
+    if method == "POST" and path.startswith("/remote/devices/") and path.endswith("/rotate"):
+        return True
     return False
 
 

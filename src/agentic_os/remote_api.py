@@ -80,6 +80,14 @@ def register_remote_routes(
             raise HTTPException(status_code=404, detail="device_not_found")
         return {"revoked": True}
 
+    @app.post("/remote/devices/{device_id}/rotate")
+    def remote_rotate_device(device_id: str, request: Request) -> dict[str, str]:
+        require_localhost_operator(request)
+        rotated = remote.rotate_device(device_id)
+        if rotated is None:
+            raise HTTPException(status_code=404, detail="device_not_found")
+        return rotated
+
     @app.get("/events")
     async def events_stream(
         request: Request,

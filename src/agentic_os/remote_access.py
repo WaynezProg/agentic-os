@@ -41,7 +41,20 @@ class RemoteAccessService:
     def record_complete_failure(self, client_key: str) -> None:
         self._store.record_pairing_failure(client_key)
 
-    def complete_pairing(self, *, pairing_code: str, device_name: str, client_key: str) -> dict[str, str]:
+    @staticmethod
+    def _expiry_for_ttl(ttl_seconds: int | None) -> str | None:
+        if ttl_seconds is None:
+            return None
+        return (datetime.now(UTC) + timedelta(seconds=ttl_seconds)).isoformat()
+
+    def complete_pairing(
+        self,
+        *,
+        pairing_code: str,
+        device_name: str,
+        client_key: str,
+        ttl_seconds: int | None = None,
+    ) -> dict[str, str]:
         if not device_name.strip():
             raise RemoteAccessError("device_name_required")
         self.ensure_complete_allowed(client_key)
@@ -54,6 +67,7 @@ class RemoteAccessService:
             device_id=device_id,
             device_name=device_name.strip(),
             token_hash=self._hash_token(auth_token),
+            expires_at=self._expiry_for_ttl(ttl_seconds),
         )
         self._store.clear_pairing_failures(client_key)
         return {"device_id": device_id, "auth_token": auth_token}
@@ -62,6 +76,22 @@ class RemoteAccessService:
         if not auth_token.strip():
             return None
         return self._store.device_id_for_token_hash(self._hash_token(auth_token.strip()))
+
+    def rotate_device(
+        self,
+        device_id: str,
+        *,
+        ttl_seconds: int | None = None,
+    ) -> dict[str, str] | None:
+        auth_token = secrets.token_urlsafe(32)
+        rotated = self._store.rotate_device_token(
+            device_id,
+            token_hash=self._hash_token(auth_token),
+            expires_at=self._expiry_for_ttl(ttl_seconds),
+        )
+        if not rotated:
+            return None
+        return {"device_id": device_id, "auth_token": auth_token}
 
     def revoke_device(self, device_id: str) -> bool:
         return self._store.revoke_device(device_id)

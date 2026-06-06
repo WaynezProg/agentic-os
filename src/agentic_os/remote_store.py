@@ -29,7 +29,8 @@ class RemoteDeviceStore:
                     device_name TEXT NOT NULL,
                     token_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    revoked_at TEXT
+                    revoked_at TEXT,
+                    expires_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS pairing_failures (
                     client_key TEXT NOT NULL,
@@ -39,6 +40,13 @@ class RemoteDeviceStore:
                     ON pairing_failures (client_key, failed_at);
                 """
             )
+            self._migrate_devices(conn)
+
+    def _migrate_devices(self, conn: sqlite3.Connection) -> None:
+        # P14: add the nullable expires_at column to P12 databases in place.
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(devices)")}
+        if "expires_at" not in columns:
+            conn.execute("ALTER TABLE devices ADD COLUMN expires_at TEXT")
 
     def insert_pairing_code(self, code: str, expires_at: str) -> None:
         with self._connect() as conn:
@@ -62,27 +70,62 @@ class RemoteDeviceStore:
             conn.execute("DELETE FROM pairing_codes WHERE code = ?", (code,))
             return True
 
-    def insert_device(self, *, device_id: str, device_name: str, token_hash: str) -> None:
+    def insert_device(
+        self,
+        *,
+        device_id: str,
+        device_name: str,
+        token_hash: str,
+        expires_at: str | None = None,
+    ) -> None:
         created_at = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO devices (device_id, device_name, token_hash, created_at, revoked_at)
-                VALUES (?, ?, ?, ?, NULL)
+                INSERT INTO devices
+                    (device_id, device_name, token_hash, created_at, revoked_at, expires_at)
+                VALUES (?, ?, ?, ?, NULL, ?)
                 """,
-                (device_id, device_name, token_hash, created_at),
+                (device_id, device_name, token_hash, created_at, expires_at),
             )
 
     def device_id_for_token_hash(self, token_hash: str) -> str | None:
+        now = datetime.now(UTC).isoformat()
         with self._connect() as conn:
             row = conn.execute(
                 """
                 SELECT device_id FROM devices
-                WHERE token_hash = ? AND revoked_at IS NULL
+                WHERE token_hash = ?
+                  AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at > ?)
                 """,
-                (token_hash,),
+                (token_hash, now),
             ).fetchone()
         return row["device_id"] if row else None
+
+    def set_device_expiry(self, device_id: str, expires_at: str | None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE devices SET expires_at = ? WHERE device_id = ?",
+                (expires_at, device_id),
+            )
+
+    def rotate_device_token(
+        self,
+        device_id: str,
+        *,
+        token_hash: str,
+        expires_at: str | None = None,
+    ) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE devices SET token_hash = ?, expires_at = ?
+                WHERE device_id = ? AND revoked_at IS NULL
+                """,
+                (token_hash, expires_at, device_id),
+            )
+        return cursor.rowcount > 0
 
     def revoke_device(self, device_id: str) -> bool:
         revoked_at = datetime.now(UTC).isoformat()
@@ -100,7 +143,7 @@ class RemoteDeviceStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT device_id, device_name, created_at, revoked_at
+                SELECT device_id, device_name, created_at, revoked_at, expires_at
                 FROM devices
                 ORDER BY created_at DESC
                 """
@@ -111,6 +154,7 @@ class RemoteDeviceStore:
                 "device_name": row["device_name"],
                 "created_at": row["created_at"],
                 "revoked_at": row["revoked_at"],
+                "expires_at": row["expires_at"],
             }
             for row in rows
         ]
