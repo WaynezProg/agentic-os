@@ -1,7 +1,7 @@
 # P10 — Safe Native Config Editing Design
 
 Date: 2026-06-06
-Status: Draft for written spec review
+Status: Implemented
 Author: agentic-os team
 Builds on: `specs/013-configuration-scope-mapper.md`, `specs/020-harness-config-bridge.md`,
 `specs/014-workflow-surface-catalog.md`, `docs/superpowers/specs/2026-05-30-harness-manager-extension-design.md`
