@@ -134,5 +134,5 @@ func normalizedGatewayURL(_ raw: String) throws -> URL {
 }
 
 private func isLoopbackHost(_ host: String) -> Bool {
-    host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "0.0.0.0"
+    host == "127.0.0.1" || host == "localhost" || host == "::1"
 }

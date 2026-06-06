@@ -49,7 +49,7 @@ fn parse_gateway_scheme_and_host(gateway: &str) -> Result<(String, String), Stri
 }
 
 fn is_loopback_host(host: &str) -> bool {
-    matches!(host, "127.0.0.1" | "localhost" | "::1" | "0.0.0.0")
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
 }
 
 pub fn local_api_url() -> String {
@@ -210,6 +210,7 @@ mod tests {
     fn validate_rejects_cleartext_non_loopback() {
         let error = validate_remote_gateway("http://evil.example").unwrap_err();
         assert!(error.contains("https"));
+        assert!(validate_remote_gateway("http://0.0.0.0:8443").is_err());
     }
 
     #[test]
