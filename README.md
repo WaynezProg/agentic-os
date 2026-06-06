@@ -44,6 +44,7 @@ Phase positioning:
 | P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
 | P10 | safe native config editing | safe write layer for workflow surfaces, harness-native config, and agentic-os config | dry-run patch, schema validation, hybrid backup, rollback, surface/config writers, audit | harness runtime, P7 approval for config writes, desktop app (P11), iOS remote (P12), cloud sync |
+| P11 | desktop app shell | macOS-validated Tauri wrapper over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | iOS, frp, pairing, SSE, new agent features, code signing |
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
@@ -75,6 +76,18 @@ Optional overrides:
 ```bash
 AGENTIC_OS_PORT=8797 AGENTIC_OS_UI_PORT=5181 rtk bash scripts/start-local.sh
 ```
+
+## Desktop app (P11)
+
+macOS-validated Tauri shell. Requires pnpm + Rust toolchain.
+
+```bash
+pnpm install
+pnpm desktop:dev      # tray + ui:5173 + agentd:8767 + webview
+pnpm desktop:build    # macOS .app bundle
+```
+
+Windows/Linux builds are not validated in P11.
 
 ## Run P0 Locally
 

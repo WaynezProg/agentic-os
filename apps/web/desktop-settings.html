@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Desktop Settings</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 1.5rem;
+        color: #1a1a1a;
+      }
+      label {
+        display: block;
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0.25rem;
+        padding: 0.5rem;
+      }
+      h2 {
+        margin-top: 1.5rem;
+        font-size: 1rem;
+      }
+      button {
+        margin-top: 1.25rem;
+        padding: 0.5rem 1rem;
+      }
+      #status {
+        margin-top: 0.75rem;
+        font-size: 0.85rem;
+        color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>agentic-os Desktop</h1>
+    <p>Local connection is active in P11. Remote fields are reserved for P12.</p>
+
+    <h2>Local</h2>
+    <label>API URL <input id="api-url" /></label>
+    <label>UI URL <input id="ui-url" /></label>
+
+    <h2>Remote (placeholder)</h2>
+    <label>Gateway URL <input id="gateway-url" /></label>
+    <label>Event stream URL <input id="event-stream-url" /></label>
+    <label>Token <input id="token" type="password" /></label>
+    <label>Pairing code <input id="pairing-code" /></label>
+    <label>Paired device ID <input id="paired-device-id" /></label>
+
+    <button id="save">Save</button>
+    <div id="status"></div>
+
+    <script type="module">
+      const { invoke } = window.__TAURI__.core;
+
+      async function load() {
+        const settings = await invoke("get_desktop_settings");
+        document.getElementById("api-url").value = settings.local.api_url;
+        document.getElementById("ui-url").value = settings.local.ui_url;
+        document.getElementById("gateway-url").value = settings.remote.gateway_url;
+        document.getElementById("event-stream-url").value = settings.remote.event_stream_url;
+        document.getElementById("token").value = settings.remote.token;
+        document.getElementById("pairing-code").value = settings.remote.pairing_code;
+        document.getElementById("paired-device-id").value = settings.remote.paired_device_id;
+      }
+
+      document.getElementById("save").addEventListener("click", async () => {
+        const settings = await invoke("get_desktop_settings");
+        settings.local.api_url = document.getElementById("api-url").value;
+        settings.local.ui_url = document.getElementById("ui-url").value;
+        settings.remote.gateway_url = document.getElementById("gateway-url").value;
+        settings.remote.event_stream_url = document.getElementById("event-stream-url").value;
+        settings.remote.token = document.getElementById("token").value;
+        settings.remote.pairing_code = document.getElementById("pairing-code").value;
+        settings.remote.paired_device_id = document.getElementById("paired-device-id").value;
+        await invoke("save_desktop_settings", { settings });
+        document.getElementById("status").textContent = "Saved to ~/.agentic-os/desktop.toml";
+      });
+
+      load().catch((error) => {
+        document.getElementById("status").textContent = String(error);
+      });
+    </script>
+  </body>
+</html>
