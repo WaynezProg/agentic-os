@@ -1,0 +1,9 @@
+{
+  "name": "agentic-os",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "desktop:dev": "pnpm --filter @agentic-os/desktop tauri dev",
+    "desktop:build": "pnpm --filter @agentic-os/desktop tauri build"
+  }
+}
