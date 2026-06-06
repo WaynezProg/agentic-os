@@ -70,6 +70,8 @@ from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
 from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
 from agentic_os.registry import Registry, RenderedRun, validate_registry
+from agentic_os.remote_access import RemoteAccessService
+from agentic_os.remote_api import register_remote_routes
 from agentic_os.safe_edit import (
     ConflictError,
     PatchResult,
@@ -210,6 +212,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
     evidence_store = EvidenceStore(state_dir)
+    remote_access = RemoteAccessService(state_dir)
     supervisor = ProcessSupervisor(
         store=store,
         logs=logs,
@@ -2254,6 +2257,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         if approval_id is not None:
             content["approval_id"] = approval_id
         return JSONResponse(status_code=status_code, content=content)
+
+    register_remote_routes(app, remote=remote_access, audit_store=audit_store)
 
     return app
 

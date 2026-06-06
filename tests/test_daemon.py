@@ -35,7 +35,7 @@ def test_agentd_serve_runs_api_with_configured_options(monkeypatch) -> None:
         [
             "serve",
             "--host",
-            "0.0.0.0",
+            "127.0.0.1",
             "--port",
             "9999",
             "--state-dir",
@@ -50,6 +50,12 @@ def test_agentd_serve_runs_api_with_configured_options(monkeypatch) -> None:
         "state_dir": Path("tmp/state"),
         "registry_path": Path("tmp/agents.toml"),
         "api": api,
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 9999,
     }
+
+
+def test_agentd_serve_rejects_public_bind() -> None:
+    result = CliRunner().invoke(app, ["serve", "--host", "0.0.0.0"])
+    assert result.exit_code != 0
+    assert "127.0.0.1" in result.output

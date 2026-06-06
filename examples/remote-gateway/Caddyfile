@@ -1,0 +1,13 @@
+:8443 {
+    tls internal
+
+    @remote path /remote/*
+    header @remote X-Agentic-OS-Gateway "1"
+
+    reverse_proxy 127.0.0.1:8767 {
+        flush_interval -1
+        transport http {
+            versions 1.1
+        }
+    }
+}

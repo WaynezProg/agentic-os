@@ -115,3 +115,4 @@ P12 adds connection logic, gateway helper docs, and iOS client — not daemon bi
 - Phase spec: `specs/030-remote-access-adapter.md`
 - P11 design: `docs/superpowers/specs/2026-06-07-p11-desktop-app-shell-design.md`
 - P11.5 design: `docs/superpowers/specs/2026-06-07-p11.5-packaged-macos-app-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-06-07-p12-remote-access-adapter.md`

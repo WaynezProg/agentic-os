@@ -25,7 +25,7 @@ pub struct LocalSettings {
 pub struct RemoteSettings {
     pub gateway_url: String,
     pub event_stream_url: String,
-    pub token: String,
+    #[serde(default, skip_serializing)]
     pub pairing_code: String,
     pub paired_device_id: String,
 }
@@ -43,7 +43,6 @@ impl Default for DesktopSettings {
             remote: RemoteSettings {
                 gateway_url: String::new(),
                 event_stream_url: String::new(),
-                token: String::new(),
                 pairing_code: String::new(),
                 paired_device_id: String::new(),
             },
@@ -84,5 +83,6 @@ mod tests {
         let raw = toml::to_string(&settings).unwrap();
         assert!(raw.contains("mode = \"local\""));
         assert!(raw.contains("api_url = \"http://127.0.0.1:8767\""));
+        assert!(!raw.contains("token"));
     }
 }

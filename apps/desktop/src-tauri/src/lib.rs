@@ -1,4 +1,5 @@
 mod daemon;
+mod remote;
 mod settings;
 
 use settings::DesktopSettings;
@@ -46,6 +47,31 @@ fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     settings::save_settings(&settings)
 }
 
+#[tauri::command]
+fn start_remote_pairing() -> Result<String, String> {
+    remote::post_json("/remote/pairing/start", None)
+}
+
+#[tauri::command]
+fn list_remote_devices() -> Result<String, String> {
+    remote::get_json("/remote/devices")
+}
+
+#[tauri::command]
+fn revoke_remote_device(device_id: String) -> Result<String, String> {
+    remote::delete_json(&format!("/remote/devices/{device_id}"))
+}
+
+#[tauri::command]
+fn save_remote_token(token: String) -> Result<(), String> {
+    remote::save_remote_token(&token)
+}
+
+#[tauri::command]
+fn load_remote_token() -> Result<Option<String>, String> {
+    remote::load_remote_token()
+}
+
 fn tray_title_from_status(status_json: &str) -> String {
     let health = serde_json::from_str::<serde_json::Value>(status_json)
         .ok()
@@ -76,6 +102,11 @@ pub fn run() {
             ui_stop,
             get_desktop_settings,
             save_desktop_settings,
+            start_remote_pairing,
+            list_remote_devices,
+            revoke_remote_device,
+            save_remote_token,
+            load_remote_token,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

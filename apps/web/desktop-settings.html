@@ -14,7 +14,8 @@
         margin-top: 0.75rem;
         font-size: 0.9rem;
       }
-      input {
+      input,
+      select {
         width: 100%;
         box-sizing: border-box;
         margin-top: 0.25rem;
@@ -25,30 +26,43 @@
         font-size: 1rem;
       }
       button {
-        margin-top: 1.25rem;
+        margin-top: 0.75rem;
+        margin-right: 0.5rem;
         padding: 0.5rem 1rem;
       }
-      #status {
+      #status,
+      #devices {
         margin-top: 0.75rem;
         font-size: 0.85rem;
         color: #444;
+        white-space: pre-wrap;
       }
     </style>
   </head>
   <body>
     <h1>agentic-os Desktop</h1>
-    <p>Local connection is active in P11. Remote fields are reserved for P12.</p>
+
+    <h2>Connection</h2>
+    <label>
+      Mode
+      <select id="connection-mode">
+        <option value="local">local</option>
+        <option value="remote">remote</option>
+      </select>
+    </label>
 
     <h2>Local</h2>
     <label>API URL <input id="api-url" /></label>
     <label>UI URL <input id="ui-url" /></label>
 
-    <h2>Remote (placeholder)</h2>
-    <label>Gateway URL <input id="gateway-url" /></label>
-    <label>Event stream URL <input id="event-stream-url" /></label>
-    <label>Token <input id="token" type="password" /></label>
-    <label>Pairing code <input id="pairing-code" /></label>
+    <h2>Remote</h2>
+    <label>Gateway URL <input id="gateway-url" placeholder="https://example.tailnet.ts.net" /></label>
+    <label>Event stream URL <input id="event-stream-url" readonly /></label>
+    <label>Pairing code <input id="pairing-code" readonly /></label>
     <label>Paired device ID <input id="paired-device-id" /></label>
+    <button id="start-pairing" type="button">Start pairing</button>
+    <button id="refresh-devices" type="button">Refresh devices</button>
+    <div id="devices"></div>
 
     <button id="save">Save</button>
     <div id="status"></div>
@@ -56,33 +70,68 @@
     <script type="module">
       const { invoke } = window.__TAURI__.core;
 
+      function deriveEventStreamUrl(gatewayUrl) {
+        const trimmed = gatewayUrl.trim().replace(/\/+$/, "");
+        return trimmed ? `${trimmed}/events` : "";
+      }
+
       async function load() {
         const settings = await invoke("get_desktop_settings");
+        document.getElementById("connection-mode").value = settings.connection.mode;
         document.getElementById("api-url").value = settings.local.api_url;
         document.getElementById("ui-url").value = settings.local.ui_url;
         document.getElementById("gateway-url").value = settings.remote.gateway_url;
         document.getElementById("event-stream-url").value = settings.remote.event_stream_url;
-        document.getElementById("token").value = settings.remote.token;
-        document.getElementById("pairing-code").value = settings.remote.pairing_code;
+        document.getElementById("pairing-code").value = settings.remote.pairing_code || "";
         document.getElementById("paired-device-id").value = settings.remote.paired_device_id;
       }
 
+      async function refreshDevices() {
+        try {
+          const raw = await invoke("list_remote_devices");
+          const payload = JSON.parse(raw);
+          document.getElementById("devices").textContent = JSON.stringify(payload.devices, null, 2);
+        } catch (error) {
+          document.getElementById("devices").textContent = String(error);
+        }
+      }
+
+      document.getElementById("gateway-url").addEventListener("input", (event) => {
+        document.getElementById("event-stream-url").value = deriveEventStreamUrl(event.target.value);
+      });
+
+      document.getElementById("start-pairing").addEventListener("click", async () => {
+        try {
+          const raw = await invoke("start_remote_pairing");
+          const payload = JSON.parse(raw);
+          document.getElementById("pairing-code").value = payload.pairing_code;
+          document.getElementById("status").textContent = `Pairing code expires at ${payload.expires_at}`;
+        } catch (error) {
+          document.getElementById("status").textContent = String(error);
+        }
+      });
+
+      document.getElementById("refresh-devices").addEventListener("click", refreshDevices);
+
       document.getElementById("save").addEventListener("click", async () => {
         const settings = await invoke("get_desktop_settings");
+        settings.connection.mode = document.getElementById("connection-mode").value;
         settings.local.api_url = document.getElementById("api-url").value;
         settings.local.ui_url = document.getElementById("ui-url").value;
-        settings.remote.gateway_url = document.getElementById("gateway-url").value;
-        settings.remote.event_stream_url = document.getElementById("event-stream-url").value;
-        settings.remote.token = document.getElementById("token").value;
+        settings.remote.gateway_url = document.getElementById("gateway-url").value.trim();
+        settings.remote.event_stream_url = deriveEventStreamUrl(settings.remote.gateway_url);
         settings.remote.pairing_code = document.getElementById("pairing-code").value;
         settings.remote.paired_device_id = document.getElementById("paired-device-id").value;
         await invoke("save_desktop_settings", { settings });
-        document.getElementById("status").textContent = "Saved to ~/.agentic-os/desktop.toml";
+        document.getElementById("status").textContent =
+          "Saved to ~/.agentic-os/desktop.toml (token stays in Keychain when set)";
       });
 
-      load().catch((error) => {
-        document.getElementById("status").textContent = String(error);
-      });
+      load()
+        .then(refreshDevices)
+        .catch((error) => {
+          document.getElementById("status").textContent = String(error);
+        });
     </script>
   </body>
 </html>

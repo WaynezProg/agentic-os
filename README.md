@@ -99,6 +99,19 @@ open apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app
 
 After Quit, `8767` and `5173` must have no listeners. Windows/Linux builds are not validated.
 
+**P12 — remote access** (merge gate: pairing + SSE auth + gateway smoke):
+
+```bash
+uv run agentd serve
+# optional reference gateway:
+caddy run --config examples/remote-gateway/Caddyfile
+
+# desktop Settings → Start pairing → complete from remote client
+bash scripts/smoke-remote-client.sh https://127.0.0.1:8443 "$TOKEN"
+```
+
+See `examples/remote-gateway/README.md` and `apps/ios/README.md`. `agentd` stays on `127.0.0.1` only.
+
 ## Run P0 Locally
 
 Terminal 1:

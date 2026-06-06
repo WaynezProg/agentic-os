@@ -1,6 +1,6 @@
 # 030 — Remote Access Adapter (P12)
 
-Status: Planned
+Status: Implemented
 Date: 2026-06-07
 Depends on: P11.5 (`specs/029-packaged-macos-app.md`)
 Blocks: —
@@ -88,3 +88,7 @@ remains product-neutral.
 ## Design
 
 `docs/superpowers/specs/2026-06-07-p12-remote-access-adapter-design.md`
+
+## Implementation plan
+
+`docs/superpowers/plans/2026-06-07-p12-remote-access-adapter.md`
