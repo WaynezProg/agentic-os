@@ -1,19 +1,21 @@
-# iOS Remote Companion (P12 MVP)
+# iOS Remote Companion (P12.5c)
 
-SwiftUI client scaffold for the Remote Access Adapter. All traffic goes to `gateway_url`
-with `Authorization: Bearer` — never to the Mac LAN IP.
+Minimal SwiftUI client for the Remote Access Adapter. All traffic goes to
+`remote_gateway` with `Authorization: Bearer` — never to the Mac LAN IP.
 
 ## Pairing flow
 
-1. Desktop: **Start pairing** → 6-digit code.
-2. iOS: POST `{gateway_url}/remote/pairing/complete` with header `X-Agentic-OS-Gateway: 1`
-   (set by reference Caddy/nginx config) and body:
+1. Desktop (localhost operator): **Start pairing** → high-entropy `pairing_code`
+   (`secrets.token_urlsafe(16)` from agentd).
+2. iOS: POST `{remote_gateway}/remote/pairing/complete` with header
+   `X-Agentic-OS-Gateway: 1` (set by reference Caddy/nginx config) and body:
 
 ```json
-{"pairing_code": "123456", "device_name": "wayne-iphone"}
+{"pairing_code": "<code from desktop>", "device_name": "wayne-iphone"}
 ```
 
-3. Store returned `auth_token` in Keychain; use `device_id` for display/revoke on desktop.
+3. Store returned `auth_token` in iOS Keychain (service `agentic-os`, account
+   `{remote_gateway}:{device_id}`). Revoke on desktop invalidates the token.
 
 ## API surface
 
@@ -21,7 +23,26 @@ with `Authorization: Bearer` — never to the Mac LAN IP.
 |------|------|
 | `GET {gateway}/health` | optional |
 | `GET {gateway}/events` | Bearer required |
-| `POST {gateway}/remote/pairing/complete` | gateway header |
+| `POST {gateway}/remote/pairing/complete` | `X-Agentic-OS-Gateway: 1` |
 
-Full implementation tracked in-repo after P12 merge gate; until then use
-`scripts/smoke-remote-client.sh` for contract verification.
+## Open in Xcode
+
+1. File → New → Project → iOS App (SwiftUI, Swift).
+2. Copy `RemoteCompanion/*.swift` into the app target (replace default files).
+3. Set minimum iOS 17.
+4. Run on simulator or device against a configured `remote_gateway`.
+
+CLI smoke without Xcode:
+
+```bash
+bash scripts/smoke-remote-client.sh https://127.0.0.1:8443 "$TOKEN"
+```
+
+## Status states
+
+| UI state | Meaning |
+|----------|---------|
+| `connected` | `/health` OK and `/events` returned SSE preamble |
+| `unauthorized` / `revoked` | Bearer rejected (revoked device) |
+| `disconnected` | No Keychain token |
+| `error` | Network or gateway misconfiguration |

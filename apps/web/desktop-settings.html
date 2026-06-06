@@ -31,11 +31,23 @@
         padding: 0.5rem 1rem;
       }
       #status,
-      #devices {
+      #devices,
+      #token-status {
         margin-top: 0.75rem;
         font-size: 0.85rem;
         color: #444;
         white-space: pre-wrap;
+      }
+      .device-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.35rem;
+      }
+      .device-row code {
+        flex: 1;
+        font-size: 0.8rem;
+        word-break: break-all;
       }
     </style>
   </head>
@@ -60,8 +72,13 @@
     <label>Tunnel provider <input id="tunnel-provider" placeholder="tailscale / cloudflare / caddy / …" /></label>
     <label>Event stream URL <input id="event-stream-url" readonly /></label>
     <label>Pairing code (ephemeral) <input id="pairing-code" readonly /></label>
-    <label>Device ID <input id="device-id" /></label>
+    <label>Device name (this client) <input id="device-name" placeholder="wayne-macbook" /></label>
+    <label>Device ID <input id="device-id" readonly /></label>
+    <div id="token-status"></div>
+    <div id="remote-probe"></div>
+    <button id="probe-remote" type="button">Probe remote (/health, /events)</button>
     <button id="start-pairing" type="button">Start pairing</button>
+    <button id="complete-pairing" type="button">Complete pairing (this device)</button>
     <button id="refresh-devices" type="button">Refresh devices</button>
     <div id="devices"></div>
 
@@ -76,6 +93,42 @@
         return trimmed ? `${trimmed}/events` : "";
       }
 
+      async function probeRemote() {
+        const mode = document.getElementById("connection-mode").value;
+        if (mode !== "remote") {
+          document.getElementById("remote-probe").textContent = "Remote probe: local mode";
+          return;
+        }
+        try {
+          const probe = await invoke("probe_remote_connection");
+          document.getElementById("remote-probe").textContent = probe.health_ok && probe.events_ok
+            ? `Remote probe: ${probe.detail}`
+            : `Remote probe: ${probe.detail} (health=${probe.health_ok}, events=${probe.events_ok})`;
+        } catch (error) {
+          document.getElementById("remote-probe").textContent = `Remote probe failed: ${error}`;
+        }
+      }
+
+      async function refreshTokenStatus() {
+        const remoteGateway = document.getElementById("remote-gateway").value.trim();
+        const deviceId = document.getElementById("device-id").value.trim();
+        if (!remoteGateway || !deviceId) {
+          document.getElementById("token-status").textContent = "Token: not paired";
+          return;
+        }
+        try {
+          const stored = await invoke("remote_token_status", {
+            remoteGateway,
+            deviceId,
+          });
+          document.getElementById("token-status").textContent = stored
+            ? "Token: stored in Keychain"
+            : "Token: not in Keychain";
+        } catch (error) {
+          document.getElementById("token-status").textContent = String(error);
+        }
+      }
+
       async function load() {
         const settings = await invoke("get_desktop_settings");
         document.getElementById("connection-mode").value = settings.connection.mode;
@@ -87,13 +140,45 @@
           settings.remote.remote_gateway,
         );
         document.getElementById("device-id").value = settings.remote.device_id;
+        await refreshTokenStatus();
+        await probeRemote();
+      }
+
+      function renderDevices(devices) {
+        const container = document.getElementById("devices");
+        container.replaceChildren();
+        if (!devices.length) {
+          container.textContent = "No paired devices.";
+          return;
+        }
+        for (const device of devices) {
+          const row = document.createElement("div");
+          row.className = "device-row";
+          const label = document.createElement("code");
+          label.textContent = `${device.device_name} · ${device.device_id}`;
+          const revoke = document.createElement("button");
+          revoke.type = "button";
+          revoke.textContent = "Revoke";
+          revoke.addEventListener("click", async () => {
+            try {
+              await invoke("revoke_remote_device", { deviceId: device.device_id });
+              document.getElementById("status").textContent = `Revoked ${device.device_id}`;
+              await refreshDevices();
+              await load();
+            } catch (error) {
+              document.getElementById("status").textContent = String(error);
+            }
+          });
+          row.append(label, revoke);
+          container.append(row);
+        }
       }
 
       async function refreshDevices() {
         try {
           const raw = await invoke("list_remote_devices");
           const payload = JSON.parse(raw);
-          document.getElementById("devices").textContent = JSON.stringify(payload.devices, null, 2);
+          renderDevices(payload.devices || []);
         } catch (error) {
           document.getElementById("devices").textContent = String(error);
         }
@@ -114,7 +199,47 @@
         }
       });
 
+      document.getElementById("complete-pairing").addEventListener("click", async () => {
+        const pairingCode = document.getElementById("pairing-code").value.trim();
+        const deviceName = document.getElementById("device-name").value.trim();
+        if (!pairingCode) {
+          document.getElementById("status").textContent = "Start pairing first to get a code.";
+          return;
+        }
+        if (!deviceName) {
+          document.getElementById("status").textContent = "Device name is required.";
+          return;
+        }
+        try {
+          const remoteGateway = document.getElementById("remote-gateway").value.trim();
+          if (!remoteGateway) {
+            document.getElementById("status").textContent = "Save remote gateway before pairing.";
+            return;
+          }
+          const settings = await invoke("get_desktop_settings");
+          settings.remote.remote_gateway = remoteGateway;
+          settings.remote.tunnel_provider = document
+            .getElementById("tunnel-provider")
+            .value.trim();
+          await invoke("save_desktop_settings", { settings });
+          const raw = await invoke("complete_remote_pairing", {
+            pairingCode,
+            deviceName,
+          });
+          const payload = JSON.parse(raw);
+          document.getElementById("device-id").value = payload.device_id;
+          document.getElementById("pairing-code").value = "";
+          document.getElementById("status").textContent =
+            `Paired as ${payload.device_id}; token saved to Keychain`;
+          await refreshTokenStatus();
+          await refreshDevices();
+        } catch (error) {
+          document.getElementById("status").textContent = String(error);
+        }
+      });
+
       document.getElementById("refresh-devices").addEventListener("click", refreshDevices);
+      document.getElementById("probe-remote").addEventListener("click", probeRemote);
 
       document.getElementById("save").addEventListener("click", async () => {
         const settings = await invoke("get_desktop_settings");
@@ -126,7 +251,8 @@
         settings.remote.device_id = document.getElementById("device-id").value.trim();
         await invoke("save_desktop_settings", { settings });
         document.getElementById("status").textContent =
-          "Saved endpoint + device_id only; tokens are not persisted (P12.5 Keychain)";
+          "Saved endpoint + device_id only; tokens live in Keychain (P12.5a)";
+        await refreshTokenStatus();
       });
 
       load()

@@ -1,9 +1,19 @@
 # 031 — Keychain Token Storage + iOS Companion (P12.5)
 
-Status: Planned
+Status: Implemented
 Date: 2026-06-07
 Depends on: P12 (`specs/030-remote-access-adapter.md`)
 Blocks: —
+
+## Sub-phases
+
+| Slice | Scope | Status |
+|-------|-------|--------|
+| P12.5a | macOS Keychain token vault; pairing complete → Keychain; revoke → delete; `desktop.toml` audit | Done |
+| P12.5b | `connection.mode=remote` reconnect via `remote_gateway` + Bearer (`/health`, `/events`) | Done |
+| P12.5c | iOS skeleton + README fix + iOS Keychain | Done |
+
+Keychain account: service `agentic-os`, account `{remote_gateway}:{device_id}`.
 
 ## Positioning
 

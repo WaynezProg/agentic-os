@@ -58,14 +58,34 @@ const state = {
   logSessionId: "",
   logStream: "",
   afterCursor: 0,
+  connectionProfile: null,
 };
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   byId("api-url").value = DEFAULT_API_URL;
+  await initDesktopConnection();
   bindTabs();
   bindControls();
   refreshAll();
 });
+
+async function initDesktopConnection() {
+  const invoke = window.__TAURI__?.core?.invoke;
+  if (!invoke) {
+    return;
+  }
+  try {
+    const profile = await invoke("get_connection_profile");
+    state.connectionProfile = profile;
+    if (profile.mode === "remote") {
+      byId("api-url").value = profile.api_url;
+      byId("api-url").readOnly = true;
+      byId("api-url").title = "Remote gateway (Bearer via desktop Keychain)";
+    }
+  } catch (error) {
+    console.warn("desktop connection profile unavailable", error);
+  }
+}
 
 function byId(id) {
   const element = document.getElementById(id);
@@ -185,6 +205,9 @@ function buildEndpoint(name, params = {}) {
 }
 
 async function apiFetch(path, options = {}) {
+  if (state.connectionProfile?.mode === "remote" && window.__TAURI__?.core?.invoke) {
+    return apiFetchViaDesktop(path, options);
+  }
   const headers = {
     Accept: "application/json",
     ...(options.body ? { "Content-Type": "application/json" } : {}),
@@ -202,6 +225,30 @@ async function apiFetch(path, options = {}) {
     throw error;
   }
   return payload;
+}
+
+async function apiFetchViaDesktop(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const body =
+    options.body === undefined
+      ? null
+      : typeof options.body === "string"
+        ? options.body
+        : JSON.stringify(options.body);
+  try {
+    const text = await window.__TAURI__.core.invoke("connection_api_fetch", {
+      method,
+      path,
+      body,
+    });
+    return text ? parseJson(text) : {};
+  } catch (error) {
+    const message = String(error);
+    const errorObject = new Error(message);
+    errorObject.status = 0;
+    errorObject.payload = { detail: message };
+    throw errorObject;
+  }
 }
 
 function parseJson(text) {
