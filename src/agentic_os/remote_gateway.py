@@ -77,10 +77,11 @@ def install_remote_gateway_middleware(app) -> None:
             return await call_next(request)
 
         token = extract_bearer_token(request)
-        if token is None or remote.validate_token(token) is None:
+        device_id = remote.validate_token(token) if token is not None else None
+        if device_id is None:
             return JSONResponse(
                 status_code=401,
                 content={"detail": "missing_or_invalid_bearer_token"},
             )
-        request.state.remote_device_id = remote.validate_token(token)
+        request.state.remote_device_id = device_id
         return await call_next(request)
