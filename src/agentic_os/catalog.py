@@ -513,6 +513,33 @@ def _extract_command_description(path: Path) -> str:
     return ""
 
 
+def resolve_surface_write_target(
+    harness: str,
+    scope: str,
+    surface_kind: str,
+    cwd: Path | None = None,
+    home_dir: Path | None = None,
+) -> tuple[Path, str]:
+    """Return (file_path, file_format) for structured surface writes."""
+    if harness not in _HARNESS_SCOPES:
+        msg = f"unsupported harness: {harness}"
+        raise ValueError(msg)
+    cwd_path = cwd or Path.cwd()
+    base_home = home_dir or Path.home()
+    scope_dir = {
+        "user": base_home / _HARNESS_SCOPES[harness]["user"],
+        "project": cwd_path.resolve() / _HARNESS_SCOPES[harness]["project"],
+        "local": cwd_path.resolve() / _HARNESS_SCOPES[harness]["local"],
+    }[scope]
+    if harness == "cursor" and surface_kind == "mcp_server":
+        return scope_dir / "mcp.json", "json"
+    if harness == "cursor" and surface_kind == "hook":
+        return scope_dir / "hooks.json", "json"
+    if harness in _JSON_SETTINGS_FILES:
+        return scope_dir / _JSON_SETTINGS_FILES[harness], "json"
+    return scope_dir / "config.toml", "toml"
+
+
 def _extract_skill_description(path: Path) -> str:
     """Extract description from SKILL.md (first heading after frontmatter)."""
     try:
