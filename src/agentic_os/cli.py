@@ -43,6 +43,8 @@ audit = typer.Typer(help="Query governance audit trail.")
 app.add_typer(audit, name="audit")
 catalog = typer.Typer(help="Scan and inspect workflow surfaces.")
 app.add_typer(catalog, name="catalog")
+patches_cmd = typer.Typer(help="Inspect and rollback config patches.")
+app.add_typer(patches_cmd, name="patches")
 config_cmd = typer.Typer(help="Inspect configuration scopes.")
 app.add_typer(config_cmd, name="config")
 harness_config_cmd = typer.Typer(help="Inspect harness-native configuration (read-only).")
@@ -940,6 +942,63 @@ def catalog_diff_cmd(
         typer.echo(f"- {s['id']}\t{scope_a or ''}")
     for m in data.get("modified", []):
         typer.echo(f"~ {m['surface']['id']}")
+
+
+@catalog.command("patch")
+def catalog_patch_cmd(
+    harness: str,
+    op: list[str] = typer.Option(..., "--op", help="JSON semantic op (repeatable)."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Project directory."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without writing."),
+    api: str | None = _api_option(),
+) -> None:
+    ops = [json.loads(item) for item in op]
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else str(Path.cwd())
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).catalog_patch(
+                harness,
+                ops,
+                cwd=resolved_cwd,
+                dry_run=dry_run,
+            )
+        )
+    )
+
+
+@patches_cmd.command("list")
+def patches_list_cmd(
+    harness: str | None = typer.Option(None, "--harness", help="Filter by harness id."),
+    cwd: Path | None = typer.Option(None, "--cwd", help="Filter by project directory."),
+    limit: int = typer.Option(50, "--limit", help="Maximum entries to return."),
+    api: str | None = _api_option(),
+) -> None:
+    resolved_cwd = str(cwd.expanduser().resolve()) if cwd else None
+    _echo_json(
+        _run_api_call(
+            lambda: make_client(api).patches_list(
+                harness=harness,
+                cwd=resolved_cwd,
+                limit=limit,
+            )
+        )
+    )
+
+
+@patches_cmd.command("show")
+def patches_show_cmd(
+    patch_id: str,
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).patches_show(patch_id)))
+
+
+@patches_cmd.command("rollback")
+def patches_rollback_cmd(
+    patch_id: str,
+    api: str | None = _api_option(),
+) -> None:
+    _echo_json(_run_api_call(lambda: make_client(api).patches_rollback(patch_id)))
 
 
 @config_cmd.command("effective")

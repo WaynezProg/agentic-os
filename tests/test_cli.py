@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+import uvicorn
 from typer.testing import CliRunner
 
 from agentic_os import cli
+from agentic_os.api import create_app
 from agentic_os.client import AgenticClient
 
 
@@ -614,6 +620,61 @@ class LegacyHarnessContractClient(FakeClient):
 
 def install_fake_client(monkeypatch: Any, fake: FakeClient) -> None:
     monkeypatch.setattr(cli, "make_client", lambda api: fake)
+
+
+def _write_smoke_registry(path: Path) -> None:
+    shell_command = ["/usr/bin/printf", "%s", "{{message}}"]
+    path.write_text(
+        f"""
+[[agents]]
+id = "shell"
+label = "Shell"
+command = {json.dumps(shell_command)}
+cwd_mode = "optional"
+stop_policy = "process_group"
+""",
+        encoding="utf-8",
+    )
+
+
+def _wait_for_health(base_url: str) -> None:
+    deadline = time.monotonic() + 5
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            response = httpx.get(f"{base_url}/health", timeout=0.2)
+            if response.status_code == 200:
+                return
+        except httpx.RequestError as exc:
+            last_error = exc
+        time.sleep(0.05)
+    raise AssertionError(f"daemon did not start: {last_error}")
+
+
+@contextmanager
+def _live_daemon(tmp_path: Path, port: int) -> Iterator[str]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    registry_path = tmp_path / "agents.toml"
+    _write_smoke_registry(registry_path)
+    app = create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry_path)
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    base_url = f"http://127.0.0.1:{port}"
+    _wait_for_health(base_url)
+    try:
+        yield base_url
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
 
 
 def test_agents_list_prints_tab_separated_rows(monkeypatch: Any) -> None:
@@ -2118,6 +2179,48 @@ def test_usage_client_calls_api(monkeypatch: Any) -> None:
     result = runner.invoke(cli.app, ["usage", "summary", "--harness-id", "claude"])
     assert result.exit_code == 0
     assert fake.calls[0][0] == "usage_summary"
+
+
+def test_cli_catalog_patch_dry_run(
+    tmp_path: Path,
+    monkeypatch: Any,
+    free_tcp_port: int,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    settings = repo / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    json_op = json.dumps(
+        {
+            "op": "enable_mcp_server",
+            "name": "gh",
+            "scope": "project",
+            "config": {"command": "npx"},
+        }
+    )
+    runner = CliRunner()
+    with _live_daemon(tmp_path / "daemon", free_tcp_port) as api:
+        result = runner.invoke(
+            cli.app,
+            [
+                "catalog",
+                "patch",
+                "claude",
+                "--dry-run",
+                "--op",
+                json_op,
+                "--cwd",
+                str(repo),
+                "--api",
+                api,
+            ],
+        )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["applied"] is False
+    assert settings.read_text(encoding="utf-8") == "{}"
 
 
 def test_deprecated_status_shown_in_skills_list(monkeypatch: Any) -> None:
