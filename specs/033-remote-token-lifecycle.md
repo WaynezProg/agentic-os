@@ -46,7 +46,7 @@ through the gateway. The rotate path is added to `is_remote_admin_route`.
 | Owns | Does not own |
 |------|--------------|
 | Token `expires_at` column + migration | Default-on TTL policy (left to a future decision) |
-| In-place token rotation (localhost admin) | Client-side https enforcement (Rust desktop — separate slice) |
+| In-place token rotation (localhost admin) | Client-side https enforcement (P15) |
 | Expiry surfaced in device listing | Automatic re-pair / silent refresh UX, push notifications |
 
 ## Acceptance criteria
