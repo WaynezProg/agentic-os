@@ -38,6 +38,12 @@ is_running() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
+# Resolve the PID listening on a TCP port (best-effort for managed lifecycle).
+listener_pid() {
+  local port="$1"
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | head -1
+}
+
 emit_json() {
   python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)))' <<<"$1"
 }

@@ -139,6 +139,7 @@ pub fn run() {
                         }
                     }
                     "quit" => {
+                        daemon::stop_stack();
                         app.exit(0);
                     }
                     _ => {}
@@ -176,7 +177,6 @@ pub fn run() {
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {
             daemon::stop_stack();
-            let _ = app_handle;
         }
     });
 }

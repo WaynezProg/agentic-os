@@ -75,6 +75,11 @@ cmd_start() {
     exit 0
   fi
   if ui_listening; then
+    local listener
+    listener="$(listener_pid "$UI_PORT" || true)"
+    if [[ -n "$listener" ]]; then
+      write_pid "$PID_FILE" "$listener"
+    fi
     echo "ui server already running (external)" >&2
     cmd_status
     exit 0
@@ -89,6 +94,11 @@ cmd_start() {
   )
   for _ in $(seq 1 20); do
     if ui_listening; then
+      local listener
+      listener="$(listener_pid "$UI_PORT" || true)"
+      if [[ -n "$listener" ]]; then
+        write_pid "$PID_FILE" "$listener"
+      fi
       cmd_status
       exit 0
     fi
