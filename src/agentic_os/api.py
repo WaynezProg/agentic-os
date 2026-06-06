@@ -26,11 +26,13 @@ from agentic_os.control_plane import (
     SkillUpsert,
     SunsetChange,
 )
+from agentic_os.backup_store import BackupStore
 from agentic_os.catalog import (
     SUPPORTED_HARNESSES,
     SurfaceRecord,
     diff as catalog_diff,
     merge as catalog_merge,
+    resolve_surface_write_target,
     scan as catalog_scan,
 )
 from agentic_os.harness_config import (
@@ -60,8 +62,10 @@ from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
 from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
 from agentic_os.registry import Registry, RenderedRun, validate_registry
+from agentic_os.safe_edit import ConflictError, PatchTarget, SafeEditEngine, ValidationError
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
+from agentic_os.surface_ops import compile_semantic_ops
 from agentic_os.profiles import ResolvedRunProfile
 from agentic_os.usage import UsageStore, usage_record_to_dict
 
@@ -117,6 +121,12 @@ class SkillUpsertRequest(BaseModel):
     entrypoint: str = ""
     tags: list[str] = Field(default_factory=list)
     enabled: bool = True
+
+
+class PatchOpsRequest(BaseModel):
+    ops: list[dict[str, object]]
+    source: str = "api"
+    base_mtime: float | None = None
 
 
 class McpServerUpsertRequest(BaseModel):
@@ -175,6 +185,12 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     fleet_store.init()
     audit_store = AuditStore(state_dir / "agentic-os.db")
     audit_store.init()
+    backup_store = BackupStore(state_dir)
+    safe_edit_engine = SafeEditEngine(
+        state_dir=state_dir,
+        backup_store=backup_store,
+        audit_store=audit_store,
+    )
     usage_store = UsageStore(state_dir / "agentic-os.db")
     usage_store.init()
     prober = HealthProber(fleet_store)
@@ -193,6 +209,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     app.state.store = store
     app.state.fleet_store = fleet_store
     app.state.audit_store = audit_store
+    app.state.backup_store = backup_store
+    app.state.safe_edit_engine = safe_edit_engine
     app.state.control_plane = control_plane
     app.state.approval_store = approval_store
     app.state.usage_store = usage_store
@@ -1536,6 +1554,108 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         records_b = [r for r in catalog_scan(harness, cwd_b) if not scope_b or r.scope == scope_b]
         result = catalog_diff(records_a, records_b)
         return result
+
+    def _infer_surface_kind(op_name: str) -> str:
+        if op_name in ("enable_mcp_server", "disable_mcp_server"):
+            return "mcp_server"
+        if op_name == "upsert_hook":
+            return "hook"
+        msg = f"unsupported semantic op: {op_name}"
+        raise ValueError(msg)
+
+    @app.post("/catalog/{harness}/surfaces/patch")
+    def catalog_surfaces_patch(
+        harness: str,
+        body: PatchOpsRequest,
+        cwd: str | None = Query(default=None),
+        dry_run: bool = Query(default=False),
+    ) -> dict[str, object]:
+        _require_catalog_harness(harness)
+        if not body.ops:
+            raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        try:
+            patch_ops = compile_semantic_ops(harness, body.ops)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
+        first_op = body.ops[0]
+        scope = str(first_op.get("scope", "project"))
+        kind = _infer_surface_kind(str(first_op["op"]))
+        file_path, file_format = resolve_surface_write_target(harness, scope, kind, cwd_path)
+        target = PatchTarget(
+            harness_id=harness,
+            cwd=cwd_path,
+            scope=scope,
+            target_kind="surface",
+            kind=kind,
+            file_path=file_path,
+            file_format=file_format,
+        )
+        try:
+            result = safe_edit_engine.apply(
+                target,
+                patch_ops,
+                source=body.source,
+                dry_run=dry_run,
+                base_mtime=body.base_mtime,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
+        return {
+            "patch_id": result.patch_id,
+            "applied": result.applied,
+            "diff": result.diff,
+            "validation": result.validation,
+            "backup": result.backup,
+            "audit_event_id": result.audit_event_id,
+            "base_mtime": result.base_mtime,
+        }
+
+    @app.get("/patches")
+    def patches_list(
+        harness: str | None = Query(default=None),
+        cwd: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> dict[str, object]:
+        entries = backup_store.list_entries(
+            harness_id=harness,
+            cwd=str(Path(cwd).resolve()) if cwd else None,
+            limit=limit,
+        )
+        return {"patches": [entry.__dict__ for entry in entries]}
+
+    @app.get("/patches/{patch_id}")
+    def patches_get(patch_id: str) -> dict[str, object]:
+        entry = backup_store.get(patch_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail={"error": "patch_not_found"})
+        return {"patch": entry.__dict__}
+
+    @app.post("/patches/{patch_id}/rollback")
+    def patches_rollback(
+        patch_id: str,
+        source: str = Query(default="api"),
+    ) -> dict[str, object]:
+        try:
+            result = safe_edit_engine.rollback(patch_id, source=source)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        return {
+            "patch_id": result.patch_id,
+            "applied": result.applied,
+            "audit_event_id": result.audit_event_id,
+        }
 
     @app.get("/config/{harness_id}/effective")
     def config_effective_endpoint(

@@ -1927,6 +1927,64 @@ def test_catalog_diff_returns_empty_diff(tmp_path: Path) -> None:
     assert data["modified"] == []
 
 
+def test_catalog_patch_dry_run_does_not_mutate(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    settings = repo / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    client = make_client(tmp_path)
+    response = client.post(
+        "/catalog/claude/surfaces/patch",
+        params={"cwd": str(repo), "dry_run": "true"},
+        json={
+            "ops": [
+                {
+                    "op": "enable_mcp_server",
+                    "name": "gh",
+                    "scope": "project",
+                    "config": {"command": "npx"},
+                }
+            ],
+            "source": "test",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is False
+    assert settings.read_text(encoding="utf-8") == "{}"
+
+
+def test_catalog_patch_apply_and_audit(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    settings = repo / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    client = make_client(tmp_path)
+    response = client.post(
+        "/catalog/claude/surfaces/patch",
+        params={"cwd": str(repo)},
+        json={
+            "ops": [
+                {
+                    "op": "enable_mcp_server",
+                    "name": "gh",
+                    "scope": "project",
+                    "config": {"command": "npx"},
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    audit = client.get("/audit/events", params={"domain": "config_patch", "limit": 5})
+    assert audit.status_code == 200
+    assert any(e["event_type"] == "config_patch_applied" for e in audit.json()["events"])
+
+
 def test_approvals_list_filter_by_status(tmp_path: Path) -> None:
     """GET /approvals?status=pending filters by approval status."""
     client = make_client(tmp_path)
