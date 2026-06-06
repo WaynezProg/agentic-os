@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -31,6 +31,12 @@ class RemoteDeviceStore:
                     created_at TEXT NOT NULL,
                     revoked_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS pairing_failures (
+                    client_key TEXT NOT NULL,
+                    failed_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_pairing_failures_client
+                    ON pairing_failures (client_key, failed_at);
                 """
             )
 
@@ -108,3 +114,27 @@ class RemoteDeviceStore:
             }
             for row in rows
         ]
+
+    def count_recent_pairing_failures(self, client_key: str, *, window_seconds: int) -> int:
+        cutoff = (datetime.now(UTC) - timedelta(seconds=window_seconds)).isoformat()
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count FROM pairing_failures
+                WHERE client_key = ? AND failed_at >= ?
+                """,
+                (client_key, cutoff),
+            ).fetchone()
+        return int(row["count"]) if row else 0
+
+    def record_pairing_failure(self, client_key: str) -> None:
+        failed_at = datetime.now(UTC).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO pairing_failures (client_key, failed_at) VALUES (?, ?)",
+                (client_key, failed_at),
+            )
+
+    def clear_pairing_failures(self, client_key: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM pairing_failures WHERE client_key = ?", (client_key,))

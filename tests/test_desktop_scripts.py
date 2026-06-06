@@ -111,6 +111,30 @@ def test_desktop_ui_status_with_bundle_root(tmp_path, monkeypatch) -> None:
     assert payload["ui_url"] == "http://127.0.0.1:5173"
 
 
+def test_desktop_bundle_default_state_dir_is_home(tmp_path, monkeypatch) -> None:
+    bundle = _make_bundle_fixture(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    import os
+
+    merged = os.environ.copy()
+    merged["AGENTIC_OS_BUNDLE_ROOT"] = str(bundle)
+    merged.pop("AGENTIC_OS_STATE_DIR", None)
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source "{bundle}/scripts/lib/desktop-common.sh"; desktop_state_dir',
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=merged,
+    )
+    assert result.stdout.strip() == str(home / ".agentic-os")
+
+
 def test_desktop_reconcile_clears_stale_pid(tmp_path, monkeypatch) -> None:
     bundle = _make_bundle_fixture(tmp_path)
     state_dir = tmp_path / ".agentic-os"

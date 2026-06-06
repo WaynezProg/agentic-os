@@ -1,16 +1,21 @@
 # Reference remote gateway (P12)
 
-This directory documents a **transport-agnostic** remote gateway setup. Use any reverse
-tunnel or HTTPS proxy you prefer (Tailscale Serve, Cloudflare Tunnel, ngrok, Caddy, nginx).
+Transport-agnostic reverse tunnel / HTTPS proxy. The **gateway is not an auth
+boundary by itself** — it must strip client-supplied trust headers and agentd
+enforces Bearer tokens on all gateway-marked API traffic.
 
 ## Requirements
 
-1. External clients reach **`gateway_url`** over HTTPS.
+1. External clients reach **`remote_gateway`** over HTTPS.
 2. Gateway forwards to **`http://127.0.0.1:8767`** (agentd stays on loopback).
-3. Set header **`X-Agentic-OS-Gateway: 1`** on proxied `/remote/*` routes so pairing works
-   through the tunnel (agentd rejects non-local pairing without this header).
-4. Pass through **`Authorization: Bearer`** unchanged.
-5. For SSE (`GET /events`), disable response buffering (`flush_interval -1` in Caddy).
+3. Gateway **strips** inbound `X-Agentic-OS-Gateway` and **sets** `X-Agentic-OS-Gateway: 1`
+   on upstream requests it forwards (never accept client-spoofed values).
+4. Gateway **blocks** `/remote/pairing/start`, `/remote/devices`, and device revoke paths.
+5. Pass through **`Authorization: Bearer`** unchanged.
+6. agentd middleware requires valid Bearer for all other gateway-proxied routes.
+7. `/remote/pairing/complete` is the only pairing route exposed via gateway; pairing codes
+   are high-entropy with rate limiting on failed attempts.
+8. For SSE (`GET /events`), disable response buffering (`flush_interval -1` in Caddy).
 
 ## Local smoke with bundled Caddyfile
 
@@ -19,7 +24,7 @@ uv run agentd serve
 caddy run --config examples/remote-gateway/Caddyfile
 ```
 
-Pair locally, then:
+Pair locally (operator only), complete via gateway, then:
 
 ```bash
 bash scripts/smoke-remote-client.sh https://127.0.0.1:8443 "$TOKEN"

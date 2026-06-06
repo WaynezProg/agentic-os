@@ -25,7 +25,15 @@ reconcile_stale_pid() {
 }
 
 desktop_state_dir() {
-  echo "${AGENTIC_OS_STATE_DIR:-$(desktop_root)/.agentic-os}"
+  if [[ -n "${AGENTIC_OS_STATE_DIR:-}" ]]; then
+    echo "$AGENTIC_OS_STATE_DIR"
+    return
+  fi
+  if desktop_bundle_mode; then
+    echo "${HOME}/.agentic-os"
+    return
+  fi
+  echo "$(desktop_root)/.agentic-os"
 }
 
 desktop_runtime_dir() {
