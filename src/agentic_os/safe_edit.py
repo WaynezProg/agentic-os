@@ -5,6 +5,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from agentic_os.audit import AuditStore
@@ -13,6 +14,7 @@ from agentic_os.control_plane import _redact_value
 from agentic_os.jsonio import atomic_write_json
 from agentic_os.patch_engine import PatchEngine, PatchOp
 from agentic_os.schema_registry import SchemaRegistry
+from agentic_os.surface_ops import CompiledSurfacePatch
 from agentic_os.toml_io import atomic_write_toml, load_toml
 
 
@@ -137,6 +139,133 @@ class SafeEditEngine:
             base_mtime=current_mtime,
         )
 
+    def apply_standalone(
+        self,
+        *,
+        harness_id: str,
+        cwd: Path,
+        scope: str,
+        file_path: Path,
+        content: str,
+        surface_id: str,
+        source: str,
+        dry_run: bool = False,
+        base_mtime: float | None = None,
+    ) -> PatchResult:
+        patch_id = f"p_{uuid.uuid4().hex}"
+        before_text = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
+        current_mtime = file_path.stat().st_mtime if file_path.exists() else None
+        if base_mtime is not None and current_mtime is not None and base_mtime != current_mtime:
+            msg = "stale_target"
+            raise ConflictError(msg)
+        validation = {"ok": True, "errors": []}
+        diff = {
+            "before_bytes": len(before_text.encode("utf-8")),
+            "after_bytes": len(content.encode("utf-8")),
+        }
+        would_backup = {
+            "kind": "sidecar",
+            "path": str(file_path.with_name(f"{file_path.name}.bak.<ts>")),
+        }
+        if dry_run:
+            return PatchResult(
+                patch_id=patch_id,
+                applied=False,
+                diff=diff,
+                validation=validation,
+                backup=would_backup,
+                audit_event_id=None,
+                base_mtime=current_mtime,
+            )
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = self.backup_store.create_sidecar_indexed(
+            patch_id=patch_id,
+            harness_id=harness_id,
+            cwd=cwd,
+            target_path=file_path,
+            target_kind="surface",
+            source=source,
+            surface_id=surface_id,
+        )
+        file_path.write_text(content, encoding="utf-8")
+        event = self.audit_store.record(
+            domain="config_patch",
+            entity_id=patch_id,
+            event_type="config_patch_applied",
+            message=f"patched {harness_id} standalone {surface_id}",
+            metadata=_standalone_audit_metadata(
+                harness_id=harness_id,
+                cwd=cwd,
+                scope=scope,
+                patch_id=patch_id,
+                surface_id=surface_id,
+                file_path=file_path,
+                before_text=before_text,
+                after_text=content,
+                source=source,
+                dry_run=False,
+            ),
+        )
+        return PatchResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=_redact_value(diff),
+            validation=validation,
+            backup={"kind": entry.backup_kind, "path": entry.backup_paths[0]},
+            audit_event_id=event.id,
+            base_mtime=current_mtime,
+        )
+
+    def apply_surface_batch(
+        self,
+        *,
+        harness_id: str,
+        cwd: Path,
+        compiled: CompiledSurfacePatch,
+        structured_target: PatchTarget | None,
+        resolve_standalone_path: Callable[..., Path],
+        source: str,
+        dry_run: bool = False,
+        base_mtime: float | None = None,
+    ) -> list[PatchResult]:
+        results: list[PatchResult] = []
+        if compiled.patch_ops:
+            if structured_target is None:
+                msg = "structured_target required for patch ops"
+                raise ValueError(msg)
+            results.append(
+                self.apply(
+                    structured_target,
+                    compiled.patch_ops,
+                    source=source,
+                    dry_run=dry_run,
+                    base_mtime=base_mtime,
+                )
+            )
+        for standalone in compiled.standalone_files:
+            file_path = resolve_standalone_path(
+                harness_id,
+                standalone.scope,
+                standalone.kind,
+                standalone.name,
+                cwd,
+            )
+            surface_id = f"{standalone.kind}:{standalone.name}@{standalone.scope}"
+            results.append(
+                self.apply_standalone(
+                    harness_id=harness_id,
+                    cwd=cwd,
+                    scope=standalone.scope,
+                    file_path=file_path,
+                    content=standalone.content,
+                    surface_id=surface_id,
+                    source=source,
+                    dry_run=dry_run,
+                    base_mtime=base_mtime,
+                )
+            )
+        return results
+
     def rollback(self, patch_id: str, *, source: str) -> PatchResult:
         entry = self.backup_store.get(patch_id)
         if entry is None:
@@ -210,3 +339,37 @@ def _audit_metadata(
 def _hash_doc(doc: dict[str, Any]) -> str:
     payload = json.dumps(doc, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _hash_text(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _standalone_audit_metadata(
+    *,
+    harness_id: str,
+    cwd: Path,
+    scope: str,
+    patch_id: str,
+    surface_id: str,
+    file_path: Path,
+    before_text: str,
+    after_text: str,
+    source: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    return _redact_value(
+        {
+            "patch_id": patch_id,
+            "harness_id": harness_id,
+            "scope": scope,
+            "cwd": str(cwd.resolve()),
+            "target_kind": "surface",
+            "surface_id": surface_id,
+            "target_path": str(file_path),
+            "before_hash": _hash_text(before_text),
+            "after_hash": _hash_text(after_text),
+            "source": source,
+            "dry_run": dry_run,
+        }
+    )

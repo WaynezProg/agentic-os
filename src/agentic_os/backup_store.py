@@ -67,11 +67,39 @@ class BackupStore:
     def create_sidecar(self, target_path: Path) -> Path:
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         sidecar = target_path.with_name(f"{target_path.name}.bak.{ts}")
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
         if target_path.exists():
             shutil.copy2(target_path, sidecar)
         else:
             sidecar.write_text("", encoding="utf-8")
         return sidecar
+
+    def create_sidecar_indexed(
+        self,
+        *,
+        patch_id: str,
+        harness_id: str,
+        cwd: Path,
+        target_path: Path,
+        target_kind: str,
+        source: str,
+        surface_id: str | None = None,
+    ) -> PatchIndexEntry:
+        sidecar = self.create_sidecar(target_path)
+        entry = PatchIndexEntry(
+            patch_id=patch_id,
+            harness_id=harness_id,
+            cwd=str(cwd.resolve()),
+            target_kind=target_kind,
+            surface_id=surface_id,
+            backup_kind="sidecar",
+            backup_paths=[str(sidecar)],
+            target_path=str(target_path),
+            source=source,
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        self._append_index(entry)
+        return entry
 
     def restore(self, entry: PatchIndexEntry) -> None:
         target = Path(entry.target_path)

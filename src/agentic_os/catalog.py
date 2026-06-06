@@ -513,6 +513,42 @@ def _extract_command_description(path: Path) -> str:
     return ""
 
 
+def _resolve_scope_dir(
+    harness: str,
+    scope: str,
+    cwd: Path | None = None,
+    home_dir: Path | None = None,
+) -> Path:
+    if harness not in _HARNESS_SCOPES:
+        msg = f"unsupported harness: {harness}"
+        raise ValueError(msg)
+    cwd_path = cwd or Path.cwd()
+    base_home = home_dir or Path.home()
+    return {
+        "user": base_home / _HARNESS_SCOPES[harness]["user"],
+        "project": cwd_path.resolve() / _HARNESS_SCOPES[harness]["project"],
+        "local": cwd_path.resolve() / _HARNESS_SCOPES[harness]["local"],
+    }[scope]
+
+
+def resolve_standalone_surface_path(
+    harness: str,
+    scope: str,
+    surface_kind: str,
+    name: str,
+    cwd: Path | None = None,
+    home_dir: Path | None = None,
+) -> Path:
+    """Return file path for standalone surface writes (skills, commands)."""
+    scope_dir = _resolve_scope_dir(harness, scope, cwd, home_dir)
+    if surface_kind == "skill":
+        return scope_dir / "skills" / name / "SKILL.md"
+    if surface_kind == "command":
+        return scope_dir / "commands" / f"{name}.md"
+    msg = f"unsupported standalone surface kind: {surface_kind}"
+    raise ValueError(msg)
+
+
 def resolve_surface_write_target(
     harness: str,
     scope: str,
@@ -521,16 +557,7 @@ def resolve_surface_write_target(
     home_dir: Path | None = None,
 ) -> tuple[Path, str]:
     """Return (file_path, file_format) for structured surface writes."""
-    if harness not in _HARNESS_SCOPES:
-        msg = f"unsupported harness: {harness}"
-        raise ValueError(msg)
-    cwd_path = cwd or Path.cwd()
-    base_home = home_dir or Path.home()
-    scope_dir = {
-        "user": base_home / _HARNESS_SCOPES[harness]["user"],
-        "project": cwd_path.resolve() / _HARNESS_SCOPES[harness]["project"],
-        "local": cwd_path.resolve() / _HARNESS_SCOPES[harness]["local"],
-    }[scope]
+    scope_dir = _resolve_scope_dir(harness, scope, cwd, home_dir)
     if harness == "cursor" and surface_kind == "mcp_server":
         return scope_dir / "mcp.json", "json"
     if harness == "cursor" and surface_kind == "hook":

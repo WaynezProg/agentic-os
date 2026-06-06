@@ -32,6 +32,7 @@ from agentic_os.catalog import (
     SurfaceRecord,
     diff as catalog_diff,
     merge as catalog_merge,
+    resolve_standalone_surface_path,
     resolve_surface_write_target,
     scan as catalog_scan,
 )
@@ -62,7 +63,13 @@ from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
 from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
 from agentic_os.registry import Registry, RenderedRun, validate_registry
-from agentic_os.safe_edit import ConflictError, PatchTarget, SafeEditEngine, ValidationError
+from agentic_os.safe_edit import (
+    ConflictError,
+    PatchResult,
+    PatchTarget,
+    SafeEditEngine,
+    ValidationError,
+)
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
 from agentic_os.surface_ops import compile_semantic_ops
@@ -1555,13 +1562,32 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         result = catalog_diff(records_a, records_b)
         return result
 
+    _STRUCTURED_OPS = frozenset(
+        {"enable_mcp_server", "disable_mcp_server", "upsert_hook"}
+    )
+
     def _infer_surface_kind(op_name: str) -> str:
         if op_name in ("enable_mcp_server", "disable_mcp_server"):
             return "mcp_server"
         if op_name == "upsert_hook":
             return "hook"
+        if op_name == "upsert_skill":
+            return "skill"
+        if op_name == "upsert_command":
+            return "command"
         msg = f"unsupported semantic op: {op_name}"
         raise ValueError(msg)
+
+    def _patch_result_dict(result: PatchResult) -> dict[str, object]:
+        return {
+            "patch_id": result.patch_id,
+            "applied": result.applied,
+            "diff": result.diff,
+            "validation": result.validation,
+            "backup": result.backup,
+            "audit_event_id": result.audit_event_id,
+            "base_mtime": result.base_mtime,
+        }
 
     @app.post("/catalog/{harness}/surfaces/patch")
     def catalog_surfaces_patch(
@@ -1575,26 +1601,32 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
         cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
         try:
-            patch_ops = compile_semantic_ops(harness, body.ops)
+            compiled = compile_semantic_ops(harness, body.ops)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
-        first_op = body.ops[0]
-        scope = str(first_op.get("scope", "project"))
-        kind = _infer_surface_kind(str(first_op["op"]))
-        file_path, file_format = resolve_surface_write_target(harness, scope, kind, cwd_path)
-        target = PatchTarget(
-            harness_id=harness,
-            cwd=cwd_path,
-            scope=scope,
-            target_kind="surface",
-            kind=kind,
-            file_path=file_path,
-            file_format=file_format,
-        )
+        structured_target: PatchTarget | None = None
+        if compiled.patch_ops:
+            structured_ops = [op for op in body.ops if str(op.get("op")) in _STRUCTURED_OPS]
+            first_op = structured_ops[0]
+            scope = str(first_op.get("scope", "project"))
+            kind = _infer_surface_kind(str(first_op["op"]))
+            file_path, file_format = resolve_surface_write_target(harness, scope, kind, cwd_path)
+            structured_target = PatchTarget(
+                harness_id=harness,
+                cwd=cwd_path,
+                scope=scope,
+                target_kind="surface",
+                kind=kind,
+                file_path=file_path,
+                file_format=file_format,
+            )
         try:
-            result = safe_edit_engine.apply(
-                target,
-                patch_ops,
+            results = safe_edit_engine.apply_surface_batch(
+                harness_id=harness,
+                cwd=cwd_path,
+                compiled=compiled,
+                structured_target=structured_target,
+                resolve_standalone_path=resolve_standalone_surface_path,
                 source=body.source,
                 dry_run=dry_run,
                 base_mtime=body.base_mtime,
@@ -1610,15 +1642,9 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             ) from exc
         except ConflictError as exc:
             raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
-        return {
-            "patch_id": result.patch_id,
-            "applied": result.applied,
-            "diff": result.diff,
-            "validation": result.validation,
-            "backup": result.backup,
-            "audit_event_id": result.audit_event_id,
-            "base_mtime": result.base_mtime,
-        }
+        if len(results) == 1:
+            return _patch_result_dict(results[0])
+        return {"results": [_patch_result_dict(result) for result in results]}
 
     @app.get("/patches")
     def patches_list(
