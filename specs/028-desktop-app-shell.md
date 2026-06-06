@@ -3,7 +3,7 @@
 Status: Implemented
 Date: 2026-06-07
 Depends on: P10 (`specs/027-safe-native-config-editing.md`), P2 (`specs/003-thin-ui.md`)
-Blocks: P11.5 (`specs/029-packaged-macos-app.md`), then P12 (`specs/030-remote-access-adapter.md`)
+Blocks: P12.5 (`specs/031-keychain-ios-companion.md`)
 
 ## Positioning
 

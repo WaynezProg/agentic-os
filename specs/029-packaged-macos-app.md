@@ -1,9 +1,9 @@
 # 029 — Packaged macOS App (P11.5)
 
-Status: Planned
+Status: Implemented
 Date: 2026-06-07
 Depends on: P11 (`specs/028-desktop-app-shell.md`)
-Blocks: P12 (`specs/030-remote-access-adapter.md`)
+Blocks: P12 (`specs/030-remote-access-adapter.md`) — merged
 
 ## Positioning
 

@@ -3,7 +3,7 @@
 Status: Implemented
 Date: 2026-06-07
 Depends on: P11.5 (`specs/029-packaged-macos-app.md`)
-Blocks: —
+Blocks: P12.5 (`specs/031-keychain-ios-companion.md`)
 
 ## Positioning
 

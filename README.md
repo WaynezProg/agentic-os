@@ -44,9 +44,12 @@ Phase positioning:
 | P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
 | P10 | safe native config editing | safe write layer for workflow surfaces, harness-native config, and agentic-os config | dry-run patch, schema validation, hybrid backup, rollback, surface/config writers, audit | harness runtime, P7 approval for config writes, desktop app (P11), iOS remote (P12), cloud sync |
-| P11 | desktop app shell | macOS-validated Tauri dev shell over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | packaged `.app` (P11.5), iOS, remote gateway, pairing, SSE |
-| P11.5 | packaged macOS app | standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, Tauri bundle resources, release path resolution | code signing, auto-update, remote connection (P12) |
-| P12 | remote access adapter | Remote Access Adapter: remote gateway / reverse tunnel, pairing, token, revoke, event stream; `agentd` stays on `127.0.0.1` | `desktop.toml` remote wire-up, iOS companion, SSE client, pairing UX | specific tunnel product (frp/Tailscale/CF/ngrok), harness runtime, cloud sync |
+| P11 | desktop app shell | macOS-validated Tauri dev shell over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | packaged `.app` (done P11.5), iOS app (P12.5) |
+| P11.5 | **complete** — packaged macOS app | standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, Tauri bundle resources, release path resolution | code signing, auto-update, Keychain token (P12.5) |
+| P12 | **complete** — remote access adapter | Remote Access Adapter: remote gateway / reverse tunnel, pairing, token, revoke, event stream; `agentd` stays on `127.0.0.1` | `desktop.toml` remote wire-up, reference gateway, SSE client, pairing UX with gateway Bearer boundary | specific tunnel product (frp/Tailscale/CF/ngrok), Keychain persistence (P12.5), iOS app (P12.5), cloud sync |
+| P12.5 | keychain + iOS companion *(next)* | secure `auth_token` persistence and iOS remote client skeleton | macOS Keychain token storage, iOS companion wired to pairing/SSE contract; remove desktop token placeholder flow | App Store release, push notifications, full iOS UI polish |
+
+**Main (2026-06-07):** P11.5 packaged macOS app + P12 remote access adapter **complete**. Next: **P12.5** — Keychain token storage + iOS companion skeleton (no plaintext token flow in desktop placeholders).
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
