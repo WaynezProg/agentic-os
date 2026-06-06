@@ -37,10 +37,14 @@ from agentic_os.catalog import (
     scan as catalog_scan,
 )
 from agentic_os.harness_config import (
+    HARNESS_CONFIG_SCOPES,
     diff as harness_config_diff,
     effective as harness_config_effective,
     explain as harness_config_explain,
+    infer_patch_kind,
+    resolve_write_path,
 )
+from agentic_os.patch_engine import PatchOp
 from agentic_os.config_scope import (
     diff as config_diff,
     effective as config_effective,
@@ -1759,6 +1763,77 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         _require_harness_config_harness(harness_id)
         entries = harness_config_explain(harness_id, cwd)
         return {"harness_id": harness_id, "entries": entries}
+
+    @app.post("/harness-config/{harness_id}/patch")
+    def harness_config_patch_endpoint(
+        harness_id: str,
+        body: PatchOpsRequest,
+        scope: str = Query(default="project"),
+        cwd: str | None = Query(default=None),
+        dry_run: bool = Query(default=False),
+        file: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        _require_harness_config_harness(harness_id)
+        if scope not in HARNESS_CONFIG_SCOPES:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"invalid scope: {scope}",
+                    "supported": list(HARNESS_CONFIG_SCOPES),
+                },
+            )
+        if not body.ops:
+            raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        try:
+            file_path, file_format = resolve_write_path(
+                harness_id,
+                scope,
+                cwd_path,
+                file_name=file,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
+        kind = infer_patch_kind(harness_id, file_path)
+        patch_ops = [
+            PatchOp(
+                op=str(raw["op"]),
+                path=str(raw.get("path", "")),
+                value=raw.get("value"),
+            )
+            for raw in body.ops
+        ]
+        target = PatchTarget(
+            harness_id=harness_id,
+            cwd=cwd_path,
+            scope=scope,
+            target_kind="harness_config",
+            kind=kind,
+            file_path=file_path,
+            file_format=file_format,
+        )
+        try:
+            result = safe_edit_engine.apply(
+                target,
+                patch_ops,
+                source=body.source,
+                dry_run=dry_run,
+                base_mtime=body.base_mtime,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
+        return _patch_result_dict(result)
 
     @app.get("/fleet/health")
     def fleet_health() -> dict[str, object]:

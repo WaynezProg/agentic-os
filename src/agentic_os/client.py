@@ -499,6 +499,34 @@ class AgenticClient:
             params=params,
         )
 
+    def harness_config_patch(
+        self,
+        harness_id: str,
+        ops: list[dict[str, object]],
+        *,
+        scope: str = "project",
+        cwd: str | None = None,
+        dry_run: bool = False,
+        file: str | None = None,
+        source: str = "cli",
+        base_mtime: float | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, object] = {"scope": scope}
+        if cwd is not None:
+            params["cwd"] = cwd
+        if dry_run:
+            params["dry_run"] = True
+        if file is not None:
+            params["file"] = file
+        payload: dict[str, object] = {"ops": ops, "source": source}
+        if base_mtime is not None:
+            payload["base_mtime"] = base_mtime
+        return self._post(
+            f"/harness-config/{_validate_path_id(harness_id)}/patch",
+            payload,
+            params=params,
+        )
+
     def _get(self, path: str, params: dict[str, object] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self.base_url, timeout=30.0) as client:
             response = client.get(path, params=params)

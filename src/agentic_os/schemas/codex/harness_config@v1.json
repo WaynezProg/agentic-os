@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mcp_servers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "model": {}
+  },
+  "additionalProperties": true
+}
