@@ -47,9 +47,9 @@ Phase positioning:
 | P11 | desktop app shell | macOS-validated Tauri dev shell over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | packaged `.app` (done P11.5), iOS app (P12.5) |
 | P11.5 | **complete** — packaged macOS app | standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, Tauri bundle resources, release path resolution | code signing, auto-update, Keychain token (P12.5) |
 | P12 | **complete** — remote access adapter | Remote Access Adapter: remote gateway / reverse tunnel, pairing, token, revoke, event stream; `agentd` stays on `127.0.0.1` | `desktop.toml` remote wire-up, reference gateway, SSE client, pairing UX with gateway Bearer boundary | specific tunnel product (frp/Tailscale/CF/ngrok), Keychain persistence (P12.5), iOS app (P12.5), cloud sync |
-| P12.5 | keychain + iOS companion *(next)* | secure `auth_token` persistence and iOS remote client skeleton | macOS Keychain token storage, iOS companion wired to pairing/SSE contract; remove desktop token placeholder flow | App Store release, push notifications, full iOS UI polish |
+| P12.5 | **complete** — keychain + iOS companion | secure `auth_token` persistence, desktop remote reconnect, iOS remote client skeleton | macOS Keychain token storage, `connection.mode=remote` Bearer proxy, iOS SwiftUI companion + Keychain | App Store release, push notifications, full iOS UI polish |
 
-**Main (2026-06-07):** P11.5 packaged macOS app + P12 remote access adapter **complete**. Next: **P12.5** — Keychain token storage + iOS companion skeleton (no plaintext token flow in desktop placeholders).
+**Main (2026-06-07):** P11.5 packaged macOS app + P12 remote access adapter + **P12.5** Keychain/iOS companion **complete**. Remote mode is daily-usable with Keychain-backed tokens.
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,

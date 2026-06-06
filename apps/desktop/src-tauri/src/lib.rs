@@ -1,4 +1,6 @@
+mod connection;
 mod daemon;
+mod keychain;
 mod remote;
 mod settings;
 
@@ -58,23 +60,113 @@ fn list_remote_devices() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn revoke_remote_device(device_id: String) -> Result<String, String> {
-    remote::delete_json(&format!("/remote/devices/{device_id}"))
+fn remote_token_status(remote_gateway: String, device_id: String) -> Result<bool, String> {
+    Ok(keychain::load_remote_token(&remote_gateway, &device_id)?.is_some())
 }
 
-fn tray_title_from_status(status_json: &str) -> String {
-    let health = serde_json::from_str::<serde_json::Value>(status_json)
-        .ok()
-        .and_then(|value| value.get("health").and_then(|item| item.as_str()).map(str::to_string))
-        .unwrap_or_else(|| "unknown".to_string());
-    format!("agentic-os · agentd: {health}")
+#[tauri::command]
+fn complete_remote_pairing(pairing_code: String, device_name: String) -> Result<String, String> {
+    let settings = settings::load_settings()?;
+    if settings.remote.remote_gateway.trim().is_empty() {
+        return Err("remote_gateway is required before pairing".to_string());
+    }
+    if device_name.trim().is_empty() {
+        return Err("device_name is required".to_string());
+    }
+
+    let raw = remote::complete_pairing(&pairing_code, device_name.trim())?;
+    let payload: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+    let device_id = payload
+        .get("device_id")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "pairing response missing device_id".to_string())?;
+    let auth_token = payload
+        .get("auth_token")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "pairing response missing auth_token".to_string())?;
+
+    keychain::save_remote_token(
+        &settings.remote.remote_gateway,
+        device_id,
+        auth_token,
+    )?;
+
+    let mut updated = settings;
+    updated.remote.device_id = device_id.to_string();
+    settings::save_settings(&updated)?;
+
+    Ok(serde_json::json!({ "device_id": device_id }).to_string())
+}
+
+#[tauri::command]
+fn get_connection_profile() -> Result<connection::ConnectionProfile, String> {
+    connection::connection_profile()
+}
+
+#[tauri::command]
+fn connection_api_fetch(
+    method: String,
+    path: String,
+    body: Option<String>,
+) -> Result<String, String> {
+    connection::api_request(&method, &path, body.as_deref())
+}
+
+#[tauri::command]
+fn probe_remote_connection() -> Result<connection::RemoteProbeResult, String> {
+    connection::probe_remote_connection()
+}
+
+#[tauri::command]
+fn revoke_remote_device(device_id: String) -> Result<String, String> {
+    let settings = settings::load_settings()?;
+    let result = remote::delete_json(&format!("/remote/devices/{device_id}"))?;
+    if !settings.remote.remote_gateway.trim().is_empty() {
+        let _ = keychain::delete_remote_token(&settings.remote.remote_gateway, &device_id);
+    }
+    if settings.remote.device_id == device_id {
+        let mut updated = settings;
+        updated.remote.device_id.clear();
+        settings::save_settings(&updated)?;
+    }
+    Ok(result)
+}
+
+fn tray_title_from_health(health: &str, mode: &str) -> String {
+    format!("agentic-os · {mode}: {health}")
 }
 
 fn refresh_tray_title(app: &AppHandle) {
-    let Ok(status) = daemon_status() else {
-        return;
+    let title = match connection::connection_profile() {
+        Ok(profile) if profile.mode == "remote" => {
+            match connection::probe_remote_connection() {
+                Ok(probe) if probe.health_ok && probe.events_ok => {
+                    tray_title_from_health("connected", "remote")
+                }
+                Ok(probe) if probe.health_ok => {
+                    tray_title_from_health("health ok", "remote")
+                }
+                Ok(_) => tray_title_from_health("degraded", "remote"),
+                Err(_) => tray_title_from_health("unreachable", "remote"),
+            }
+        }
+        _ => {
+            let Ok(status) = daemon_status() else {
+                return;
+            };
+            let health = serde_json::from_str::<serde_json::Value>(&status)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("health")
+                        .and_then(|item| item.as_str())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+            tray_title_from_health(&health, "agentd")
+        }
     };
-    let title = tray_title_from_status(&status);
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_title(Some(title));
     }
@@ -93,8 +185,13 @@ pub fn run() {
             get_desktop_settings,
             save_desktop_settings,
             start_remote_pairing,
+            complete_remote_pairing,
             list_remote_devices,
             revoke_remote_device,
+            remote_token_status,
+            get_connection_profile,
+            connection_api_fetch,
+            probe_remote_connection,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
