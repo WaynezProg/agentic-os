@@ -17,6 +17,20 @@ class AuditEvent:
     created_at: str
 
 
+# Remote `/events` stream selection (P13). The reference gateway pushes config
+# patch activity plus the approval lifecycle so a paired operator can see and act
+# on pending launches. Other governance events (e.g. `policy_evaluated`) stay local.
+REMOTE_STREAM_CONFIG_DOMAIN = "config_patch"
+REMOTE_STREAM_APPROVAL_DOMAIN = "governance"
+REMOTE_STREAM_APPROVAL_EVENT_TYPES = (
+    "approval_requested",
+    "approval_approved",
+    "approval_rejected",
+    "approval_expired",
+    "run_started_after_approval",
+)
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,6 +123,40 @@ class AuditStore:
                 f"SELECT * FROM audit_events{where} ORDER BY id ASC LIMIT ?",
                 params,
             ).fetchall()
+        return [self._row_to_event(row) for row in rows]
+
+    def list_remote_stream_events_after_id(
+        self,
+        after_id: int,
+        *,
+        limit: int = 20,
+    ) -> list[AuditEvent]:
+        """Events the remote `/events` stream is allowed to push (P13).
+
+        Returns all `config_patch` events plus allowlisted `governance` approval
+        lifecycle events with id greater than ``after_id``, ordered ascending so a
+        remote cursor never rewinds.
+        """
+        placeholders = ", ".join("?" for _ in REMOTE_STREAM_APPROVAL_EVENT_TYPES)
+        sql = f"""
+            SELECT * FROM audit_events
+            WHERE id > ?
+              AND (
+                domain = ?
+                OR (domain = ? AND event_type IN ({placeholders}))
+              )
+            ORDER BY id ASC
+            LIMIT ?
+        """
+        params: list[object] = [
+            after_id,
+            REMOTE_STREAM_CONFIG_DOMAIN,
+            REMOTE_STREAM_APPROVAL_DOMAIN,
+            *REMOTE_STREAM_APPROVAL_EVENT_TYPES,
+            limit,
+        ]
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
         return [self._row_to_event(row) for row in rows]
 
     def policy_coverage(

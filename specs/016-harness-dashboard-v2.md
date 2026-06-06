@@ -1,6 +1,8 @@
 # 014 — Harness Dashboard v2 (P9)
 
-Status: Draft
+> **Superseded by [`specs/017-harness-dashboard-v2.md`](017-harness-dashboard-v2.md).** Do not implement. Retained for history.
+
+Status: Superseded
 Date: 2026-05-30
 
 ## Positioning

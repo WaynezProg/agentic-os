@@ -1,6 +1,8 @@
 # 012 — Evidence & Audit Timeline (P7)
 
-Status: Draft
+> **Superseded by [`specs/015-evidence-audit-timeline.md`](015-evidence-audit-timeline.md).** Do not implement. Retained for history.
+
+Status: Superseded
 Date: 2026-05-30
 
 ## Positioning

@@ -80,6 +80,14 @@ def register_remote_routes(
             raise HTTPException(status_code=404, detail="device_not_found")
         return {"revoked": True}
 
+    @app.post("/remote/devices/{device_id}/rotate")
+    def remote_rotate_device(device_id: str, request: Request) -> dict[str, str]:
+        require_localhost_operator(request)
+        rotated = remote.rotate_device(device_id)
+        if rotated is None:
+            raise HTTPException(status_code=404, detail="device_not_found")
+        return rotated
+
     @app.get("/events")
     async def events_stream(
         request: Request,
@@ -90,7 +98,7 @@ def register_remote_routes(
             yield ": connected\n\n"
             last_id = 0
             while True:
-                rows = audit.list_events_after_id(last_id, domain="config_patch", limit=20)
+                rows = audit.list_remote_stream_events_after_id(last_id, limit=20)
                 for row in rows:
                     last_id = max(last_id, row.id)
                     payload = _audit_event_payload(row, device_id=device_id)

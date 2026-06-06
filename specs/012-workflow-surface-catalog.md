@@ -1,6 +1,8 @@
 # 009 — Workflow Surface Catalog (P6)
 
-Status: Draft
+> **Superseded by [`specs/014-workflow-surface-catalog.md`](014-workflow-surface-catalog.md).** Do not implement. Retained for history.
+
+Status: Superseded
 Date: 2026-05-30
 
 ## Positioning

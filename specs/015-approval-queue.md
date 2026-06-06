@@ -1,6 +1,8 @@
 # 013 — Approval Queue (P8)
 
-Status: Draft
+> **Superseded by [`specs/016-approval-queue.md`](016-approval-queue.md).** Do not implement. Retained for history.
+
+Status: Superseded
 Date: 2026-05-30
 
 ## Positioning
