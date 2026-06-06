@@ -86,6 +86,8 @@ pub fn run() {
                 )?;
             }
 
+            daemon::init_bundle_root(app.handle());
+            daemon::reconcile_stack();
             daemon::start_stack();
 
             let daemon_start_item =

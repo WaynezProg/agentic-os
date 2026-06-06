@@ -4,7 +4,24 @@
 set -euo pipefail
 
 desktop_root() {
+  if [[ -n "${AGENTIC_OS_BUNDLE_ROOT:-}" ]]; then
+    echo "$AGENTIC_OS_BUNDLE_ROOT"
+    return
+  fi
   cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
+}
+
+desktop_bundle_mode() {
+  [[ -f "$(desktop_root)/runtime/.venv/bin/agentd" ]]
+}
+
+reconcile_stale_pid() {
+  local pid_file="$1"
+  local pid
+  pid="$(read_pid "$pid_file" || true)"
+  if [[ -n "$pid" ]] && ! is_running "$pid"; then
+    clear_pid "$pid_file"
+  fi
 }
 
 desktop_state_dir() {

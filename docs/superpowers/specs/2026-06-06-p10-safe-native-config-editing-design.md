@@ -5,7 +5,7 @@ Status: Implemented
 Author: agentic-os team
 Builds on: `specs/013-configuration-scope-mapper.md`, `specs/020-harness-config-bridge.md`,
 `specs/014-workflow-surface-catalog.md`, `docs/superpowers/specs/2026-05-30-harness-manager-extension-design.md`
-Blocks: P11 Tauri Desktop App, P12 iOS Remote Companion
+Blocks: P11 Tauri Desktop App, P12 Remote Access Adapter (`specs/030-remote-access-adapter.md`)
 
 ## Summary
 
@@ -40,7 +40,7 @@ Core capabilities across the product line:
 Architecture boundary (unchanged):
 
 - macOS `agentd` is the sole process and file owner.
-- Desktop App and iOS are HTTP clients only; iOS reaches Mac via frp + token/HMAC gateway (P12).
+- Desktop App and iOS are HTTP clients only; iOS reaches Mac via remote gateway / reverse tunnel + token/HMAC (P12).
 
 P10 is API/CLI-first. No Tauri shell, no iOS app, no SSE/WebSocket in this phase (reserved for P11).
 
@@ -426,7 +426,7 @@ Dependency: add `tomli-w` to `pyproject.toml` for TOML writes.
 | Interface | Purpose |
 |-----------|---------|
 | `GET /events` (SSE) | Stream `config_patch` events to Desktop App |
-| Remote Gateway | frp tunnel + HMAC token; proxies patch APIs |
+| Remote Gateway | reverse tunnel + HMAC token; proxies patch APIs (tunnel product not specified) |
 | Pairing API | One-time code binds iOS device to Mac daemon |
 | Patch API | Unchanged paths; gateway adds auth headers → `source: ios` |
 
