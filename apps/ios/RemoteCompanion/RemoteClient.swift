@@ -12,6 +12,7 @@ struct PairingResult: Decodable {
 
 enum RemoteClientError: LocalizedError {
     case invalidURL
+    case insecureGateway
     case httpStatus(Int, String)
     case unauthorized
     case invalidResponse
@@ -20,6 +21,8 @@ enum RemoteClientError: LocalizedError {
         switch self {
         case .invalidURL:
             return "Invalid remote gateway URL"
+        case .insecureGateway:
+            return "Remote gateway must use https; http:// is allowed only for localhost"
         case .httpStatus(let code, let body):
             return "HTTP \(code): \(body)"
         case .unauthorized:
@@ -115,9 +118,21 @@ struct RemoteClient {
 }
 
 func normalizedGatewayURL(_ raw: String) throws -> URL {
-    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    guard let url = URL(string: trimmed) else {
+    let trimmed = raw
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else {
         throw RemoteClientError.invalidURL
     }
+    guard scheme == "https" || scheme == "http" else {
+        throw RemoteClientError.insecureGateway
+    }
+    if scheme == "http" && !isLoopbackHost(host) {
+        throw RemoteClientError.insecureGateway
+    }
     return url
+}
+
+private func isLoopbackHost(_ host: String) -> Bool {
+    host == "127.0.0.1" || host == "localhost" || host == "::1" || host == "0.0.0.0"
 }
