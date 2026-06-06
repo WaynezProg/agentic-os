@@ -3,7 +3,7 @@
 Status: Implemented
 Date: 2026-06-07
 Depends on: P10 (`specs/027-safe-native-config-editing.md`), P2 (`specs/003-thin-ui.md`)
-Blocks: P12 (iOS Remote Companion)
+Blocks: P11.5 (`specs/029-packaged-macos-app.md`), then P12 (`specs/030-remote-access-adapter.md`)
 
 ## Positioning
 
@@ -12,7 +12,7 @@ Desktop is a **client only** — no harness runtime, no new agent features.
 
 | Owns | Does not own |
 |------|--------------|
-| Tauri app, tray, daemon/ui lifecycle scripts | iOS, frp, pairing backend, SSE |
+| Tauri app, tray, daemon/ui lifecycle scripts | iOS, remote gateway, pairing backend, SSE |
 | `~/.agentic-os/desktop.toml` via Tauri commands | Remote connection logic (P12) |
 | Embedded UI on `localhost:5173` | Web UI redesign, build pipeline for `apps/web` |
 

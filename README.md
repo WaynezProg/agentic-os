@@ -44,7 +44,9 @@ Phase positioning:
 | P8+ | approval queue enhancement | local operator approval for launch-policy decisions (workflow refinement) | approval queue view, approve/reject lifecycle, audit links | RBAC, notifications, live in-harness tool approval |
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
 | P10 | safe native config editing | safe write layer for workflow surfaces, harness-native config, and agentic-os config | dry-run patch, schema validation, hybrid backup, rollback, surface/config writers, audit | harness runtime, P7 approval for config writes, desktop app (P11), iOS remote (P12), cloud sync |
-| P11 | desktop app shell | macOS-validated Tauri wrapper over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | iOS, frp, pairing, SSE, new agent features, code signing |
+| P11 | desktop app shell | macOS-validated Tauri dev shell over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | packaged `.app` (P11.5), iOS, remote gateway, pairing, SSE |
+| P11.5 | packaged macOS app | standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, Tauri bundle resources, release path resolution | code signing, auto-update, remote connection (P12) |
+| P12 | remote access adapter | Remote Access Adapter: remote gateway / reverse tunnel, pairing, token, revoke, event stream; `agentd` stays on `127.0.0.1` | `desktop.toml` remote wire-up, iOS companion, SSE client, pairing UX | specific tunnel product (frp/Tailscale/CF/ngrok), harness runtime, cloud sync |
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
@@ -77,17 +79,38 @@ Optional overrides:
 AGENTIC_OS_PORT=8797 AGENTIC_OS_UI_PORT=5181 rtk bash scripts/start-local.sh
 ```
 
-## Desktop app (P11)
+## Desktop app (P11 / P11.5)
 
 macOS-validated Tauri shell. Requires pnpm + Rust toolchain.
+
+**P11 — dev shell** (merge gate: `desktop:dev`):
 
 ```bash
 pnpm install
 pnpm desktop:dev      # tray + ui:5173 + agentd:8767 + webview
-pnpm desktop:build    # macOS .app bundle
 ```
 
-Windows/Linux builds are not validated in P11.
+**P11.5 — packaged `.app`** (merge gate: `desktop:build` smoke):
+
+```bash
+pnpm desktop:build
+open apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app
+```
+
+After Quit, `8767` and `5173` must have no listeners. Windows/Linux builds are not validated.
+
+**P12 — remote access** (merge gate: pairing + SSE auth + gateway smoke):
+
+```bash
+uv run agentd serve
+# optional reference gateway:
+caddy run --config examples/remote-gateway/Caddyfile
+
+# desktop Settings → Start pairing → complete from remote client
+bash scripts/smoke-remote-client.sh https://127.0.0.1:8443 "$TOKEN"
+```
+
+See `examples/remote-gateway/README.md` and `apps/ios/README.md`. `agentd` stays on `127.0.0.1` only.
 
 ## Run P0 Locally
 

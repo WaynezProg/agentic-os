@@ -1,0 +1,36 @@
+127.0.0.1:8443 {
+    tls internal
+
+    # Never expose operator-only remote admin routes through the public gateway.
+    @remote_admin {
+        path /remote/pairing/start /remote/devices /remote/devices/*
+    }
+    handle @remote_admin {
+        respond "Forbidden" 403
+    }
+
+    @remote_complete {
+        path /remote/pairing/complete
+    }
+    handle @remote_complete {
+        request_header -X-Agentic-OS-Gateway
+        reverse_proxy 127.0.0.1:8767 {
+            header_up X-Agentic-OS-Gateway "1"
+            flush_interval -1
+            transport http {
+                versions 1.1
+            }
+        }
+    }
+
+    handle {
+        request_header -X-Agentic-OS-Gateway
+        reverse_proxy 127.0.0.1:8767 {
+            header_up X-Agentic-OS-Gateway "1"
+            flush_interval -1
+            transport http {
+                versions 1.1
+            }
+        }
+    }
+}

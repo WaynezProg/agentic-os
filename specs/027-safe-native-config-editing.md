@@ -3,7 +3,7 @@
 Status: Implemented
 Date: 2026-06-06
 Depends on: 013 (configuration scope mapper), 020 (harness config bridge), 014 (workflow surface catalog)
-Blocks: P11 (Tauri Desktop App), P12 (iOS Remote Companion)
+Blocks: P11 (Tauri Desktop App), P12 (`specs/030-remote-access-adapter.md`)
 
 ## Positioning
 
@@ -106,7 +106,7 @@ with `rollback_of: p_A`. Re-rollback → HTTP 409.
 - Full-fidelity JSON Schema for every harness config field (registry grows incrementally)
 - UI editor forms (static UI dry-run display optional, not required)
 - Remote Gateway, Pairing API, or SSE event stream (P11/P12)
-- Tauri Desktop App (P11) or iOS Remote Companion (P12)
+- Tauri Desktop App (P11) or Remote Access Adapter / iOS companion (P12)
 
 ## Acceptance criteria
 

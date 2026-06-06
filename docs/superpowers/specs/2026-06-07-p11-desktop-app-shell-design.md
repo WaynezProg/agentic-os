@@ -4,7 +4,7 @@ Date: 2026-06-07
 Status: Approved for implementation
 Author: agentic-os team
 Builds on: P10 (`specs/027-safe-native-config-editing.md`), P2 (`specs/003-thin-ui.md`)
-Blocks: P12 (iOS Remote Companion)
+Blocks: P12 (`specs/030-remote-access-adapter.md`)
 
 ## Summary
 
@@ -13,7 +13,7 @@ local **agentd** lifecycle. The desktop app is a client only — it does not own
 SQLite state, or config writes (those remain in `agentd`).
 
 P11 scope: **desktop shell + daemon/UI lifecycle + local settings file with remote placeholders**.
-No iOS, no frp gateway, no pairing backend, no SSE/WebSocket endpoint in daemon.
+No iOS, no remote gateway, no pairing backend, no SSE/WebSocket endpoint in daemon.
 
 ## Locked decisions
 
@@ -70,11 +70,9 @@ api_url = "http://127.0.0.1:8767"
 ui_url = "http://127.0.0.1:5173"
 
 [remote]
-gateway_url = ""
-event_stream_url = ""
-token = ""
-pairing_code = ""
-paired_device_id = ""
+remote_gateway = ""
+tunnel_provider = ""
+device_id = ""
 ```
 
 Read/write via **Tauri commands only** in P11. `agentd` does not read this file.
@@ -89,7 +87,7 @@ Read/write via **Tauri commands only** in P11. `agentd` does not read this file.
 
 ## Non-goals (P11)
 
-- iOS app, frp, pairing API, `GET /events` SSE
+- iOS app, remote gateway / reverse tunnel, pairing API, `GET /events` SSE
 - New harness/agent features or web UI redesign
 - Code signing / notarization (document only)
 - Replacing `scripts/start-local.sh` (keep for CLI dev)
@@ -108,8 +106,8 @@ Read/write via **Tauri commands only** in P11. `agentd` does not read this file.
 
 ## P12 touchpoints (reserved)
 
-- `remote.gateway_url`, `remote.token`, pairing fields in `desktop.toml`
-- `remote.event_stream_url` → future `GET /events` on daemon or gateway
+- `remote.remote_gateway`, `remote.tunnel_provider`, `remote.device_id` in `desktop.toml`
+- Event stream derived from `{remote_gateway}/events`
 - Connection mode switch: local API vs remote gateway
 
 Implementation plan: `docs/superpowers/plans/2026-06-07-p11-desktop-app-shell.md`

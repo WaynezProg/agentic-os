@@ -90,6 +90,27 @@ class AuditStore:
             ).fetchall()
         return [self._row_to_event(row) for row in rows]
 
+    def list_events_after_id(
+        self,
+        after_id: int,
+        *,
+        domain: str | None = None,
+        limit: int = 20,
+    ) -> list[AuditEvent]:
+        clauses = ["id > ?"]
+        params: list[object] = [after_id]
+        if domain is not None:
+            clauses.append("domain = ?")
+            params.append(domain)
+        where = " WHERE " + " AND ".join(clauses)
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM audit_events{where} ORDER BY id ASC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._row_to_event(row) for row in rows]
+
     def policy_coverage(
         self,
         agent_ids: list[str],

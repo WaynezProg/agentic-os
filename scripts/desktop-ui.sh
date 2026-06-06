@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/desktop-common.sh
-source "$ROOT/scripts/lib/desktop-common.sh"
+source "$SCRIPT_DIR/lib/desktop-common.sh"
 
+ROOT="$(desktop_root)"
 UI_HOST="${AGENTIC_OS_UI_HOST:-127.0.0.1}"
 UI_PORT="${AGENTIC_OS_UI_PORT:-5173}"
 UI_URL="${AGENTIC_OS_UI_URL:-http://${UI_HOST}:${UI_PORT}}"
 
 PID_FILE="$(desktop_runtime_dir)/ui.pid"
 LOG_FILE="$(desktop_runtime_dir)/ui.log"
-WEB_DIR="$ROOT/apps/web"
+if desktop_bundle_mode; then
+  WEB_DIR="$ROOT/web"
+else
+  WEB_DIR="$ROOT/apps/web"
+fi
 
 ui_listening() {
   python3 - "$UI_HOST" "$UI_PORT" <<'PY'
@@ -87,9 +92,15 @@ cmd_start() {
   mkdir -p "$(dirname "$LOG_FILE")"
   (
     cd "$ROOT"
-    nohup rtk uv run python -m http.server "$UI_PORT" \
-      --bind "$UI_HOST" \
-      --directory "$WEB_DIR" >>"$LOG_FILE" 2>&1 &
+    if desktop_bundle_mode; then
+      nohup python3 -m http.server "$UI_PORT" \
+        --bind "$UI_HOST" \
+        --directory "$WEB_DIR" >>"$LOG_FILE" 2>&1 &
+    else
+      nohup rtk uv run python -m http.server "$UI_PORT" \
+        --bind "$UI_HOST" \
+        --directory "$WEB_DIR" >>"$LOG_FILE" 2>&1 &
+    fi
     echo $! >"$PID_FILE"
   )
   for _ in $(seq 1 20); do
@@ -136,8 +147,13 @@ cmd_restart() {
   cmd_start
 }
 
+cmd_reconcile() {
+  reconcile_stale_pid "$PID_FILE"
+  cmd_status
+}
+
 usage() {
-  echo "Usage: $0 {start|stop|status|restart}" >&2
+  echo "Usage: $0 {start|stop|status|restart|reconcile}" >&2
   exit 1
 }
 
@@ -146,5 +162,6 @@ case "${1:-}" in
   stop) cmd_stop ;;
   status) cmd_status ;;
   restart) cmd_restart ;;
+  reconcile) cmd_reconcile ;;
   *) usage ;;
 esac

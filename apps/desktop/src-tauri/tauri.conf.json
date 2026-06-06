@@ -7,7 +7,7 @@
     "frontendDist": "../../web",
     "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "bash ../../scripts/desktop-ui.sh start && bash ../../scripts/desktop-daemon.sh start",
-    "beforeBuildCommand": "bash ../../scripts/desktop-ui.sh start && bash ../../scripts/desktop-daemon.sh start"
+    "beforeBuildCommand": "bash ../../scripts/prepare-desktop-bundle.sh"
   },
   "app": {
     "withGlobalTauri": true,
@@ -34,6 +34,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "bundle-resources/agentic-os": "agentic-os"
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

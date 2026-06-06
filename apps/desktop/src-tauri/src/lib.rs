@@ -1,4 +1,5 @@
 mod daemon;
+mod remote;
 mod settings;
 
 use settings::DesktopSettings;
@@ -46,6 +47,21 @@ fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     settings::save_settings(&settings)
 }
 
+#[tauri::command]
+fn start_remote_pairing() -> Result<String, String> {
+    remote::post_json("/remote/pairing/start", None)
+}
+
+#[tauri::command]
+fn list_remote_devices() -> Result<String, String> {
+    remote::get_json("/remote/devices")
+}
+
+#[tauri::command]
+fn revoke_remote_device(device_id: String) -> Result<String, String> {
+    remote::delete_json(&format!("/remote/devices/{device_id}"))
+}
+
 fn tray_title_from_status(status_json: &str) -> String {
     let health = serde_json::from_str::<serde_json::Value>(status_json)
         .ok()
@@ -76,6 +92,9 @@ pub fn run() {
             ui_stop,
             get_desktop_settings,
             save_desktop_settings,
+            start_remote_pairing,
+            list_remote_devices,
+            revoke_remote_device,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -86,6 +105,8 @@ pub fn run() {
                 )?;
             }
 
+            daemon::init_bundle_root(app.handle());
+            daemon::reconcile_stack();
             daemon::start_stack();
 
             let daemon_start_item =
@@ -174,7 +195,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
+    app.run(|_app_handle, event| {
         if let RunEvent::Exit = event {
             daemon::stop_stack();
         }
