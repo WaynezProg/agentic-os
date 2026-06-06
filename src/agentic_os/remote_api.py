@@ -90,7 +90,7 @@ def register_remote_routes(
             yield ": connected\n\n"
             last_id = 0
             while True:
-                rows = audit.list_events_after_id(last_id, domain="config_patch", limit=20)
+                rows = audit.list_remote_stream_events_after_id(last_id, limit=20)
                 for row in rows:
                     last_id = max(last_id, row.id)
                     payload = _audit_event_payload(row, device_id=device_id)

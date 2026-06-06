@@ -48,8 +48,9 @@ Phase positioning:
 | P11.5 | **complete** — packaged macOS app | standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, Tauri bundle resources, release path resolution | code signing, auto-update, Keychain token (P12.5) |
 | P12 | **complete** — remote access adapter | Remote Access Adapter: remote gateway / reverse tunnel, pairing, token, revoke, event stream; `agentd` stays on `127.0.0.1` | `desktop.toml` remote wire-up, reference gateway, SSE client, pairing UX with gateway Bearer boundary | specific tunnel product (frp/Tailscale/CF/ngrok), Keychain persistence (P12.5), iOS app (P12.5), cloud sync |
 | P12.5 | **complete** — keychain + iOS companion | secure `auth_token` persistence, desktop remote reconnect, iOS remote client skeleton | macOS Keychain token storage, `connection.mode=remote` Bearer proxy, iOS SwiftUI companion + Keychain | App Store release, push notifications, full iOS UI polish |
+| P13 | **complete** — remote approval loop | surface P7 approval lifecycle on the remote `/events` stream; explicit, tested remote approve/reject over the gateway Bearer boundary | `governance` approval events in remote stream, gateway-reachable `/approvals` contract + tests, conscious remote-approve security posture | new approval state machine (P7 owns it), RBAC, push notifications, iOS UI polish (P14+) |
 
-**Main (2026-06-07):** P11.5 packaged macOS app + P12 remote access adapter + **P12.5** Keychain/iOS companion **complete**. Remote mode is daily-usable with Keychain-backed tokens.
+**Main (2026-06-07):** P11.5 packaged macOS app + P12 remote access adapter + **P12.5** Keychain/iOS companion + **P13** remote approval loop **complete**. A paired device can now see and resolve pending approvals over the gateway Bearer boundary.
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
