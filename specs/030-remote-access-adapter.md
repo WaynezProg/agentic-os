@@ -29,9 +29,10 @@ the phase spec and product language refer only to **remote gateway** and **rever
 
 | Field | Role |
 |-------|------|
-| `gateway_url` | External HTTPS entry for proxied daemon API + event stream |
-| `auth_token` | Bearer or HMAC secret for gateway-authenticated requests |
-| `pairing_code` | One-time or short-lived code to bind a new client device |
+| `remote_gateway` | External HTTPS entry for proxied daemon API + event stream |
+| `tunnel_provider` | Operator label for reverse tunnel product (informational; not enforced) |
+| `auth_token` | Bearer secret (runtime only; not persisted in `desktop.toml` until P12.5 Keychain) |
+| `pairing_code` | One-time or short-lived code to bind a new client device (ephemeral; not persisted) |
 | `device_id` | Stable client identifier after successful pairing |
 
 ### Security invariants (non-negotiable)
@@ -61,9 +62,8 @@ remains product-neutral.
 
 ## Components
 
-- **Desktop (Tauri)** — `[remote]` section in `desktop.toml`: read/write `gateway_url`,
-  token, pairing state; connection mode: local API vs remote gateway.
-- **iOS companion** — HTTP client against `gateway_url`; pairing UX; SSE consumer.
+- **Desktop (Tauri)** — `[remote]` in `desktop.toml`: `remote_gateway`, `tunnel_provider`, `device_id` only; connection mode local vs remote.
+- **iOS companion** — HTTP client against `remote_gateway`; pairing UX; SSE consumer.
 - **Remote gateway** — reverse tunnel + auth middleware (operator-provided or bundled helper
   script outside core daemon scope).
 
@@ -72,7 +72,7 @@ remains product-neutral.
 | Criterion | Verification |
 |-----------|--------------|
 | `agentd` listens on `127.0.0.1` only with remote enabled | `lsof` / bind audit |
-| Remote client reaches daemon only via `gateway_url` | Integration smoke through tunnel fixture |
+| Remote client reaches daemon only via `remote_gateway` | Integration smoke through tunnel fixture |
 | Unauthenticated requests rejected at gateway | Negative test |
 | Pairing flow binds `device_id` and issues token | Manual or integration test |
 | Revoke invalidates device without daemon restart | Manual smoke |
@@ -81,8 +81,8 @@ remains product-neutral.
 
 ## P11 / P11.5 touchpoints (already reserved)
 
-- `remote.gateway_url`, `remote.token`, pairing fields in `desktop.toml`
-- `remote.event_stream_url` → `GET /events` on daemon, proxied by gateway
+- `remote.remote_gateway`, `remote.tunnel_provider`, `remote.device_id` in `desktop.toml`
+- Event stream derived as `{remote_gateway}/events`, proxied by gateway
 - Connection mode switch: local API vs remote gateway
 
 ## Design

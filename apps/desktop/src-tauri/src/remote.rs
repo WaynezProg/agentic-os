@@ -1,34 +1,3 @@
-const SERVICE: &str = "dev.agentic-os.desktop";
-const TOKEN_ACCOUNT: &str = "remote-auth-token";
-
-pub fn save_remote_token(token: &str) -> Result<(), String> {
-    keyring::Entry::new(SERVICE, TOKEN_ACCOUNT)
-        .map_err(|error| error.to_string())?
-        .set_password(token)
-        .map_err(|error| error.to_string())
-}
-
-pub fn load_remote_token() -> Result<Option<String>, String> {
-    match keyring::Entry::new(SERVICE, TOKEN_ACCOUNT) {
-        Ok(entry) => match entry.get_password() {
-            Ok(token) => Ok(Some(token)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(error.to_string()),
-        },
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-pub fn clear_remote_token() -> Result<(), String> {
-    match keyring::Entry::new(SERVICE, TOKEN_ACCOUNT) {
-        Ok(entry) => match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(error.to_string()),
-        },
-        Err(error) => Err(error.to_string()),
-    }
-}
-
 pub fn local_api_url() -> String {
     std::env::var("AGENTIC_OS_API_URL").unwrap_or_else(|_| "http://127.0.0.1:8767".to_string())
 }

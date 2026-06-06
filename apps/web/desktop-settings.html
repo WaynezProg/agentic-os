@@ -55,11 +55,12 @@
     <label>API URL <input id="api-url" /></label>
     <label>UI URL <input id="ui-url" /></label>
 
-    <h2>Remote</h2>
-    <label>Gateway URL <input id="gateway-url" placeholder="https://example.tailnet.ts.net" /></label>
+    <h2>Remote Access Adapter</h2>
+    <label>Remote gateway <input id="remote-gateway" placeholder="https://example.tailnet.ts.net" /></label>
+    <label>Tunnel provider <input id="tunnel-provider" placeholder="tailscale / cloudflare / caddy / …" /></label>
     <label>Event stream URL <input id="event-stream-url" readonly /></label>
-    <label>Pairing code <input id="pairing-code" readonly /></label>
-    <label>Paired device ID <input id="paired-device-id" /></label>
+    <label>Pairing code (ephemeral) <input id="pairing-code" readonly /></label>
+    <label>Device ID <input id="device-id" /></label>
     <button id="start-pairing" type="button">Start pairing</button>
     <button id="refresh-devices" type="button">Refresh devices</button>
     <div id="devices"></div>
@@ -70,8 +71,8 @@
     <script type="module">
       const { invoke } = window.__TAURI__.core;
 
-      function deriveEventStreamUrl(gatewayUrl) {
-        const trimmed = gatewayUrl.trim().replace(/\/+$/, "");
+      function deriveEventStreamUrl(remoteGateway) {
+        const trimmed = remoteGateway.trim().replace(/\/+$/, "");
         return trimmed ? `${trimmed}/events` : "";
       }
 
@@ -80,10 +81,12 @@
         document.getElementById("connection-mode").value = settings.connection.mode;
         document.getElementById("api-url").value = settings.local.api_url;
         document.getElementById("ui-url").value = settings.local.ui_url;
-        document.getElementById("gateway-url").value = settings.remote.gateway_url;
-        document.getElementById("event-stream-url").value = settings.remote.event_stream_url;
-        document.getElementById("pairing-code").value = settings.remote.pairing_code || "";
-        document.getElementById("paired-device-id").value = settings.remote.paired_device_id;
+        document.getElementById("remote-gateway").value = settings.remote.remote_gateway;
+        document.getElementById("tunnel-provider").value = settings.remote.tunnel_provider;
+        document.getElementById("event-stream-url").value = deriveEventStreamUrl(
+          settings.remote.remote_gateway,
+        );
+        document.getElementById("device-id").value = settings.remote.device_id;
       }
 
       async function refreshDevices() {
@@ -96,7 +99,7 @@
         }
       }
 
-      document.getElementById("gateway-url").addEventListener("input", (event) => {
+      document.getElementById("remote-gateway").addEventListener("input", (event) => {
         document.getElementById("event-stream-url").value = deriveEventStreamUrl(event.target.value);
       });
 
@@ -118,13 +121,12 @@
         settings.connection.mode = document.getElementById("connection-mode").value;
         settings.local.api_url = document.getElementById("api-url").value;
         settings.local.ui_url = document.getElementById("ui-url").value;
-        settings.remote.gateway_url = document.getElementById("gateway-url").value.trim();
-        settings.remote.event_stream_url = deriveEventStreamUrl(settings.remote.gateway_url);
-        settings.remote.pairing_code = document.getElementById("pairing-code").value;
-        settings.remote.paired_device_id = document.getElementById("paired-device-id").value;
+        settings.remote.remote_gateway = document.getElementById("remote-gateway").value.trim();
+        settings.remote.tunnel_provider = document.getElementById("tunnel-provider").value.trim();
+        settings.remote.device_id = document.getElementById("device-id").value.trim();
         await invoke("save_desktop_settings", { settings });
         document.getElementById("status").textContent =
-          "Saved to ~/.agentic-os/desktop.toml (token stays in Keychain when set)";
+          "Saved endpoint + device_id only; tokens are not persisted (P12.5 Keychain)";
       });
 
       load()

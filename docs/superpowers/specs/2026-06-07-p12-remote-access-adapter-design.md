@@ -21,7 +21,7 @@ and self-hosted reverse proxies are implementation options, not phase requiremen
 |-------|----------|
 | Daemon bind | `127.0.0.1` only; remote never widens bind address |
 | External entry | Remote gateway / reverse tunnel with auth + pairing + revoke |
-| Adapter inputs | `gateway_url`, `auth_token`, `pairing_code`, `device_id` |
+| Adapter inputs | `remote_gateway`, `tunnel_provider`, `auth_token`, `pairing_code`, `device_id` |
 | Tunnel product | Not specified; operator chooses implementation |
 | Daemon changes | Proxy-only; no new harness/agent features in P12 |
 | Event stream | `GET /events` SSE proxied through gateway (same auth) |
@@ -82,12 +82,12 @@ Reserved in P11; wired in P12:
 ```toml
 [remote]
 enabled = false
-gateway_url = ""
-# token stored via keychain / secure store, not plain text in file
-pairing_code = ""   # ephemeral, display-only during pairing window
-device_id = ""      # this Mac's gateway identity if applicable
+remote_gateway = ""
+tunnel_provider = ""
+device_id = ""
 connection_mode = "local"  # "local" | "remote"
-event_stream_url = ""      # derived from gateway_url + /events
+# auth_token: runtime only — P12.5 Keychain; never plain text in desktop.toml
+# pairing_code: ephemeral UI only
 ```
 
 ### iOS companion

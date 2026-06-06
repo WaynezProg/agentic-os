@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-GATEWAY_URL="${1:?gateway_url}"
+GATEWAY_URL="${1:?remote_gateway}"
 TOKEN="${2:?token}"
 
 BASE="${GATEWAY_URL%/}"
