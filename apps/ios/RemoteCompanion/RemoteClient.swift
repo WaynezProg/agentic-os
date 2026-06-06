@@ -44,7 +44,6 @@ struct RemoteClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("1", forHTTPHeaderField: "X-Agentic-OS-Gateway")
         let body: [String: String] = [
             "pairing_code": pairingCode,
             "device_name": deviceName,
@@ -73,7 +72,7 @@ struct RemoteClient {
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 3
-        let (data, response) = try await session.data(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw RemoteClientError.invalidResponse
         }
@@ -81,13 +80,15 @@ struct RemoteClient {
             throw RemoteClientError.unauthorized
         }
         guard (200...299).contains(http.statusCode) else {
-            throw RemoteClientError.httpStatus(http.statusCode, String(data: data, encoding: .utf8) ?? "")
+            throw RemoteClientError.httpStatus(http.statusCode, "")
         }
-        let text = String(data: data, encoding: .utf8) ?? ""
-        guard text.hasPrefix(":") || text.contains("data:") else {
-            throw RemoteClientError.invalidResponse
+        for try await line in bytes.lines {
+            guard line.hasPrefix(":") || line.contains("data:") else {
+                throw RemoteClientError.invalidResponse
+            }
+            return line
         }
-        return text.split(separator: "\n").first.map(String.init) ?? text
+        throw RemoteClientError.invalidResponse
     }
 
     private func decode<T: Decodable>(

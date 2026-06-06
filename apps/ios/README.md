@@ -3,12 +3,16 @@
 Minimal SwiftUI client for the Remote Access Adapter. All traffic goes to
 `remote_gateway` with `Authorization: Bearer` — never to the Mac LAN IP.
 
+Clients must **not** send `X-Agentic-OS-Gateway`. That header is a gateway →
+agentd trust marker: the reference gateway strips inbound values and sets
+`X-Agentic-OS-Gateway: 1` on upstream requests.
+
 ## Pairing flow
 
 1. Desktop (localhost operator): **Start pairing** → high-entropy `pairing_code`
    (`secrets.token_urlsafe(16)` from agentd).
-2. iOS: POST `{remote_gateway}/remote/pairing/complete` with header
-   `X-Agentic-OS-Gateway: 1` (set by reference Caddy/nginx config) and body:
+2. iOS: POST `{remote_gateway}/remote/pairing/complete` with JSON body only
+   (gateway adds trust header upstream):
 
 ```json
 {"pairing_code": "<code from desktop>", "device_name": "wayne-iphone"}
@@ -19,11 +23,11 @@ Minimal SwiftUI client for the Remote Access Adapter. All traffic goes to
 
 ## API surface
 
-| Call | Auth |
-|------|------|
-| `GET {gateway}/health` | optional |
+| Call | Client auth |
+|------|-------------|
+| `GET {gateway}/health` | optional Bearer |
 | `GET {gateway}/events` | Bearer required |
-| `POST {gateway}/remote/pairing/complete` | `X-Agentic-OS-Gateway: 1` |
+| `POST {gateway}/remote/pairing/complete` | JSON body only; gateway sets trust header |
 
 ## Open in Xcode
 

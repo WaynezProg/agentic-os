@@ -36,6 +36,7 @@ pub struct RemoteSettings {
 
 /// Legacy/extra keys absorbed on load and dropped on save.
 #[derive(Debug, Default, Deserialize)]
+#[allow(dead_code)]
 struct RemoteSettingsLegacy {
     #[serde(default, alias = "gateway_url")]
     remote_gateway: String,

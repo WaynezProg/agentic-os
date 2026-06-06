@@ -15,6 +15,10 @@ Blocks: —
 
 Keychain account: service `agentic-os`, account `{remote_gateway}:{device_id}`.
 
+Desktop webview must not invoke raw token read/write commands. Tauri exposes
+only `remote_token_status` (bool), `connection_api_fetch`, `probe_remote_connection`,
+`complete_remote_pairing`, and `revoke_remote_device`.
+
 ## Positioning
 
 P12 shipped pairing, gateway Bearer boundary, and desktop remote settings placeholders.

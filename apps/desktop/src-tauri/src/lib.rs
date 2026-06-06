@@ -60,25 +60,6 @@ fn list_remote_devices() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn save_remote_token(
-    remote_gateway: String,
-    device_id: String,
-    token: String,
-) -> Result<(), String> {
-    keychain::save_remote_token(&remote_gateway, &device_id, &token)
-}
-
-#[tauri::command]
-fn load_remote_token(remote_gateway: String, device_id: String) -> Result<Option<String>, String> {
-    keychain::load_remote_token(&remote_gateway, &device_id)
-}
-
-#[tauri::command]
-fn delete_remote_token(remote_gateway: String, device_id: String) -> Result<(), String> {
-    keychain::delete_remote_token(&remote_gateway, &device_id)
-}
-
-#[tauri::command]
 fn remote_token_status(remote_gateway: String, device_id: String) -> Result<bool, String> {
     Ok(keychain::load_remote_token(&remote_gateway, &device_id)?.is_some())
 }
@@ -207,9 +188,6 @@ pub fn run() {
             complete_remote_pairing,
             list_remote_devices,
             revoke_remote_device,
-            save_remote_token,
-            load_remote_token,
-            delete_remote_token,
             remote_token_status,
             get_connection_profile,
             connection_api_fetch,
