@@ -85,6 +85,49 @@ def test_session_denied_when_cwd_outside_roots(tmp_path: Path) -> None:
     assert "session_id" in body
 
 
+def test_policy_rollback_re_enables_launch_gate(tmp_path: Path) -> None:
+    client = _make_client(tmp_path)
+    _set_policy(client, "shell", cwd_roots=[str(tmp_path)])
+
+    allowed = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert allowed.status_code == 200
+
+    mutation = client.post(
+        "/policy/shell",
+        json={
+            "enabled": False,
+            "readonly": False,
+            "allowed_skill_ids": [],
+            "allowed_mcp_server_ids": [],
+            "allowed_tool_names": [],
+            "approval_required_tool_names": [],
+            "allowed_model_ids": [],
+            "cwd_roots": [str(tmp_path)],
+            "rate_limit_per_minute": 60,
+        },
+    )
+    assert mutation.status_code == 200
+    patch_id = mutation.json()["patch_id"]
+
+    denied = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert denied.status_code == 403
+
+    rollback = client.post(f"/policy/shell/rollback?to={patch_id}")
+    assert rollback.status_code == 200
+
+    allowed_again = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+    assert allowed_again.status_code == 200
+
+
 def test_session_denied_when_policy_disabled(tmp_path: Path) -> None:
     client = _make_client(tmp_path)
     _set_policy(client, "shell", enabled=False)

@@ -26,6 +26,12 @@ from agentic_os.control_plane import (
     SkillUpsert,
     SunsetChange,
 )
+from agentic_os.control_plane_history import (
+    ControlPlaneMutationResult,
+    HistoryConflictError,
+    history_row_dict,
+    mutation_envelope,
+)
 from agentic_os.backup_store import BackupStore
 from agentic_os.catalog import (
     SUPPORTED_HARNESSES,
@@ -1320,7 +1326,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 previous = control_plane.get_skill(skill_id)
             except KeyError:
                 previous = None
-            result = control_plane.upsert_skill(
+            mutation = control_plane.upsert_skill_tracked(
                 skill_id,
                 SkillUpsert(
                     label=request.label,
@@ -1331,24 +1337,62 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     enabled=request.enabled,
                 ),
             )
-            audit_store.record(
+            event = audit_store.record(
                 "skill",
                 skill_id,
                 "skill_upserted",
                 f"upserted skill {skill_id}",
-                metadata=_deprecated_reset_metadata(previous, result),
+                metadata=_deprecated_reset_metadata(previous, mutation.record),
             )
-            return _asdict(result)
+            return _catalog_mutation_response(
+                _asdict(mutation.record),
+                _with_audit_event(mutation, event.id),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/skills/{skill_id}/history")
+    def skill_history(skill_id: str, limit: int = Query(default=50, ge=1, le=500)) -> dict[str, object]:
+        try:
+            entries = control_plane.list_skill_history(skill_id, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"patches": [history_row_dict(entry) for entry in entries]}
+
+    @app.post("/skills/{skill_id}/rollback")
+    def skill_rollback(
+        skill_id: str,
+        to: str = Query(...),
+        source: str = Query(default="api"),
+    ) -> dict[str, Any]:
+        try:
+            mutation = control_plane.rollback_skill(skill_id, to, source=source)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
+        except HistoryConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        event = audit_store.record(
+            "skill",
+            skill_id,
+            "skill_rolled_back",
+            f"rolled back skill {skill_id} to {to}",
+            metadata={"rollback_of": to, "source": source},
+        )
+        return _catalog_mutation_response(
+            _asdict(mutation.record),
+            _with_audit_event(mutation, event.id),
+        )
 
     @app.post("/skills/{skill_id}/disable")
     def disable_skill(skill_id: str) -> dict[str, Any]:
         try:
             _apply_sunset_with_audit()
-            result = control_plane.disable_skill(skill_id)
-            audit_store.record("skill", skill_id, "skill_disabled", f"disabled skill {skill_id}")
-            return _asdict(result)
+            mutation = control_plane.disable_skill_tracked(skill_id)
+            event = audit_store.record("skill", skill_id, "skill_disabled", f"disabled skill {skill_id}")
+            return _catalog_mutation_response(
+                _asdict(mutation.record),
+                _with_audit_event(mutation, event.id),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -1423,7 +1467,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 previous = control_plane.get_mcp_server(server_id)
             except KeyError:
                 previous = None
-            result = control_plane.upsert_mcp_server(
+            mutation = control_plane.upsert_mcp_server_tracked(
                 server_id,
                 McpServerUpsert(
                     label=request.label,
@@ -1435,24 +1479,62 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     enabled=request.enabled,
                 ),
             )
-            audit_store.record(
+            event = audit_store.record(
                 "mcp",
                 server_id,
                 "mcp_upserted",
                 f"upserted mcp server {server_id}",
-                metadata=_deprecated_reset_metadata(previous, result),
+                metadata=_deprecated_reset_metadata(previous, mutation.record),
             )
-            return _asdict(result)
+            return _catalog_mutation_response(
+                _asdict(mutation.record),
+                _with_audit_event(mutation, event.id),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/mcp/{server_id}/history")
+    def mcp_history(server_id: str, limit: int = Query(default=50, ge=1, le=500)) -> dict[str, object]:
+        try:
+            entries = control_plane.list_mcp_history(server_id, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"patches": [history_row_dict(entry) for entry in entries]}
+
+    @app.post("/mcp/{server_id}/rollback")
+    def mcp_rollback(
+        server_id: str,
+        to: str = Query(...),
+        source: str = Query(default="api"),
+    ) -> dict[str, Any]:
+        try:
+            mutation = control_plane.rollback_mcp_server(server_id, to, source=source)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
+        except HistoryConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        event = audit_store.record(
+            "mcp",
+            server_id,
+            "mcp_rolled_back",
+            f"rolled back mcp server {server_id} to {to}",
+            metadata={"rollback_of": to, "source": source},
+        )
+        return _catalog_mutation_response(
+            _asdict(mutation.record),
+            _with_audit_event(mutation, event.id),
+        )
 
     @app.post("/mcp/{server_id}/disable")
     def disable_mcp_server(server_id: str) -> dict[str, Any]:
         try:
             _apply_sunset_with_audit()
-            result = control_plane.disable_mcp_server(server_id)
-            audit_store.record("mcp", server_id, "mcp_disabled", f"disabled mcp server {server_id}")
-            return _asdict(result)
+            mutation = control_plane._disable_mcp_server_tracked(server_id)
+            event = audit_store.record("mcp", server_id, "mcp_disabled", f"disabled mcp server {server_id}")
+            return _catalog_mutation_response(
+                _asdict(mutation.record),
+                _with_audit_event(mutation, event.id),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -1546,7 +1628,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 previous = control_plane.get_policy(agent_id)
             except KeyError:
                 previous = None
-            result = control_plane.upsert_policy(
+            mutation = control_plane.upsert_policy_tracked(
                 agent_id,
                 PolicyUpsert(
                     enabled=request.enabled,
@@ -1560,16 +1642,51 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     rate_limit_per_minute=request.rate_limit_per_minute,
                 ),
             )
-            audit_store.record(
+            event = audit_store.record(
                 "policy",
                 agent_id,
                 "policy_upserted",
                 f"upserted policy for {agent_id}",
-                metadata=_deprecated_reset_metadata(previous, result),
+                metadata=_deprecated_reset_metadata(previous, mutation.record),
             )
-            return _asdict(result)
+            return _catalog_mutation_response(
+                _asdict(mutation.record),
+                _with_audit_event(mutation, event.id),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/policy/{agent_id}/history")
+    def policy_history(agent_id: str, limit: int = Query(default=50, ge=1, le=500)) -> dict[str, object]:
+        try:
+            entries = control_plane.list_policy_history(agent_id, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"patches": [history_row_dict(entry) for entry in entries]}
+
+    @app.post("/policy/{agent_id}/rollback")
+    def policy_rollback(
+        agent_id: str,
+        to: str = Query(...),
+        source: str = Query(default="api"),
+    ) -> dict[str, Any]:
+        try:
+            mutation = control_plane.rollback_policy(agent_id, to, source=source)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
+        except HistoryConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        event = audit_store.record(
+            "policy",
+            agent_id,
+            "policy_rolled_back",
+            f"rolled back policy for {agent_id} to {to}",
+            metadata={"rollback_of": to, "source": source},
+        )
+        return _catalog_mutation_response(
+            _asdict(mutation.record),
+            _with_audit_event(mutation, event.id),
+        )
 
     @app.post("/policy/{agent_id}/deprecate")
     def deprecate_policy(
@@ -1718,6 +1835,18 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             "audit_event_id": result.audit_event_id,
             "base_mtime": result.base_mtime,
         }
+
+    def _with_audit_event(mutation: ControlPlaneMutationResult, event_id: int | None) -> ControlPlaneMutationResult:
+        return ControlPlaneMutationResult(
+            patch_id=mutation.patch_id,
+            applied=mutation.applied,
+            diff=mutation.diff,
+            audit_event_id=event_id,
+            record=mutation.record,
+        )
+
+    def _catalog_mutation_response(record: dict[str, Any], mutation: ControlPlaneMutationResult) -> dict[str, Any]:
+        return {**mutation_envelope(mutation), **record}
 
     @app.post("/catalog/{harness}/surfaces/patch")
     def catalog_surfaces_patch(
