@@ -1,6 +1,6 @@
 # 046 — Desktop Product Polish (P27)
 
-Status: Draft
+Status: Complete
 Date: 2026-06-07
 Depends on: desktop app shell (`specs/028-desktop-app-shell.md`), packaged macOS app (`specs/029-packaged-macos-app.md`), SLO/diagnostics (`specs/010-slo-benchmark-harness.md`), bounded log reads (P6, `specs/014-evidence-audit-timeline.md`)
 Blocks: —

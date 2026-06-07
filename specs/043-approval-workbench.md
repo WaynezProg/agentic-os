@@ -1,6 +1,6 @@
 # 043 — Approval Workbench (P24)
 
-Status: Draft
+Status: Complete
 Date: 2026-06-07
 Depends on: human approval workflow (`specs/009-human-approval-workflow.md`), approval queue (`specs/015-approval-queue.md`, `specs/016-approval-queue.md`), remote approval loop (`specs/032-remote-approval-loop.md`)
 Blocks: —

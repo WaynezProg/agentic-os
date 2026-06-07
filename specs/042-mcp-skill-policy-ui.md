@@ -1,6 +1,6 @@
 # 042 — MCP / Skill / Policy Management UI (P23)
 
-Status: Draft
+Status: Complete
 Date: 2026-06-07
 Depends on: P22 (`specs/041-mcp-skill-policy-rollback-backend.md`), skills/MCP/policy catalog (`specs/004-skills-mcp-policy.md`)
 Blocks: —
