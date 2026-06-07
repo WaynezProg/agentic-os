@@ -592,6 +592,67 @@ def test_api_returns_404_for_unknown_control_plane_reads(tmp_path: Path) -> None
     assert policy.status_code == 404
 
 
+def test_api_control_plane_history_and_rollback(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    created = client.post(
+        "/skills/reviewer",
+        json={"label": "Reviewer", "description": "v1"},
+    )
+    assert created.status_code == 200
+
+    updated = client.post(
+        "/skills/reviewer",
+        json={"label": "Reviewer v2", "description": "v2"},
+    )
+    assert updated.status_code == 200
+    patch_id = updated.json()["patch_id"]
+    assert updated.json()["label"] == "Reviewer v2"
+
+    history = client.get("/skills/reviewer/history")
+    assert history.status_code == 200
+    patches = history.json()["patches"]
+    assert len(patches) == 1
+    assert patches[0]["patch_id"] == patch_id
+
+    rolled = client.post(f"/skills/reviewer/rollback?to={patch_id}")
+    assert rolled.status_code == 200
+    assert rolled.json()["label"] == "Reviewer"
+
+
+def test_api_mcp_edit_does_not_persist_redacted_values(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    client.post(
+        "/mcp/figma",
+        json={
+            "label": "Figma",
+            "transport": "http",
+            "command_preview": ["figma-mcp", "--token", "SUPER_SECRET"],
+            "url": "https://user:SECRET@example.invalid/mcp",
+            "env_keys": ["FIGMA_TOKEN"],
+        },
+    )
+    shown = client.get("/mcp/figma")
+    assert shown.status_code == 200
+    raw = json.dumps(shown.json())
+    assert "SUPER_SECRET" not in raw
+    assert "SECRET" not in raw or "[REDACTED]" in raw
+
+    updated = client.post(
+        "/mcp/figma",
+        json={
+            "label": "Figma v2",
+            "transport": "http",
+            "command_preview": ["figma-mcp", "v2"],
+            "url": "https://example.invalid/mcp",
+            "env_keys": ["FIGMA_TOKEN"],
+        },
+    )
+    assert updated.status_code == 200
+    stored = json.dumps(updated.json())
+    assert "SUPER_SECRET" not in stored
+    assert updated.json()["label"] == "Figma v2"
+
+
 def test_api_allows_localhost_cors_preflight(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 

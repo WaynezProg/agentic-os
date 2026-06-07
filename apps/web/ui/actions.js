@@ -7,6 +7,13 @@ window.AgenticOs = window.AgenticOs || {};
     "catalog-enable-mcp",
     "catalog-disable-mcp",
     "patch-rollback",
+    "control-plane-rollback",
+    "cp-edit",
+    "cp-create",
+    "cp-save",
+    "cp-cancel",
+    "cp-disable",
+    "cp-history",
   ]);
 
   function isDelegatedAction(action) {
@@ -26,6 +33,48 @@ window.AgenticOs = window.AgenticOs || {};
       Ao.CatalogEditor.stageDisableMcp(name, scope);
       return;
     }
+    if (action === "control-plane-rollback") {
+      const path = button.dataset.rollbackPath;
+      await Ao.PatchRollback.rollbackPatch(path, "web-control-plane-rollback");
+      await Ao.ControlPlaneEditor.reloadAfterRollback();
+      const container = button.closest("[data-history-domain]");
+      if (container) {
+        await Ao.ControlPlaneEditor.toggleHistory(
+          container.dataset.historyDomain,
+          container.dataset.historyId,
+          container.id,
+        );
+      }
+      return;
+    }
+    if (action === "cp-edit") {
+      await Ao.ControlPlaneEditor.openEdit(button.dataset.domain, button.dataset.recordId);
+      return;
+    }
+    if (action === "cp-create") {
+      await Ao.ControlPlaneEditor.openCreate(button.dataset.domain);
+      return;
+    }
+    if (action === "cp-save") {
+      await Ao.ControlPlaneEditor.saveCurrent();
+      return;
+    }
+    if (action === "cp-cancel") {
+      Ao.ControlPlaneEditor.cancelEdit();
+      return;
+    }
+    if (action === "cp-disable") {
+      await Ao.ControlPlaneEditor.disableRecord(button.dataset.domain, button.dataset.recordId);
+      return;
+    }
+    if (action === "cp-history") {
+      await Ao.ControlPlaneEditor.toggleHistory(
+        button.dataset.domain,
+        button.dataset.recordId,
+        button.dataset.historyContainer,
+      );
+      return;
+    }
     if (action === "patch-rollback") {
       const patchId = button.dataset.patchId;
       await Ao.PatchRollback.rollbackPatch(patchId, "web-patch-rollback");
@@ -39,6 +88,10 @@ window.AgenticOs = window.AgenticOs || {};
       }
       if (button.closest("#registry-patch-history")) {
         await Ao.RegistryEditor.reloadAfterRollback();
+        return;
+      }
+      if (button.closest(".cp-history-row")) {
+        await Ao.ControlPlaneEditor.reloadAfterRollback();
         return;
       }
       const harness = document.getElementById("catalog-harness")?.value;

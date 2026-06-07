@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.HarnessConfigEditor.init();
   Ao.ProfileEditor.init();
   Ao.RegistryEditor.init();
+  Ao.ControlPlaneEditor.toggleEditorChrome();
   bindTabs();
   bindControls();
   refreshAll();
@@ -513,6 +514,55 @@ async function loadMemories(query = "") {
 
 async function loadSkillsMcp() {
   await Promise.allSettled([loadSkills(), loadMcpServers(), loadPolicies(), loadApprovals()]);
+  Ao.ControlPlaneEditor.toggleEditorChrome();
+}
+
+Ao.reloadControlPlaneTables = loadSkillsMcp;
+
+function renderControlPlaneActions(domain, recordId) {
+  if (!Ao.isLocalWritable()) {
+    return "";
+  }
+  const historyContainer = `cp-history-${domain}-${recordId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `
+    <td class="control-plane-action-col">
+      <div class="actions">
+        <button type="button" data-action="cp-edit" data-domain="${escapeHtml(domain)}" data-record-id="${escapeHtml(recordId)}">編輯</button>
+        <button type="button" data-action="cp-history" data-domain="${escapeHtml(domain)}" data-record-id="${escapeHtml(recordId)}" data-history-container="${escapeHtml(historyContainer)}">歷史</button>
+        ${
+          domain !== "policy"
+            ? `<button type="button" data-action="cp-disable" data-domain="${escapeHtml(domain)}" data-record-id="${escapeHtml(recordId)}">停用</button>`
+            : ""
+        }
+      </div>
+    </td>
+  `;
+}
+
+function renderControlPlaneHistoryRow(domain, recordId, colspan) {
+  const historyContainer = `cp-history-${domain}-${recordId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `
+    <tr id="${escapeHtml(historyContainer)}" class="cp-history-row" hidden data-history-domain="${escapeHtml(domain)}" data-history-id="${escapeHtml(recordId)}">
+      <td colspan="${colspan}">
+        <table class="nested-table" aria-label="歷史紀錄">
+          <thead>
+            <tr>
+              <th>patch_id</th>
+              <th>target</th>
+              <th>surface</th>
+              <th>source</th>
+              <th>建立時間</th>
+              <th>還原時間</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="${escapeHtml(historyContainer)}-body">
+            <tr><td colspan="7">載入中…</td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+  `;
 }
 
 async function loadSkills() {
@@ -521,12 +571,13 @@ async function loadSkills() {
     const data = await apiFetch(buildEndpoint("skills"));
     const skills = asArray(data.skills);
     if (skills.length === 0) {
-      renderEmptyRow(body, 8, t("emptyNoSkills"));
+      renderEmptyRow(body, 9, t("emptyNoSkills"));
       return;
     }
     body.innerHTML = skills
-      .map(
-        (skill) => `
+      .flatMap(
+        (skill) => [
+          `
           <tr>
             <td class="cell-id">${escapeHtml(skill.id)}</td>
             <td>${escapeHtml(skill.label)}</td>
@@ -536,12 +587,15 @@ async function loadSkills() {
             <td>${escapeHtml(skill.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(skill.replacement_id)}</td>
             <td>${escapeHtml(skill.sunset_at)}</td>
+            ${renderControlPlaneActions("skills", skill.id)}
           </tr>
         `,
+          renderControlPlaneHistoryRow("skills", skill.id, 9),
+        ],
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 8, error.message);
+    renderErrorRow(body, 9, error.message);
   }
 }
 
@@ -551,12 +605,13 @@ async function loadMcpServers() {
     const data = await apiFetch(buildEndpoint("mcp"));
     const servers = asArray(data.servers);
     if (servers.length === 0) {
-      renderEmptyRow(body, 8, t("emptyNoMcp"));
+      renderEmptyRow(body, 9, t("emptyNoMcp"));
       return;
     }
     body.innerHTML = servers
-      .map(
-        (server) => `
+      .flatMap(
+        (server) => [
+          `
           <tr>
             <td class="cell-id">${escapeHtml(server.id)}</td>
             <td>${escapeHtml(server.label)}</td>
@@ -566,12 +621,15 @@ async function loadMcpServers() {
             <td>${escapeHtml(server.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(server.replacement_id)}</td>
             <td>${escapeHtml(server.sunset_at)}</td>
+            ${renderControlPlaneActions("mcp", server.id)}
           </tr>
         `,
+          renderControlPlaneHistoryRow("mcp", server.id, 9),
+        ],
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 8, error.message);
+    renderErrorRow(body, 9, error.message);
   }
 }
 
@@ -620,12 +678,13 @@ async function loadPolicies() {
     const data = await apiFetch(buildEndpoint("policySummary"));
     const policies = asArray(data.policies);
     if (policies.length === 0) {
-      renderEmptyRow(body, 7, t("emptyNoPolicies"));
+      renderEmptyRow(body, 8, t("emptyNoPolicies"));
       return;
     }
     body.innerHTML = policies
-      .map(
-        (policy) => `
+      .flatMap(
+        (policy) => [
+          `
           <tr>
             <td class="cell-id">${escapeHtml(policy.agent_id)}</td>
             <td>${policy.deprecated ? `<span class="pill is-deprecated">${escapeHtml(t("deprecated"))}</span>` : escapeHtml(String(policy.enabled !== false))}</td>
@@ -634,12 +693,15 @@ async function loadPolicies() {
             <td>${escapeHtml(policy.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(policy.replacement_id)}</td>
             <td>${escapeHtml(policy.sunset_at)}</td>
+            ${renderControlPlaneActions("policy", policy.agent_id)}
           </tr>
         `,
+          renderControlPlaneHistoryRow("policy", policy.agent_id, 8),
+        ],
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 7, error.message);
+    renderErrorRow(body, 8, error.message);
   }
 }
 
