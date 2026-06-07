@@ -7,6 +7,8 @@ import tomllib
 from fastapi.testclient import TestClient
 
 from agentic_os.api import create_app
+from agentic_os.registry import Registry, apply_profile_launch, render_command
+from agentic_os.models import AgentDefinition
 from test_api import make_client, write_registry
 
 
@@ -145,6 +147,57 @@ def test_registry_schema_endpoint(tmp_path: Path) -> None:
     response = client.get("/registry/schema")
     assert response.status_code == 200
     assert response.json()["cwd_mode"] == ["required", "optional", "ignored"]
+
+
+def test_render_command_substitutes_model_and_provider_when_present() -> None:
+    argv = render_command(
+        ["/usr/bin/printf", "m={{model}} p={{provider}}"],
+        "hello",
+        model="opus-4",
+        provider="anthropic",
+    )
+    assert argv == ["/usr/bin/printf", "m=opus-4 p=anthropic"]
+
+
+def test_render_command_leaves_model_placeholder_when_absent() -> None:
+    argv = render_command(["/usr/bin/printf", "{{model}}"], "hello")
+    assert argv == ["/usr/bin/printf", "{{model}}"]
+
+
+def test_model_arg_appended_when_profile_model_present(tmp_path: Path) -> None:
+    registry_path = tmp_path / "agents.toml"
+    write_registry(
+        registry_path,
+        command=["/usr/bin/printf", "%s\\n", "{{message}}"],
+        model_arg=["--model", "{{model}}"],
+    )
+    rendered = Registry(registry_path).build_run("shell", str(tmp_path), "OK", model="opus-4")
+    assert rendered.argv == ["/usr/bin/printf", "%s\\n", "OK", "--model", "opus-4"]
+
+
+def test_harness_without_model_arg_unchanged_by_profile_model(tmp_path: Path) -> None:
+    registry_path = tmp_path / "agents.toml"
+    write_registry(registry_path, command=["/usr/bin/printf", "%s\\n", "{{message}}"])
+    rendered = Registry(registry_path).build_run("shell", str(tmp_path), "OK", model="opus-4")
+    assert rendered.argv == ["/usr/bin/printf", "%s\\n", "OK"]
+
+
+def test_provider_env_set_when_profile_provider_present(tmp_path: Path) -> None:
+    agent = AgentDefinition(
+        id="demo",
+        label="Demo",
+        command=["/usr/bin/printf", "{{message}}"],
+        provider_env="TEST_PROVIDER",
+    )
+    argv, env = apply_profile_launch(
+        agent,
+        agent.command,
+        "OK",
+        model="opus-4",
+        provider="anthropic",
+    )
+    assert argv == ["/usr/bin/printf", "OK"]
+    assert env == {"TEST_PROVIDER": "anthropic"}
 
 
 def test_registry_writes_only_via_engine(tmp_path: Path) -> None:

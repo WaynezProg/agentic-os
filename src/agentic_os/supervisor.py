@@ -60,6 +60,7 @@ class ProcessSupervisor:
         resolved_profile: str | None = None,
         resolved_provider: str | None = None,
         resolved_model: str | None = None,
+        source_template_id: str | None = None,
     ) -> SessionRecord:
         session_env = env or {}
         session_dir = self.state_dir / "sessions" / "pending"
@@ -75,6 +76,7 @@ class ProcessSupervisor:
                 resolved_profile=resolved_profile,
                 resolved_provider=resolved_provider,
                 resolved_model=resolved_model,
+                source_template_id=source_template_id,
             )
         )
         session_dir = self.state_dir / "sessions" / session.id
@@ -112,6 +114,7 @@ class ProcessSupervisor:
         resolved_profile: str | None = None,
         resolved_provider: str | None = None,
         resolved_model: str | None = None,
+        source_template_id: str | None = None,
     ) -> SessionRecord:
         session_env = env or {}
         session_dir = self.state_dir / "sessions" / "pending"
@@ -127,6 +130,7 @@ class ProcessSupervisor:
                 resolved_profile=resolved_profile,
                 resolved_provider=resolved_provider,
                 resolved_model=resolved_model,
+                source_template_id=source_template_id,
             )
         )
         session_dir = self.state_dir / "sessions" / session.id

@@ -62,6 +62,13 @@ window.AgenticOs = window.AgenticOs || {};
     return Ao.RemoteConsole?.isActionAllowed("ui.write.catalog") ?? Ao.isLocalWritable();
   }
 
+  function withWorkspaceCwd(path) {
+    if (Ao.Workspace?.appendCwdQuery) {
+      return Ao.Workspace.appendCwdQuery(path);
+    }
+    return path;
+  }
+
   function toggleEditorChrome() {
     const writable = isWritable();
     const controls = byId("catalog-editor-controls");
@@ -227,7 +234,7 @@ window.AgenticOs = window.AgenticOs || {};
       if (type) {
         path += `?surface_type=${encodeURIComponent(type)}`;
       }
-      const data = await Ao.apiFetch(path);
+      const data = await Ao.apiFetch(withWorkspaceCwd(path));
       const surfaces = asArray(data.surfaces);
       if (!surfaces.length) {
         body.innerHTML = `<tr><td colspan="${colspan}">尚無介面。</td></tr>`;
@@ -269,7 +276,9 @@ window.AgenticOs = window.AgenticOs || {};
       return null;
     }
     const harness = byId("catalog-harness").value;
-    const path = `${Ao.buildEndpoint("catalogPatch", { harness })}?dry_run=${dryRun ? "true" : "false"}`;
+    const path = withWorkspaceCwd(
+      `${Ao.buildEndpoint("catalogPatch", { harness })}?dry_run=${dryRun ? "true" : "false"}`,
+    );
     const payload = {
       ops: pendingOps,
       source: PATCH_SOURCE,

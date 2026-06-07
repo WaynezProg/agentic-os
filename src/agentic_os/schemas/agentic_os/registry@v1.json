@@ -51,6 +51,11 @@
             "items": { "type": "string" }
           },
           "default_provider": { "type": "string" },
+          "model_arg": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "provider_env": { "type": "string" },
           "enabled": { "type": "boolean" }
         },
         "additionalProperties": false

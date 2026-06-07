@@ -88,6 +88,10 @@ const I18N = Object.freeze({
   overviewApprovalsPending: "{pending} 筆待核准",
   overviewError: "讀取失敗",
 
+  dashboardSessions: "{running} 執行中、{failed} 失敗，共 {total} 筆",
+  dashboardApprovals: "{pending} 筆待核准",
+  dashboardWorkspaceReady: "工作區：{cwd}",
+
   policyReadonly: "唯讀",
   policyWrite: "寫入",
   truncated: "…（已截斷）",

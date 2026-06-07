@@ -29,11 +29,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (Ao.RemoteConsole?.init) {
     await Ao.RemoteConsole.init();
   }
+  if (Ao.Workspace?.init) {
+    await Ao.Workspace.init();
+  }
   Ao.ProductPolish?.bind?.();
   Ao.CatalogEditor.init();
   Ao.HarnessConfigEditor.init();
   Ao.ProfileEditor.init();
   Ao.RegistryEditor.init();
+  Ao.ProviderSwitchboard?.init?.();
+  Ao.RunTemplateLauncher?.init?.();
+  Ao.DailyDashboard?.init?.();
+  Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindTabs();
   bindControls();
@@ -135,6 +142,7 @@ Ao.showTab = showTab;
 function loadActiveTab() {
   if (state.activeTab === "agents") {
     loadAgents();
+    Ao.ProviderSwitchboard?.refresh?.();
   } else if (state.activeTab === "sessions") {
     loadSessions();
     const selectedSession = byId("log-session-id").value.trim();
@@ -1273,55 +1281,14 @@ async function loadAuditStandalone() {
 }
 
 async function loadOverview() {
-  // Load fleet health summary
-  try {
-    const healthData = await apiFetch(buildEndpoint("fleetHealth"));
-    const instances = asArray(healthData.instances);
-    const upCount = instances.filter((i) => i.state === "up").length;
-    const downCount = instances.filter((i) => i.state === "down").length;
-    byId("overview-health-body").innerHTML = t("overviewHealth", {
-      up: upCount,
-      down: downCount,
-      total: instances.length,
-    });
-  } catch {
-    byId("overview-health-body").textContent = t("overviewError");
+  if (Ao.DailyDashboard?.loadDashboard) {
+    await Ao.DailyDashboard.loadDashboard();
+    return;
   }
-
-  // Load capacity
-  try {
-    const capData = await apiFetch(buildEndpoint("fleetCapacity"));
-    byId("overview-capacity-body").textContent = t("overviewCapacity", {
-      running: capData.running_sessions,
-      max: capData.max_running_sessions,
-    });
-  } catch {
-    byId("overview-capacity-body").textContent = t("overviewError");
-  }
-
-  // Load sessions count
-  try {
-    const sessData = await apiFetch(buildEndpoint("sessions"));
-    const sessions = asArray(sessData.sessions);
-    const running = sessions.filter((s) => s.status === "running").length;
-    const total = sessions.length;
-    byId("overview-sessions-body").textContent = t("overviewSessions", { running, total });
-  } catch {
-    byId("overview-sessions-body").textContent = t("overviewError");
-  }
-
-  // Load pending approvals count
-  try {
-    const appData = await apiFetch(`${buildEndpoint("approvals")}?status=pending`);
-    const pending = asArray(appData.approvals).length;
-    byId("overview-approvals-body").textContent = t("overviewApprovalsPending", { pending });
-  } catch {
-    byId("overview-approvals-body").textContent = t("overviewError");
-  }
-
-  if (Ao.ProductPolish?.refresh) {
-    await Ao.ProductPolish.refresh();
-  }
+  byId("overview-health-body").textContent = t("overviewError");
+  byId("overview-capacity-body").textContent = t("overviewError");
+  byId("overview-sessions-body").textContent = t("overviewError");
+  byId("overview-approvals-body").textContent = t("overviewError");
 }
 
 function healthPillClass(state) {

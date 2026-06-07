@@ -20,6 +20,8 @@ window.AgenticOs = window.AgenticOs || {};
     "ui.write.setup-import",
     "ui.download.logs-zip",
     "ui.repair.config",
+    "ui.write.workspace",
+    "ui.write.run-template",
   ]);
 
   const REMOTE_ADMIN_FALLBACK = Object.freeze([
@@ -80,6 +82,9 @@ window.AgenticOs = window.AgenticOs || {};
     Ao.ProfileEditor?.toggleEditorChrome?.();
     Ao.RegistryEditor?.toggleEditorChrome?.();
     Ao.ControlPlaneEditor?.toggleEditorChrome?.();
+    Ao.Workspace?.toggleChrome?.();
+    Ao.ProviderSwitchboard?.toggleChrome?.();
+    Ao.RunTemplateLauncher?.toggleChrome?.();
   }
 
   async function refreshStatus() {

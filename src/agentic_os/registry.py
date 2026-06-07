@@ -38,7 +38,15 @@ class Registry:
         except KeyError as exc:
             raise KeyError(f"unknown agent: {agent_id}") from exc
 
-    def build_run(self, agent_id: str, cwd: str | None, message: str) -> RenderedRun:
+    def build_run(
+        self,
+        agent_id: str,
+        cwd: str | None,
+        message: str,
+        *,
+        model: str | None = None,
+        provider: str | None = None,
+    ) -> RenderedRun:
         agent = self.get(agent_id)
         if agent.cwd_mode == "ignored":
             run_cwd = str(Path.cwd().resolve())
@@ -51,11 +59,12 @@ class Registry:
                 raise ValueError(f"cwd does not exist: {run_cwd}")
             if not cwd_path.is_dir():
                 raise ValueError(f"cwd is not a directory: {run_cwd}")
+        argv, env = apply_profile_launch(agent, agent.command, message, model=model, provider=provider)
         return RenderedRun(
             agent=agent,
             cwd=run_cwd,
-            argv=render_command(agent.command, message),
-            env=dict(agent.env),
+            argv=argv,
+            env=env,
         )
 
     def _load(self) -> dict[str, AgentDefinition]:
@@ -71,8 +80,49 @@ class Registry:
         return agents
 
 
-def render_command(command: list[str], message: str) -> list[str]:
-    return [part.replace("{{message}}", message) for part in command]
+def render_command(
+    command: list[str],
+    message: str,
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+) -> list[str]:
+    return [
+        _substitute_launch_template(part, message=message, model=model, provider=provider)
+        for part in command
+    ]
+
+
+def _substitute_launch_template(
+    part: str,
+    *,
+    message: str,
+    model: str | None = None,
+    provider: str | None = None,
+) -> str:
+    rendered = part.replace("{{message}}", message)
+    if model is not None:
+        rendered = rendered.replace("{{model}}", model)
+    if provider is not None:
+        rendered = rendered.replace("{{provider}}", provider)
+    return rendered
+
+
+def apply_profile_launch(
+    agent: AgentDefinition,
+    command: list[str],
+    message: str,
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    argv = render_command(command, message, model=model, provider=provider)
+    if agent.model_arg and model is not None:
+        argv.extend(render_command(agent.model_arg, message="", model=model, provider=provider))
+    env = dict(agent.env)
+    if agent.provider_env and provider is not None:
+        env[agent.provider_env] = provider
+    return argv, env
 
 
 def registry_patch_target(registry_path: Path, cwd: Path) -> PatchTarget:

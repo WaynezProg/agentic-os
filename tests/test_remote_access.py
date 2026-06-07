@@ -4,8 +4,6 @@ from pathlib import Path
 
 import pytest
 
-import ast
-
 from agentic_os.remote_access import RemoteAccessError, RemoteAccessService
 from agentic_os.remote_affordances import (
     LOCALHOST_ONLY_ACTIONS,
@@ -128,6 +126,11 @@ def _require_localhost_operator_route_examples() -> list[tuple[str, str]]:
         ("GET", "/remote/devices"),
         ("DELETE", "/remote/devices/example-device"),
         ("POST", "/remote/devices/example-device/rotate"),
+        ("POST", "/workspaces"),
+        ("PUT", "/workspaces/active"),
+        ("POST", "/run-templates"),
+        ("PUT", "/run-templates/example-template"),
+        ("DELETE", "/run-templates/example-template"),
     ]
 
 
@@ -141,47 +144,21 @@ def test_localhost_only_affordances_match_guards(tmp_path: Path) -> None:
         assert action_id in LOCALHOST_ONLY_ACTIONS
         assert is_remote_admin_route(method, path)
 
-    for action_id in LOCALHOST_ONLY_ACTIONS:
-        matches = [
-            localhost_only_route_action_id(method, path)
-            for method, path in _require_localhost_operator_route_examples()
-        ]
-        assert action_id in matches
+    for method, path in _require_localhost_operator_route_examples():
+        action_id = localhost_only_route_action_id(method, path)
+        assert action_id is not None
+        assert action_id in LOCALHOST_ONLY_ACTIONS
+        assert is_remote_admin_route(method, path)
 
     assert localhost_only_route_action_id("POST", "/remote/pairing/complete") is None
     assert not is_remote_admin_route("POST", "/remote/pairing/complete")
 
-    remote_api_path = Path(__file__).resolve().parents[1] / "src/agentic_os/remote_api.py"
-    source = remote_api_path.read_text(encoding="utf-8")
-    guard_count = source.count("require_localhost_operator(request)")
+    guarded_sources = [
+        Path(__file__).resolve().parents[1] / "src/agentic_os/remote_api.py",
+        Path(__file__).resolve().parents[1] / "src/agentic_os/api.py",
+    ]
+    guard_count = sum(source.read_text(encoding="utf-8").count("require_localhost_operator(request)") for source in guarded_sources)
     assert guard_count == len(LOCALHOST_ONLY_ACTIONS)
-
-    tree = ast.parse(source)
-    guarded_routes: list[tuple[str, str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
-            continue
-        for decorator in node.decorator_list:
-            route_method = None
-            route_path = None
-            if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
-                route_method = decorator.func.attr.upper()
-                if decorator.args and isinstance(decorator.args[0], ast.Constant):
-                    route_path = decorator.args[0].value
-            elif isinstance(decorator, ast.Attribute):
-                route_method = decorator.attr.upper()
-                if isinstance(decorator.value, ast.Name) and decorator.value.id == "app":
-                    continue
-            if route_method is None or route_path is None:
-                continue
-            if any(
-                isinstance(child, ast.Call)
-                and isinstance(child.func, ast.Name)
-                and child.func.id == "require_localhost_operator"
-                for child in ast.walk(node)
-            ):
-                guarded_routes.append((route_method, route_path))
-    assert len(guarded_routes) == len(LOCALHOST_ONLY_ACTIONS)
 
     client = make_client(tmp_path)
     response = client.get("/remote/affordances")

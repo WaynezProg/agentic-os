@@ -147,6 +147,7 @@ window.AgenticOs = window.AgenticOs || {};
     byId("control-plane-skill-id").textContent = skillId;
     byId("cp-skill-label").value = record?.label || "";
     byId("cp-skill-description").value = record?.description || "";
+    byId("cp-skill-content").value = record?.description || "";
     byId("cp-skill-source").value = record?.source || "local";
     byId("cp-skill-entrypoint").value = record?.entrypoint || "";
     byId("cp-skill-tags").value = asArray(record?.tags).join(", ");
@@ -234,9 +235,11 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function buildSkillPayload() {
+    const content = byId("cp-skill-content").value.trim();
+    const summary = byId("cp-skill-description").value.trim();
     return {
       label: byId("cp-skill-label").value.trim(),
-      description: byId("cp-skill-description").value.trim(),
+      description: content || summary,
       source: byId("cp-skill-source").value.trim() || "local",
       entrypoint: byId("cp-skill-entrypoint").value.trim(),
       tags: parseCommaList(byId("cp-skill-tags").value),
@@ -311,6 +314,44 @@ window.AgenticOs = window.AgenticOs || {};
     return errors;
   }
 
+  async function evaluateCurrentPolicy(agentId) {
+    const cwd = Ao.Workspace?.getActiveCwd?.() || "";
+    const payload = {
+      agent_id: agentId,
+      cwd: cwd || null,
+    };
+    const data = await Ao.apiFetch(Ao.buildEndpoint("policyEvaluate"), {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return data;
+  }
+
+  async function applyHookPatch() {
+    const harnessId = byId("cp-hook-harness").value.trim();
+    const event = byId("cp-hook-event").value.trim();
+    const command = byId("cp-hook-command").value.trim();
+    if (!harnessId || !event || !command) {
+      setMessage("hook 需要 harness、event、command。", true);
+      return;
+    }
+    const scope = byId("cp-hook-scope").value || "project";
+    const path = Ao.Workspace?.appendCwdQuery
+      ? Ao.Workspace.appendCwdQuery(
+          `${Ao.buildEndpoint("harnessConfigPatch", { harness_id: harnessId })}?scope=${encodeURIComponent(scope)}&dry_run=false`,
+        )
+      : `${Ao.buildEndpoint("harnessConfigPatch", { harness_id: harnessId })}?scope=${encodeURIComponent(scope)}&dry_run=false`;
+    const result = await Ao.postJson(path, {
+      ops: [{ op: "merge", path: `hooks.${event}`, value: [{ command }] }],
+      source: "web-control-plane-hook",
+      base_mtime: null,
+    });
+    byId("control-plane-diff-preview").textContent = result.diff
+      ? JSON.stringify(result.diff, null, 2)
+      : "（hook 已套用）";
+    setMessage(`已追加 hook ${event} → ${harnessId}`);
+  }
+
   async function saveCurrent() {
     if (!editTarget) {
       return;
@@ -340,10 +381,33 @@ window.AgenticOs = window.AgenticOs || {};
       const diffText = result.diff ? JSON.stringify(result.diff, null, 2) : "（已套用）";
       byId("control-plane-diff-preview").textContent = diffText;
       setMessage(`已儲存 ${domain}/${id}（patch_id: ${result.patch_id || "-"})`);
+      if (domain === "policy") {
+        try {
+          const evaluation = await evaluateCurrentPolicy(id);
+          setMessage(
+            `已儲存政策 ${id}；evaluate → ${evaluation.decision}: ${evaluation.reason || "-"}`,
+          );
+        } catch (evalError) {
+          setMessage(`已儲存，但 evaluate 失敗：${evalError.message}`, true);
+        }
+      }
       hideAllForms();
       if (Ao.reloadControlPlaneTables) {
         await Ao.reloadControlPlaneTables();
       }
+    } catch (error) {
+      setMessage(error.message, true);
+    }
+  }
+
+  async function evaluatePolicyForm() {
+    if (!editTarget || editTarget.domain !== "policy") {
+      setMessage("請先開啟政策表單。", true);
+      return;
+    }
+    try {
+      const evaluation = await evaluateCurrentPolicy(editTarget.id);
+      setMessage(`evaluate → ${evaluation.decision}: ${evaluation.reason || "-"}`);
     } catch (error) {
       setMessage(error.message, true);
     }
@@ -432,7 +496,12 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function bindEvents() {
-    // Actions delegated via ui/actions.js
+    byId("cp-policy-evaluate")?.addEventListener("click", () => {
+      evaluatePolicyForm().catch((error) => setMessage(error.message, true));
+    });
+    byId("cp-hook-apply")?.addEventListener("click", () => {
+      applyHookPatch().catch((error) => setMessage(error.message, true));
+    });
   }
 
   Ao.ControlPlaneEditor = {
@@ -445,5 +514,7 @@ window.AgenticOs = window.AgenticOs || {};
     cancelEdit,
     disableRecord,
     toggleHistory,
+    evaluatePolicyForm,
+    applyHookPatch,
   };
 })(window.AgenticOs);

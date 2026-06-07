@@ -15,6 +15,11 @@ LOCALHOST_ONLY_ACTION_SPECS: tuple[LocalhostOnlyAction, ...] = (
     LocalhostOnlyAction("remote.devices.list", "GET", "/remote/devices"),
     LocalhostOnlyAction("remote.devices.delete", "DELETE", "/remote/devices/{device_id}"),
     LocalhostOnlyAction("remote.devices.rotate", "POST", "/remote/devices/{device_id}/rotate"),
+    LocalhostOnlyAction("workspaces.upsert", "POST", "/workspaces"),
+    LocalhostOnlyAction("workspaces.set_active", "PUT", "/workspaces/active"),
+    LocalhostOnlyAction("run_templates.create", "POST", "/run-templates"),
+    LocalhostOnlyAction("run_templates.update", "PUT", "/run-templates/{template_id}"),
+    LocalhostOnlyAction("run_templates.delete", "DELETE", "/run-templates/{template_id}"),
 )
 
 LOCALHOST_ONLY_ACTIONS: frozenset[str] = frozenset(spec.id for spec in LOCALHOST_ONLY_ACTION_SPECS)
@@ -30,6 +35,8 @@ UI_LOCALHOST_ONLY_ACTIONS: frozenset[str] = frozenset(
         "ui.write.setup-import",
         "ui.download.logs-zip",
         "ui.repair.config",
+        "ui.write.workspace",
+        "ui.write.run-template",
     }
 )
 
@@ -61,4 +68,13 @@ def _path_matches_template(path: str, template: str) -> bool:
         prefix = "/remote/devices/"
         suffix = "/rotate"
         return path.startswith(prefix) and path.endswith(suffix) and len(path) > len(prefix) + len(suffix)
+    if template == "/workspaces":
+        return path == template
+    if template == "/workspaces/active":
+        return path == template
+    if template == "/run-templates":
+        return path == template
+    if template == "/run-templates/{template_id}":
+        prefix = "/run-templates/"
+        return path.startswith(prefix) and not path.endswith("/preview")
     return False

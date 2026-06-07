@@ -134,6 +134,7 @@ class Store:
             self._migrate_events_foreign_key(conn)
             self._migrate_sessions_attach_fields(conn)
             self._migrate_sessions_resolved_fields(conn)
+            self._migrate_sessions_source_template_id(conn)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -149,9 +150,10 @@ class Store:
                 INSERT INTO sessions (
                   id, agent_id, cwd, argv_json, env_json, status, artifact_dir,
                   stdout_log, stderr_log, summary_one_liner,
-                  resolved_profile, resolved_provider, resolved_model, updated_at
+                  resolved_profile, resolved_provider, resolved_model,
+                  source_template_id, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     session_id,
@@ -167,6 +169,7 @@ class Store:
                     request.resolved_profile,
                     request.resolved_provider,
                     request.resolved_model,
+                    request.source_template_id,
                 ),
             )
         return self.get_session(session_id)
@@ -480,6 +483,11 @@ class Store:
         conn.execute("ALTER TABLE sessions ADD COLUMN resolved_provider TEXT")
         conn.execute("ALTER TABLE sessions ADD COLUMN resolved_model TEXT")
 
+    def _migrate_sessions_source_template_id(self, conn: sqlite3.Connection) -> None:
+        if _table_has_column(conn, "sessions", "source_template_id"):
+            return
+        conn.execute("ALTER TABLE sessions ADD COLUMN source_template_id TEXT")
+
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
             return
@@ -531,6 +539,7 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         resolved_profile=row["resolved_profile"],
         resolved_provider=row["resolved_provider"],
         resolved_model=row["resolved_model"],
+        source_template_id=row["source_template_id"],
     )
 
 

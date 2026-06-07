@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 import io
+import json
 import sqlite3
 import subprocess
 import time
@@ -97,6 +98,13 @@ from agentic_os.registry import (
 )
 from agentic_os.remote_access import RemoteAccessService
 from agentic_os.remote_api import register_remote_routes
+from agentic_os.remote_gateway import require_localhost_operator
+from agentic_os.run_templates import (
+    RunTemplateInput,
+    RunTemplateStore,
+    render_message_template,
+)
+from agentic_os.workspaces import WorkspaceStore, build_workspace_dashboard
 from agentic_os.safe_edit import (
     ConflictError,
     PatchResult,
@@ -145,10 +153,31 @@ def _harness_contract_payload(agent: AgentDefinition, version: str) -> dict[str,
 
 
 class SessionRunRequest(BaseModel):
-    agent_id: str
+    agent_id: str | None = None
     cwd: str | None = None
-    message: str
+    message: str | None = None
     profile: str | None = None
+    template_id: str | None = None
+    variables: dict[str, str] = Field(default_factory=dict)
+
+
+class WorkspaceUpsertRequest(BaseModel):
+    path: str
+    set_active: bool = True
+
+
+class WorkspaceActiveRequest(BaseModel):
+    path: str
+
+
+class RunTemplateUpsertRequest(BaseModel):
+    name: str
+    harness_id: str
+    cwd: str
+    message_template: str
+    profile_name: str | None = None
+    required_variables: list[str] = Field(default_factory=list)
+    approval_policy_hint: str = ""
 
 
 class ProjectProfileBindRequest(BaseModel):
@@ -234,6 +263,10 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     )
     usage_store = UsageStore(state_dir / "agentic-os.db")
     usage_store.init()
+    workspace_store = WorkspaceStore(state_dir / "agentic-os.db")
+    workspace_store.init()
+    run_template_store = RunTemplateStore(state_dir / "agentic-os.db")
+    run_template_store.init()
     prober = HealthProber(fleet_store)
     logs = JsonlLogStore()
     evidence_store = EvidenceStore(state_dir)
@@ -703,7 +736,8 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
 
     @app.post("/sessions")
     def run_session(request: SessionRunRequest) -> dict[str, object]:
-        rendered, resolved = _prepare_session_run(request)
+        run_request, source_template_id = _resolve_session_run_request(request)
+        rendered, resolved = _prepare_session_run(run_request)
         _check_capacity(rendered.agent.id)
 
         policy_result = _evaluate_session_policy(
@@ -716,9 +750,10 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 return _reject_session(
                     rendered,
                     policy_result,
+                    source_template_id=source_template_id,
                     **_resolved_profile_kwargs(resolved),
                 )
-            session = _supervisor_start(rendered, resolved)
+            session = _supervisor_start(rendered, resolved, source_template_id=source_template_id)
             audit_store.record(
                 "governance",
                 rendered.agent.id,
@@ -742,7 +777,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 "policy_missing_at_run_start",
                 f"no policy configured for {rendered.agent.id}",
             )
-            session = _supervisor_start(rendered, resolved)
+            session = _supervisor_start(rendered, resolved, source_template_id=source_template_id)
             audit_store.record(
                 "governance",
                 rendered.agent.id,
@@ -2360,8 +2395,18 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         agent_id = resolved.harness_id if resolved is not None else request.agent_id
+        if not agent_id:
+            raise HTTPException(status_code=400, detail="agent_id is required")
+        resolved_model = resolved.model if resolved is not None else None
+        resolved_provider = resolved.provider if resolved is not None else None
         try:
-            rendered = registry.build_run(agent_id, request.cwd, effective_message)
+            rendered = registry.build_run(
+                agent_id,
+                request.cwd,
+                effective_message,
+                model=resolved_model,
+                provider=resolved_provider,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
@@ -2376,9 +2421,33 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             )
         return rendered, resolved
 
+    def _resolve_session_run_request(
+        request: SessionRunRequest,
+    ) -> tuple[SessionRunRequest, str | None]:
+        if request.template_id:
+            template = run_template_store.get(request.template_id)
+            message = render_message_template(template.message_template, request.variables)
+            return (
+                SessionRunRequest(
+                    agent_id=template.harness_id,
+                    cwd=template.cwd,
+                    message=message,
+                    profile=template.profile_name,
+                ),
+                template.id,
+            )
+        if not request.agent_id or not request.message:
+            raise HTTPException(
+                status_code=400,
+                detail="agent_id and message are required when template_id is omitted",
+            )
+        return request, None
+
     def _supervisor_start(
         rendered: RenderedRun,
         resolved: ResolvedRunProfile | None,
+        *,
+        source_template_id: str | None = None,
     ) -> SessionRecord:
         kwargs = _resolved_profile_kwargs(resolved)
         return supervisor.start(
@@ -2386,6 +2455,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             rendered.cwd,
             rendered.argv,
             env=rendered.env,
+            source_template_id=source_template_id,
             **kwargs,
         )
 
@@ -2547,6 +2617,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         resolved_profile: str | None = None,
         resolved_provider: str | None = None,
         resolved_model: str | None = None,
+        source_template_id: str | None = None,
     ) -> JSONResponse:
         session = supervisor.start_rejected(
             rendered.agent.id,
@@ -2556,6 +2627,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             resolved_profile=resolved_profile,
             resolved_provider=resolved_provider,
             resolved_model=resolved_model,
+            source_template_id=source_template_id,
         )
         approval_id = None
         metadata = _policy_evaluation_metadata(session.id, result)
@@ -2629,6 +2701,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             registry_path=registry_path,
             safe_edit_engine=safe_edit_engine,
             audit_store=audit_store,
+            run_template_store=run_template_store,
         )
 
     @app.get("/version")
@@ -2693,6 +2766,134 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     "message": str(exc),
                 },
             ) from exc
+
+    @app.get("/workspaces")
+    def list_workspaces() -> dict[str, object]:
+        return {
+            "active": workspace_store.get_active(),
+            "workspaces": [asdict(record) for record in workspace_store.list_workspaces()],
+        }
+
+    @app.post("/workspaces")
+    def upsert_workspace(body: WorkspaceUpsertRequest, request: Request) -> dict[str, object]:
+        require_localhost_operator(request)
+        try:
+            record = (
+                workspace_store.set_active(body.path)
+                if body.set_active
+                else workspace_store.touch(body.path)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return asdict(record)
+
+    @app.put("/workspaces/active")
+    def set_active_workspace(body: WorkspaceActiveRequest, request: Request) -> dict[str, object]:
+        require_localhost_operator(request)
+        try:
+            record = workspace_store.set_active(body.path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"active": record.path, "workspace": asdict(record)}
+
+    @app.get("/workspaces/dashboard")
+    def workspace_dashboard(cwd: str | None = Query(default=None)) -> dict[str, object]:
+        active = workspace_store.get_active()
+        target = cwd or active or str(Path.cwd())
+        try:
+            return build_workspace_dashboard(
+                target,
+                profiles_module=profiles_module,
+                registry=registry,
+                store=store,
+                approval_store=approval_store,
+                audit_store=audit_store,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/run-templates")
+    def list_run_templates(cwd: str | None = Query(default=None)) -> dict[str, object]:
+        try:
+            templates = run_template_store.list_templates(cwd=cwd)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"templates": [asdict(template) for template in templates]}
+
+    @app.get("/run-templates/{template_id}")
+    def show_run_template(template_id: str) -> dict[str, object]:
+        try:
+            return asdict(run_template_store.get(template_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/run-templates/{template_id}/preview")
+    def preview_run_template(
+        template_id: str,
+        variables: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        try:
+            template = run_template_store.get(template_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        parsed_variables: dict[str, str] = {}
+        if variables:
+            try:
+                loaded = json.loads(variables)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="invalid variables JSON") from exc
+            if not isinstance(loaded, dict):
+                raise HTTPException(status_code=400, detail="variables must be a JSON object")
+            parsed_variables = {str(key): str(value) for key, value in loaded.items()}
+        run_request = SessionRunRequest(
+            agent_id=template.harness_id,
+            cwd=template.cwd,
+            message=render_message_template(template.message_template, parsed_variables),
+            profile=template.profile_name,
+        )
+        rendered, resolved = _prepare_session_run(run_request)
+        return {
+            "template_id": template.id,
+            "cwd": rendered.cwd,
+            "argv": rendered.argv,
+            "env": sorted(rendered.env.keys()),
+            "resolved_profile": resolved.name if resolved is not None else None,
+            "resolved_provider": resolved.provider if resolved is not None else None,
+            "resolved_model": resolved.model if resolved is not None else None,
+        }
+
+    @app.post("/run-templates", status_code=201)
+    def create_run_template(body: RunTemplateUpsertRequest, request: Request) -> dict[str, object]:
+        require_localhost_operator(request)
+        try:
+            record = run_template_store.create(RunTemplateInput(**body.model_dump()))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return asdict(record)
+
+    @app.put("/run-templates/{template_id}")
+    def update_run_template(
+        template_id: str,
+        body: RunTemplateUpsertRequest,
+        request: Request,
+    ) -> dict[str, object]:
+        require_localhost_operator(request)
+        try:
+            record = run_template_store.update(template_id, RunTemplateInput(**body.model_dump()))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return asdict(record)
+
+    @app.delete("/run-templates/{template_id}")
+    def delete_run_template(template_id: str, request: Request) -> dict[str, object]:
+        require_localhost_operator(request)
+        try:
+            run_template_store.delete(template_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"deleted": True, "template_id": template_id}
 
     register_remote_routes(app, remote=remote_access, audit_store=audit_store)
 

@@ -35,6 +35,8 @@ class AgentDefinition(BaseModel):
     workspace_roots: list[str] = Field(default_factory=list)
     log_paths: list[str] = Field(default_factory=list)
     default_provider: str | None = None
+    model_arg: list[str] | None = None
+    provider_env: str | None = None
     enabled: bool = True
 
 
@@ -50,6 +52,7 @@ class SessionCreate(BaseModel):
     resolved_profile: str | None = None
     resolved_provider: str | None = None
     resolved_model: str | None = None
+    source_template_id: str | None = None
 
 
 class SessionRecord(SessionCreate):
@@ -67,6 +70,7 @@ class SessionRecord(SessionCreate):
     resolved_profile: str | None = None
     resolved_provider: str | None = None
     resolved_model: str | None = None
+    source_template_id: str | None = None
 
 
 class SessionAttachRequest(BaseModel):
