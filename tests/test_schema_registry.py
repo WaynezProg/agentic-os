@@ -21,3 +21,19 @@ def test_path_whitelist_allows_mcp_servers() -> None:
     reg = SchemaRegistry()
     assert reg.is_path_allowed("claude", "mcp_server", "mcpServers.github") is True
     assert reg.is_path_allowed("claude", "mcp_server", "permissions.allow") is False
+
+
+def test_validate_registry_allows_model_arg_and_provider_env() -> None:
+    reg = SchemaRegistry()
+    doc = {
+        "agents": [
+            {
+                "id": "shell",
+                "label": "Shell",
+                "command": ["/usr/bin/printf", "{{message}}"],
+                "model_arg": ["--model", "{{model}}"],
+                "provider_env": "TEST_PROVIDER",
+            }
+        ]
+    }
+    assert reg.validate_document("agentic_os", "registry", doc) == []

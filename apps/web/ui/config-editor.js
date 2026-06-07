@@ -54,6 +54,13 @@ window.AgenticOs = window.AgenticOs || {};
     return Ao.RemoteConsole?.isActionAllowed("ui.write.harness-config") ?? Ao.isLocalWritable();
   }
 
+  function withWorkspaceCwd(path) {
+    if (Ao.Workspace?.appendCwdQuery) {
+      return Ao.Workspace.appendCwdQuery(path);
+    }
+    return path;
+  }
+
   function createConfigEditor(descriptor) {
     assertDescriptor(descriptor);
 
@@ -152,7 +159,9 @@ window.AgenticOs = window.AgenticOs || {};
       byId(elId(descriptor, "diff-preview")).textContent = "編輯 path patch 後按「預覽變更」。";
       try {
         const data = await Ao.apiFetch(
-          Ao.buildEndpoint(descriptor.endpoints.effective, { harness_id: harnessId }),
+          withWorkspaceCwd(
+            Ao.buildEndpoint(descriptor.endpoints.effective, { harness_id: harnessId }),
+          ),
         );
         const payload = {
           harness_id: data.harness_id,
@@ -175,7 +184,9 @@ window.AgenticOs = window.AgenticOs || {};
     async function runPatch(dryRun, ops, baseMtime) {
       const harnessId = getHarnessId(descriptor);
       const scope = byId(elId(descriptor, "scope")).value;
-      const path = `${Ao.buildEndpoint(descriptor.endpoints.patch, { harness_id: harnessId })}?${buildPatchQuery(scope, dryRun)}`;
+      const path = withWorkspaceCwd(
+        `${Ao.buildEndpoint(descriptor.endpoints.patch, { harness_id: harnessId })}?${buildPatchQuery(scope, dryRun)}`,
+      );
       const payload = {
         ops,
         source: PATCH_SOURCE,

@@ -80,6 +80,12 @@ window.AgenticOs = window.AgenticOs || {};
     diagnosticsResources: "/diagnostics/resources",
     setupLogsZip: "/setup/logs.zip",
     versionInfo: "/version",
+    workspaces: "/workspaces",
+    workspacesActive: "/workspaces/active",
+    workspacesDashboard: "/workspaces/dashboard",
+    runTemplates: "/run-templates",
+    runTemplateDetail: "/run-templates/{template_id}",
+    runTemplatePreview: "/run-templates/{template_id}/preview",
   });
 
   let connectionProfile = null;
@@ -183,5 +189,9 @@ window.AgenticOs = window.AgenticOs || {};
 
   Ao.postJson = async function postJson(path, payload) {
     return Ao.apiFetch(path, { method: "POST", body: JSON.stringify(payload) });
+  };
+
+  Ao.putJson = async function putJson(path, payload) {
+    return Ao.apiFetch(path, { method: "PUT", body: JSON.stringify(payload ?? {}) });
   };
 })(window.AgenticOs);

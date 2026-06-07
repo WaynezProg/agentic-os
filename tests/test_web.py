@@ -20,6 +20,10 @@ REMOTE_CONSOLE_JS = WEB_DIR / "ui" / "remote-console.js"
 PRODUCT_POLISH_JS = WEB_DIR / "ui" / "product-polish.js"
 ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
 ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
+WORKSPACE_MANAGER_JS = WEB_DIR / "ui" / "workspace-manager.js"
+PROVIDER_SWITCHBOARD_JS = WEB_DIR / "ui" / "provider-switchboard.js"
+RUN_TEMPLATE_LAUNCHER_JS = WEB_DIR / "ui" / "run-template-launcher.js"
+DAILY_DASHBOARD_JS = WEB_DIR / "ui" / "daily-dashboard.js"
 
 
 def _web_javascript_sources() -> str:
@@ -38,6 +42,10 @@ def _web_javascript_sources() -> str:
             PRODUCT_POLISH_JS,
             ROLLBACK_JS,
             ACTIONS_JS,
+            WORKSPACE_MANAGER_JS,
+            PROVIDER_SWITCHBOARD_JS,
+            RUN_TEMPLATE_LAUNCHER_JS,
+            DAILY_DASHBOARD_JS,
         )
         if path.is_file()
     )
@@ -618,6 +626,34 @@ def test_registry_editor_references_registry_endpoints() -> None:
     assert "registrySchema" in editor
     assert "base_mtime" in editor
     assert "stale_target" in editor
+
+
+def test_product_smoke_script_exists() -> None:
+    script = ROOT / "scripts" / "smoke-product.sh"
+    assert script.is_file()
+    content = script.read_text(encoding="utf-8")
+    assert "run_model_in_argv" in content
+    assert "report.json" in content
+
+
+def test_readme_documents_product_smoke() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "scripts/smoke-product.sh" in readme
+    assert "P28" in readme
+    assert "P33" in readme
+
+
+def test_daily_operator_ui_modules_exist() -> None:
+    for path in (
+        WORKSPACE_MANAGER_JS,
+        PROVIDER_SWITCHBOARD_JS,
+        RUN_TEMPLATE_LAUNCHER_JS,
+        DAILY_DASHBOARD_JS,
+    ):
+        assert path.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'id="workspace-select"' in html
+    assert "/workspaces/dashboard" in API_JS.read_text(encoding="utf-8")
 
 
 def test_readme_documents_p3_usage_and_limits() -> None:

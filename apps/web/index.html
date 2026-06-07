@@ -21,6 +21,10 @@
     <script src="ui/control-plane-editor.js"></script>
     <script src="ui/approval-workbench.js"></script>
     <script src="ui/remote-console.js"></script>
+    <script src="ui/workspace-manager.js"></script>
+    <script src="ui/provider-switchboard.js"></script>
+    <script src="ui/run-template-launcher.js"></script>
+    <script src="ui/daily-dashboard.js"></script>
     <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
@@ -115,6 +119,18 @@
 
       <div class="shell-main">
         <header class="shell-topbar">
+          <div class="topbar-workspace" id="workspace-topbar">
+            <label for="workspace-select">工作區</label>
+            <select id="workspace-select" aria-label="工作區選擇"></select>
+            <input id="workspace-path-input" type="text" placeholder="新增工作區路徑" spellcheck="false" />
+            <button id="workspace-add" type="button">新增</button>
+            <span id="workspace-status" class="message" aria-live="polite"></span>
+          </div>
+          <div id="provider-switchboard-topbar" class="topbar-switchboard" title="Provider / Model">
+            <span id="switchboard-topbar-profile">-</span>
+            <span id="switchboard-topbar-provider">-</span>
+            <span id="switchboard-topbar-model">-</span>
+          </div>
           <div class="topbar-actions">
             <span id="api-status" class="status is-unknown" role="status" aria-live="polite">
               尚未檢查
@@ -216,6 +232,34 @@
             </tbody>
           </table>
         </div>
+        <section id="provider-switchboard-section" class="subpanel">
+          <div class="subpanel-head">
+            <h3>Provider / Model 切換</h3>
+            <button id="provider-switchboard-refresh" type="button">重新整理</button>
+          </div>
+          <dl class="detail-grid">
+            <dt>active profile</dt><dd id="switchboard-active-profile-panel">-</dd>
+            <dt>provider</dt><dd id="switchboard-provider-panel">-</dd>
+            <dt>model</dt><dd id="switchboard-model-panel">-</dd>
+            <dt>harness</dt><dd id="switchboard-harness">-</dd>
+            <dt>last session</dt><dd id="switchboard-last-session" class="cell-id">-</dd>
+            <dt>last provider</dt><dd id="switchboard-last-provider">-</dd>
+            <dt>last model</dt><dd id="switchboard-last-model">-</dd>
+          </dl>
+          <div id="provider-switchboard-controls">
+            <div class="table-shell">
+              <table aria-label="Profile 快速切換">
+                <thead>
+                  <tr><th>name</th><th>provider</th><th>model</th><th>harness</th><th>操作</th></tr>
+                </thead>
+                <tbody id="provider-switchboard-profiles-body">
+                  <tr><td colspan="5">載入中…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p id="provider-switchboard-message" class="message" aria-live="polite"></p>
+        </section>
         <section id="profile-editor-section" class="subpanel">
           <h3>Run Profile</h3>
           <div class="row">
@@ -307,6 +351,52 @@
               </table>
             </div>
           </section>
+        </section>
+        <section id="run-template-section" class="subpanel">
+          <div class="subpanel-head">
+            <h3>Run Template</h3>
+            <div class="actions">
+              <button id="run-template-load" type="button">載入範本</button>
+              <button id="run-template-new" type="button">新增</button>
+            </div>
+          </div>
+          <div class="table-shell">
+            <table aria-label="Run templates">
+              <thead>
+                <tr><th>name</th><th>harness</th><th>cwd</th><th>variables</th><th>操作</th></tr>
+              </thead>
+              <tbody id="run-template-list-body">
+                <tr><td colspan="5">按「載入範本」。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="run-template-editor-controls" class="config-editor" hidden>
+            <div class="eval-grid">
+              <label for="rt-name">name</label>
+              <input id="rt-name" type="text" spellcheck="false" />
+              <label for="rt-harness-id">harness_id</label>
+              <input id="rt-harness-id" type="text" spellcheck="false" />
+              <label for="rt-cwd">cwd</label>
+              <input id="rt-cwd" type="text" spellcheck="false" />
+              <label for="rt-profile">profile_name</label>
+              <input id="rt-profile" type="text" spellcheck="false" />
+              <label for="rt-message-template">message_template</label>
+              <textarea id="rt-message-template" rows="3" spellcheck="false"></textarea>
+              <label for="rt-required-variables">required_variables（逗號分隔）</label>
+              <input id="rt-required-variables" type="text" spellcheck="false" />
+              <label for="rt-approval-hint">approval_policy_hint</label>
+              <input id="rt-approval-hint" type="text" spellcheck="false" />
+            </div>
+            <div id="run-template-variables"></div>
+            <div class="actions">
+              <button id="rt-save" type="button">儲存</button>
+              <button id="rt-delete" type="button">刪除</button>
+              <button id="rt-preview" type="button">預覽</button>
+              <button id="rt-launch-form" type="button">啟動</button>
+            </div>
+            <pre id="run-template-preview" class="log-preview">選擇範本後預覽或啟動。</pre>
+            <p id="run-template-message" class="message" aria-live="polite"></p>
+          </div>
         </section>
         <section id="run-form-section" class="subpanel" hidden>
           <h3>執行 session</h3>
@@ -626,6 +716,8 @@
               <input id="cp-skill-label" type="text" />
               <label for="cp-skill-description">描述</label>
               <input id="cp-skill-description" type="text" />
+              <label for="cp-skill-content">內容</label>
+              <textarea id="cp-skill-content" rows="6"></textarea>
               <label for="cp-skill-source">來源</label>
               <input id="cp-skill-source" type="text" value="local" />
               <label for="cp-skill-entrypoint">入口</label>
@@ -693,9 +785,30 @@
             </div>
             <div class="actions">
               <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" id="cp-policy-evaluate">評估政策</button>
               <button type="button" data-action="cp-cancel">取消</button>
             </div>
           </div>
+          <section id="control-plane-hook-form" class="control-plane-form">
+            <h4>Harness hook patch</h4>
+            <div class="eval-grid">
+              <label for="cp-hook-harness">harness_id</label>
+              <input id="cp-hook-harness" type="text" value="claude" spellcheck="false" />
+              <label for="cp-hook-scope">scope</label>
+              <select id="cp-hook-scope">
+                <option value="user">user</option>
+                <option value="project" selected>project</option>
+                <option value="local">local</option>
+              </select>
+              <label for="cp-hook-event">event</label>
+              <input id="cp-hook-event" type="text" placeholder="PreToolUse" spellcheck="false" />
+              <label for="cp-hook-command">command</label>
+              <input id="cp-hook-command" type="text" placeholder="/path/to/hook.sh" spellcheck="false" />
+            </div>
+            <div class="actions">
+              <button id="cp-hook-apply" type="button">套用 hook</button>
+            </div>
+          </section>
           <div id="control-plane-validation-errors" class="message is-error" hidden></div>
           <pre id="control-plane-diff-preview" class="log-preview">變更 diff 將顯示於此。</pre>
           <p id="control-plane-message" class="message" aria-live="polite"></p>
@@ -1027,7 +1140,26 @@
       </section>
 
       <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
-        <h2>總覽</h2>
+        <div class="panel-head">
+          <h2>總覽</h2>
+          <button id="dashboard-refresh" type="button">重新整理儀表板</button>
+        </div>
+        <section id="dashboard-workspace" class="subpanel card">
+          <h3>工作區儀表板</h3>
+          <div id="dashboard-workspace-body" class="card-body">載入中…</div>
+          <dl class="detail-grid">
+            <dt>cwd</dt><dd id="dashboard-cwd" class="cell-code">-</dd>
+            <dt>profile</dt><dd id="dashboard-profile">-</dd>
+            <dt>provider</dt><dd id="dashboard-provider">-</dd>
+            <dt>model</dt><dd id="dashboard-model">-</dd>
+            <dt>harness</dt><dd id="dashboard-harness">-</dd>
+            <dt>sessions</dt><dd id="dashboard-sessions">-</dd>
+            <dt>pending approvals</dt><dd id="dashboard-approvals">-</dd>
+            <dt>recent patches</dt><dd id="dashboard-patches">-</dd>
+            <dt>harnesses</dt><dd id="dashboard-harnesses">-</dd>
+          </dl>
+          <div id="dashboard-quick-actions" class="card-body"></div>
+        </section>
         <div class="overview-grid">
           <div id="overview-health" class="card stat-card">
             <h3>機群健康</h3>

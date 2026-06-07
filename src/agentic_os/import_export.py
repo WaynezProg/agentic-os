@@ -47,6 +47,7 @@ from agentic_os.registry import (
     replace_agents_ops,
     validate_registry_document,
 )
+from agentic_os.run_templates import RunTemplateInput, RunTemplateStore
 from agentic_os.safe_edit import PatchResult, PatchTarget, SafeEditEngine, ValidationError
 from agentic_os.surface_ops import _MCP_PATH, compile_semantic_ops
 from agentic_os.toml_io import load_toml
@@ -91,6 +92,7 @@ class ImportExportContext:
     registry_path: Path
     safe_edit_engine: SafeEditEngine
     audit_store: AuditStore
+    run_template_store: RunTemplateStore | None = None
 
 
 def export_setup(ctx: ImportExportContext, cwd: str | Path) -> dict[str, Any]:
@@ -127,6 +129,21 @@ def export_setup(ctx: ImportExportContext, cwd: str | Path) -> dict[str, Any]:
                 _export_surface(r, cwd_path, home) for r in records
             ]
 
+    run_templates: list[dict[str, Any]] = []
+    if ctx.run_template_store is not None:
+        run_templates = [
+            {
+                "name": template.name,
+                "harness_id": template.harness_id,
+                "profile_name": template.profile_name,
+                "cwd": tokenize_path(template.cwd, cwd_path, home),
+                "message_template": template.message_template,
+                "required_variables": template.required_variables,
+                "approval_policy_hint": template.approval_policy_hint,
+            }
+            for template in ctx.run_template_store.list_templates(cwd=str(cwd_path))
+        ]
+
     return {
         "version": BUNDLE_VERSION,
         "cwd": PROJECT_ROOT_TOKEN,
@@ -140,6 +157,7 @@ def export_setup(ctx: ImportExportContext, cwd: str | Path) -> dict[str, Any]:
         "registry_agents": registry_agents,
         "catalog_surfaces": catalog_surfaces,
         "catalog_ops": _export_catalog_ops(cwd_path),
+        "run_templates": run_templates,
     }
 
 
@@ -172,6 +190,16 @@ def import_setup(
         _import_registry(ctx, bundle, cwd_path, home, dry_run=dry_run, unresolved_paths=unresolved_paths)
     )
     items.extend(_import_catalog_ops(ctx, bundle, cwd_path, dry_run=dry_run))
+    items.extend(
+        _import_run_templates(
+            ctx,
+            bundle,
+            cwd_path,
+            home,
+            dry_run=dry_run,
+            unresolved_paths=unresolved_paths,
+        )
+    )
 
     return {
         "dry_run": dry_run,
@@ -835,3 +863,68 @@ def _patch_item(domain: str, entity_id: str, result: PatchResult) -> dict[str, A
         "audit_event_id": result.audit_event_id,
         "validation": result.validation,
     }
+
+
+def _import_run_templates(
+    ctx: ImportExportContext,
+    bundle: dict[str, Any],
+    cwd: Path,
+    home: Path,
+    *,
+    dry_run: bool,
+    unresolved_paths: list[str],
+) -> list[dict[str, Any]]:
+    if ctx.run_template_store is None:
+        return []
+    raw_templates = bundle.get("run_templates", [])
+    if not isinstance(raw_templates, list):
+        return []
+    items: list[dict[str, Any]] = []
+    for raw in raw_templates:
+        if not isinstance(raw, dict):
+            continue
+        payload = dict(raw)
+        template_cwd = payload.get("cwd", PROJECT_ROOT_TOKEN)
+        if isinstance(template_cwd, str):
+            resolved, ok = detokenize_path(template_cwd, cwd, home)
+            if not ok:
+                unresolved_paths.append(template_cwd)
+            payload["cwd"] = resolved
+        request = RunTemplateInput(
+            name=str(payload.get("name", "")),
+            harness_id=str(payload.get("harness_id", "")),
+            cwd=str(payload.get("cwd", str(cwd))),
+            message_template=str(payload.get("message_template", "")),
+            profile_name=payload.get("profile_name"),
+            required_variables=[
+                str(item) for item in payload.get("required_variables", []) if isinstance(item, str)
+            ],
+            approval_policy_hint=str(payload.get("approval_policy_hint", "")),
+        )
+        if dry_run:
+            items.append(
+                {
+                    "domain": "run_template",
+                    "entity_id": request.name,
+                    "action": "upsert",
+                    "applied": False,
+                }
+            )
+            continue
+        existing = {
+            template.name: template
+            for template in ctx.run_template_store.list_templates(cwd=str(cwd))
+        }
+        if request.name in existing:
+            record = ctx.run_template_store.update(existing[request.name].id, request)
+        else:
+            record = ctx.run_template_store.create(request)
+        items.append(
+            {
+                "domain": "run_template",
+                "entity_id": record.name,
+                "action": "upsert",
+                "applied": True,
+            }
+        )
+    return items

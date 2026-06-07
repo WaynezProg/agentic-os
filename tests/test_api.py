@@ -17,10 +17,18 @@ def write_registry(
     command: list[str] | None = None,
     cwd_mode: str = "optional",
     env: dict[str, str] | None = None,
+    model_arg: list[str] | None = None,
+    provider_env: str | None = None,
 ) -> None:
     if command is None:
         command = ["/usr/bin/printf", "%s", "{{message}}"]
     env_block = f"env = {_toml_inline_table(env)}\n" if env is not None else ""
+    model_arg_block = (
+        f"model_arg = {json.dumps(model_arg)}\n" if model_arg is not None else ""
+    )
+    provider_env_block = (
+        f"provider_env = {json.dumps(provider_env)}\n" if provider_env is not None else ""
+    )
     path.write_text(
         f"""
 [[agents]]
@@ -28,7 +36,7 @@ id = "shell"
 label = "Shell"
 command = {json.dumps(command)}
 cwd_mode = {json.dumps(cwd_mode)}
-{env_block}\
+{env_block}{model_arg_block}{provider_env_block}\
 stop_policy = "process_group"
 """,
         encoding="utf-8",
@@ -40,9 +48,18 @@ def make_client(
     command: list[str] | None = None,
     cwd_mode: str = "optional",
     env: dict[str, str] | None = None,
+    model_arg: list[str] | None = None,
+    provider_env: str | None = None,
 ) -> TestClient:
     registry = tmp_path / "agents.toml"
-    write_registry(registry, command=command, cwd_mode=cwd_mode, env=env)
+    write_registry(
+        registry,
+        command=command,
+        cwd_mode=cwd_mode,
+        env=env,
+        model_arg=model_arg,
+        provider_env=provider_env,
+    )
     return TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
 
 
@@ -685,6 +702,25 @@ def test_api_allows_delete_cors_preflight(tmp_path: Path) -> None:
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
     allowed_methods = response.headers.get("access-control-allow-methods", "")
     assert "DELETE" in allowed_methods
+
+
+def test_api_allows_put_cors_preflight(tmp_path: Path) -> None:
+    # Workspace selection and run-template updates issue PUT from the web UI
+    # (5173 -> 8767); the preflight must advertise PUT or those calls are blocked.
+    client = make_client(tmp_path)
+
+    response = client.options(
+        "/workspaces/active",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    allowed_methods = response.headers.get("access-control-allow-methods", "")
+    assert "PUT" in allowed_methods
 
 
 def test_fleet_health_empty(tmp_app) -> None:
@@ -2390,6 +2426,106 @@ def test_post_profiles_upsert_local(tmp_path: Path) -> None:
     listed = client.get("/profiles", params={"cwd": str(repo)})
     names = {item["name"] for item in listed.json()["run_profiles"]}
     assert "cursor-dev" in names
+
+
+def test_profile_model_reaches_spawned_argv(tmp_path: Path, monkeypatch) -> None:
+    profile_dir = tmp_path / "profiles-home" / ".agentic-os"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "profiles.toml").write_text(
+        """
+[run_profiles.default]
+harness_id = "shell"
+provider = "local"
+model = "opus-4"
+message_prefix = ""
+default_env = {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "global_profile_path",
+        lambda: profile_dir / "profiles.toml",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "local_profile_path",
+        lambda _cwd: tmp_path / "missing-local" / "profiles.toml",
+    )
+
+    client = make_client(
+        tmp_path,
+        command=["/usr/bin/printf", "msg=%s model=%s\\n", "{{message}}", "{{model}}"],
+        model_arg=["--model", "{{model}}"],
+    )
+    response = client.post(
+        "/sessions",
+        json={
+            "agent_id": "shell",
+            "cwd": str(tmp_path),
+            "message": "OK",
+            "profile": "default",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["argv"] == [
+        "/usr/bin/printf",
+        "msg=%s model=%s\\n",
+        "OK",
+        "opus-4",
+        "--model",
+        "opus-4",
+    ]
+    logs = client.get(f"/sessions/{payload['id']}/logs")
+    assert logs.json()["entries"][0]["line"] == "msg=OK model=opus-4"
+
+
+def test_retry_preserves_profile_model_in_argv(tmp_path: Path, monkeypatch) -> None:
+    profile_dir = tmp_path / "profiles-home" / ".agentic-os"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "profiles.toml").write_text(
+        """
+[run_profiles.default]
+harness_id = "shell"
+provider = "local"
+model = "retry-model"
+message_prefix = ""
+default_env = {}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "global_profile_path",
+        lambda: profile_dir / "profiles.toml",
+    )
+    monkeypatch.setattr(
+        profiles_module,
+        "local_profile_path",
+        lambda _cwd: tmp_path / "missing-local" / "profiles.toml",
+    )
+
+    client = make_client(
+        tmp_path,
+        command=["/usr/bin/printf", "%s\\n", "{{message}}"],
+        model_arg=["--model", "{{model}}"],
+    )
+    run = client.post(
+        "/sessions",
+        json={
+            "agent_id": "shell",
+            "cwd": str(tmp_path),
+            "message": "OK",
+            "profile": "default",
+        },
+    )
+    assert run.status_code == 200
+    assert run.json()["argv"][-2:] == ["--model", "retry-model"]
+
+    retry = client.post(f"/sessions/{run.json()['id']}/retry")
+    assert retry.status_code == 200
+    assert retry.json()["argv"][-2:] == ["--model", "retry-model"]
 
 
 def test_session_record_stores_resolved_profile_metadata(tmp_path: Path, monkeypatch) -> None:

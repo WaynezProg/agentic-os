@@ -63,8 +63,14 @@ Phase positioning:
 | P25 | **complete** — remote operator console | `GET /remote/affordances`; hide localhost-only admin in remote mode | `ui/remote-console.js`; token status without value leakage | certificate pinning |
 | P26 | **complete** — project setup import/export | portable bundle export; dry-run diff then gated import | `GET /setup/export`, `POST /setup/import`; `import_export.py` | package management |
 | P27 | **complete** — desktop product polish | diagnostics, version stub, bounded redacted logs zip | `GET /version`, `GET /setup/logs.zip`, `ui/product-polish.js` | auto-update infra |
+| P28 | **complete** — product smoke + provider/model launch wiring | behavior-level smoke harness; profile model/provider reach spawned argv | `scripts/smoke-product.sh`; `model_arg` / `provider_env` registry templating | harness runtime changes |
+| P29 | **complete** — workspace / project manager + dashboard-lite | server-side workspace registry; cwd threading; read-only dashboard | `GET/POST/PUT /workspaces`, `GET /workspaces/dashboard`, `ui/workspace-manager.js` | file explorer, cloud sync |
+| P30 | **complete** — provider / model switchboard UI | one-click profile switch; shows resolved session provider/model | `ui/provider-switchboard.js` | billing API, harness runtime |
+| P31 | **complete** — agent content editor | form-based skill/MCP/policy/hook editing with history + policy evaluate | extended `ui/control-plane-editor.js` | MCP process start, marketplace |
+| P32 | **complete** — run template / task launcher | saved launchers with argv preview; `source_template_id` on sessions | `/run-templates`, `ui/run-template-launcher.js` | scheduling, background loop |
+| P33 | **complete** — daily operator dashboard | full 總覽 workbench; affordance-driven quick actions | `ui/daily-dashboard.js` | chat UI, RBAC |
 
-**Main (2026-06-07):** P11.5–P27 add remote access, catalog/config/profile/registry editors, control-plane UI, approval workbench, remote console, setup import/export, and desktop polish. Remote mode gates writes via affordances; local mode supports full management surfaces.
+**Main (2026-06-07):** P11.5–P33 add remote access, editors, approval workbench, workspace scoping, switchboard, templates, and daily dashboard. Remote mode gates writes via affordances + localhost-only HTTP guards on workspace/template writes. Profile `resolved_model` / `resolved_provider` thread into harness argv/env when registry entries define `model_arg` / `provider_env`.
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
@@ -430,6 +436,26 @@ P1-P9 intentionally do not include:
 - MCP server process ownership, browser-side subprocess work, or UI indexing.
 - Multi-user auth, RBAC, cloud sync, chat UI, Kanban, Electron, Tauri, planner,
   executor, tool loop, memory reasoning, browser driver, or task decomposition.
+
+## How to verify the product (P28)
+
+Run the behavior-level smoke harness (starts an isolated `agentd`, exercises
+launch/config/import/remote/approval flows, and writes text + JSON reports):
+
+```bash
+bash scripts/smoke-product.sh
+```
+
+On failure the script exits non-zero and prints the first failing step plus
+report paths (`report.txt`, `report.json`, `smoke.log` under a temp directory).
+Override the smoke workspace with `SMOKE_PRODUCT_DIR=/tmp/my-smoke`.
+
+CI gate before merge remains:
+
+```bash
+uv run pytest -q && uv run ruff check .
+cd apps/desktop/src-tauri && cargo test
+```
 
 ## Development
 
