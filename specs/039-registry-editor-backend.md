@@ -1,6 +1,6 @@
 # 039 — Harness Instance Registry Editor Backend (P20)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: multi-harness registry pack (`specs/018-multi-harness-registry-pack.md`), harness instance profile schema (`specs/007-harness-instance-profile-p3.7.md`), safe-edit engine (`specs/027-safe-native-config-editing.md`)
 Blocks: P21 (`specs/040-registry-editor-ui.md`)

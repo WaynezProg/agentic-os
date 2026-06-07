@@ -69,7 +69,17 @@ from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
 from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
-from agentic_os.registry import Registry, RenderedRun, validate_registry
+from agentic_os.registry import (
+    Registry,
+    RenderedRun,
+    agents_document,
+    disable_agent_instance,
+    merge_agent_instance,
+    registry_patch_target,
+    replace_agents_ops,
+    validate_registry,
+    validate_registry_document,
+)
 from agentic_os.remote_access import RemoteAccessService
 from agentic_os.remote_api import register_remote_routes
 from agentic_os.safe_edit import (
@@ -1791,17 +1801,110 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         patch_id: str,
         source: str = Query(default="api"),
     ) -> dict[str, object]:
+        entry = backup_store.get(patch_id)
         try:
             result = safe_edit_engine.rollback(patch_id, source=source)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
         except ConflictError as exc:
             raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        if entry is not None and entry.target_path == str(registry_path.resolve()):
+            registry.reload()
         return {
             "patch_id": result.patch_id,
             "applied": result.applied,
             "audit_event_id": result.audit_event_id,
         }
+
+    def _registry_extra_validator(after: dict[str, object]) -> list[str]:
+        errors, _warnings = validate_registry_document(after)
+        return errors
+
+    def _apply_registry_patch(
+        ops: list[PatchOp],
+        *,
+        source: str,
+        dry_run: bool = False,
+        base_mtime: float | None = None,
+    ) -> PatchResult:
+        cwd_path = Path.cwd()
+        target = registry_patch_target(registry_path, cwd_path)
+        try:
+            result = safe_edit_engine.apply(
+                target,
+                ops,
+                source=source,
+                dry_run=dry_run,
+                base_mtime=base_mtime,
+                extra_validator=_registry_extra_validator,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
+        if not dry_run:
+            registry.reload()
+        return result
+
+    def _registry_patch_response(result: PatchResult, after_doc: dict[str, object]) -> dict[str, object]:
+        _errors, warnings = validate_registry_document(after_doc)
+        response = _patch_result_dict(result)
+        validation = dict(response.get("validation", {}))
+        validation["warnings"] = warnings
+        response["validation"] = validation
+        return response
+
+    @app.get("/registry/schema")
+    def registry_schema() -> dict[str, object]:
+        return {"cwd_mode": ["required", "optional", "ignored"]}
+
+    @app.post("/registry/agents")
+    def registry_upsert_agent(
+        agent: AgentDefinition,
+        dry_run: bool = Query(default=False),
+        source: str = Query(default="api"),
+        base_mtime: float | None = Query(default=None),
+    ) -> dict[str, object]:
+        merged = merge_agent_instance(registry.list_agents(), agent)
+        agent_payloads = agents_document(merged)
+        ops = replace_agents_ops(agent_payloads)
+        result = _apply_registry_patch(
+            ops,
+            source=source,
+            dry_run=dry_run,
+            base_mtime=base_mtime,
+        )
+        return _registry_patch_response(result, {"agents": agent_payloads})
+
+    @app.post("/registry/agents/{agent_id}/disable")
+    def registry_disable_agent(
+        agent_id: str,
+        dry_run: bool = Query(default=False),
+        source: str = Query(default="api"),
+        base_mtime: float | None = Query(default=None),
+    ) -> dict[str, object]:
+        try:
+            merged = disable_agent_instance(registry.list_agents(), agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        agent_payloads = agents_document(merged)
+        ops = replace_agents_ops(agent_payloads)
+        result = _apply_registry_patch(
+            ops,
+            source=source,
+            dry_run=dry_run,
+            base_mtime=base_mtime,
+        )
+        return _registry_patch_response(result, {"agents": agent_payloads})
 
     @app.get("/config/{harness_id}/effective")
     def config_effective_endpoint(
