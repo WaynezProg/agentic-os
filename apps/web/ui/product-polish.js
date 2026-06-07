@@ -7,6 +7,13 @@ window.AgenticOs = window.AgenticOs || {};
     return document.getElementById(id);
   }
 
+  function toggleLocalOnlyActions() {
+    const logsBtn = byId("product-logs-download");
+    if (logsBtn) {
+      logsBtn.hidden = !Ao.isLocalWritable();
+    }
+  }
+
   async function loadVersion() {
     const target = byId("product-version");
     if (!target) {
@@ -50,22 +57,10 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   async function downloadLogs() {
-    const path = `${Ao.apiBase()}${Ao.buildEndpoint("setupLogsZip")}`;
-    if (Ao.getConnectionProfile()?.mode === "remote" && window.__TAURI__?.core?.invoke) {
-      const text = await window.__TAURI__.core.invoke("connection_api_fetch", {
-        method: "GET",
-        path: Ao.buildEndpoint("setupLogsZip"),
-        body: null,
-      });
-      const blob = new Blob([text], { type: "application/zip" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "agentic-os-logs.zip";
-      anchor.click();
-      URL.revokeObjectURL(url);
-      return;
+    if (!Ao.isLocalWritable()) {
+      throw new Error("遠端模式不支援日誌 zip 下載（僅本機）");
     }
+    const path = `${Ao.apiBase()}${Ao.buildEndpoint("setupLogsZip")}`;
     const response = await fetch(path);
     if (!response.ok) {
       throw new Error(`${response.status} logs download failed`);
@@ -164,6 +159,7 @@ window.AgenticOs = window.AgenticOs || {};
 
   async function init() {
     bindEvents();
+    toggleLocalOnlyActions();
     await Promise.allSettled([loadVersion(), loadDiagnostics()]);
     if (Ao.RemoteConsole?.init) {
       await Ao.RemoteConsole.init();
@@ -176,5 +172,6 @@ window.AgenticOs = window.AgenticOs || {};
     loadVersion,
     exportSetup,
     importSetup,
+    toggleLocalOnlyActions,
   };
 })(window.AgenticOs);
