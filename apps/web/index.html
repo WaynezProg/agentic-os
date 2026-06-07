@@ -15,6 +15,7 @@
     <script src="api.js"></script>
     <script src="ui/rollback.js"></script>
     <script src="ui/catalog-editor.js"></script>
+    <script src="ui/config-editor.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -586,6 +587,56 @@
           <button id="harness-config-load" type="button">載入有效設定</button>
         </div>
         <pre id="harness-config-snippet" class="log-preview">選 Harness 並載入有效原生設定。</pre>
+        <div id="config-editor-controls" class="config-editor" hidden>
+          <h4>Path patch 編輯</h4>
+          <div class="row">
+            <label for="config-scope">範圍</label>
+            <select id="config-scope">
+              <option value="user">user</option>
+              <option value="project" selected>project</option>
+              <option value="local">local</option>
+            </select>
+            <label for="config-op">操作</label>
+            <select id="config-op">
+              <option value="merge">merge</option>
+              <option value="remove">remove</option>
+            </select>
+            <label for="config-path">path</label>
+            <input id="config-path" type="text" placeholder="permissions.allow[0]" />
+          </div>
+          <div class="row">
+            <label for="config-value">value (JSON, merge 必填)</label>
+            <textarea id="config-value" rows="4" placeholder='{"command":"npx"}'></textarea>
+          </div>
+          <div class="row">
+            <button id="config-dry-run" type="button">預覽變更</button>
+            <button id="config-apply" type="button" disabled>套用</button>
+          </div>
+          <pre id="config-diff-preview" class="log-preview">編輯 path patch 後按「預覽變更」。</pre>
+          <div id="config-validation-errors" class="message is-error" hidden></div>
+          <p id="config-patch-message" class="message"></p>
+        </div>
+        <section id="config-patch-history" hidden>
+          <h4>修補紀錄</h4>
+          <div class="table-shell">
+            <table aria-label="Harness 設定修補紀錄">
+              <thead>
+                <tr>
+                  <th>patch_id</th>
+                  <th>target</th>
+                  <th>surface</th>
+                  <th>source</th>
+                  <th>建立時間</th>
+                  <th>還原時間</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="config-patch-history-body">
+                <tr><td colspan="7">載入 Harness 後顯示修補紀錄。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="panel-catalog" class="panel" role="tabpanel" aria-labelledby="tab-catalog">

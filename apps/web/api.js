@@ -47,6 +47,9 @@ window.AgenticOs = window.AgenticOs || {};
     patchDetail: "/patches/{patch_id}",
     patchRollback: "/patches/{patch_id}/rollback",
     harnessConfigEffective: "/harness-config/{harness_id}/effective",
+    harnessConfigDiff: "/harness-config/{harness_id}/diff",
+    harnessConfigExplain: "/harness-config/{harness_id}/explain",
+    harnessConfigPatch: "/harness-config/{harness_id}/patch",
     approvalsFiltered: "/approvals",
   });
 

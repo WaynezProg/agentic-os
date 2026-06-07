@@ -11,6 +11,7 @@ STYLES_CSS = WEB_DIR / "styles.css"
 APP_JS = WEB_DIR / "app.js"
 API_JS = WEB_DIR / "api.js"
 CATALOG_EDITOR_JS = WEB_DIR / "ui" / "catalog-editor.js"
+CONFIG_EDITOR_JS = WEB_DIR / "ui" / "config-editor.js"
 ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
 ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
 
@@ -18,7 +19,14 @@ ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
 def _web_javascript_sources() -> str:
     return "".join(
         path.read_text(encoding="utf-8")
-        for path in (APP_JS, API_JS, CATALOG_EDITOR_JS, ROLLBACK_JS, ACTIONS_JS)
+        for path in (
+            APP_JS,
+            API_JS,
+            CATALOG_EDITOR_JS,
+            CONFIG_EDITOR_JS,
+            ROLLBACK_JS,
+            ACTIONS_JS,
+        )
         if path.is_file()
     )
 
@@ -469,9 +477,56 @@ def test_index_html_loads_catalog_patch_modules_before_app_js() -> None:
     api_pos = html.index('src="api.js"')
     rollback_pos = html.index('src="ui/rollback.js"')
     catalog_pos = html.index('src="ui/catalog-editor.js"')
+    config_pos = html.index('src="ui/config-editor.js"')
     actions_pos = html.index('src="ui/actions.js"')
     app_pos = html.index('src="app.js"')
-    assert api_pos < rollback_pos < catalog_pos < actions_pos < app_pos
+    assert api_pos < rollback_pos < catalog_pos < config_pos < actions_pos < app_pos
+
+
+def test_harness_config_patch_ui_modules_exist() -> None:
+    assert CONFIG_EDITOR_JS.is_file()
+
+
+def test_harness_config_patch_ui_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    for element_id in [
+        "config-scope",
+        "config-op",
+        "config-path",
+        "config-value",
+        "config-dry-run",
+        "config-apply",
+        "config-diff-preview",
+        "config-validation-errors",
+        "config-patch-history-body",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_harness_config_patch_ui_references_patch_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = CONFIG_EDITOR_JS.read_text(encoding="utf-8")
+
+    for endpoint in [
+        "/harness-config/{harness_id}/patch",
+        "/harness-config/{harness_id}/diff",
+        "/harness-config/{harness_id}/explain",
+    ]:
+        assert endpoint in api_js
+    assert "harnessConfigPatch" in editor
+    assert "harnessConfigDiff" in editor
+    assert "harnessConfigExplain" in editor
+
+
+def test_harness_config_editor_optimistic_lock_and_cross_write_guard() -> None:
+    editor = CONFIG_EDITOR_JS.read_text(encoding="utf-8")
+
+    assert "base_mtime" in editor
+    assert "stale_target" in editor
+    assert 'basePath: "/harness-config"' in editor
+    assert 'family: "harness"' in editor
+    assert 'basePath: "/config"' not in editor.split("HARNESS_CONFIG_DESCRIPTOR")[0]
 
 
 def test_readme_documents_p3_usage_and_limits() -> None:

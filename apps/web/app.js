@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   byId("api-url").value = DEFAULT_API_URL;
   await initDesktopConnection();
   Ao.CatalogEditor.init();
+  Ao.HarnessConfigEditor.init();
   bindTabs();
   bindControls();
   refreshAll();
@@ -785,13 +786,13 @@ async function handleActionClick(event) {
   const itemId = button.dataset.itemId;
   const approvalId = button.dataset.approvalId;
 
-  if (Ao.isCatalogAction(action)) {
-    if (!Ao.CatalogEditor.isWritable()) {
+  if (Ao.isDelegatedAction(action)) {
+    if (!Ao.isLocalWritable()) {
       return;
     }
     button.disabled = true;
     try {
-      await Ao.dispatchCatalogAction(action, button);
+      await Ao.dispatchDelegatedAction(action, button);
     } catch (error) {
       const message = document.getElementById("catalog-patch-message");
       if (message) {
@@ -1008,21 +1009,7 @@ async function loadAuditEvents() {
 }
 
 async function loadHarnessNativeConfig() {
-  const harnessId = byId("harness-config-id").value;
-  const snippet = byId("harness-config-snippet");
-  snippet.textContent = t("loading");
-  try {
-    const data = await apiFetch(buildEndpoint("harnessConfigEffective", { harness_id: harnessId }));
-    const payload = {
-      harness_id: data.harness_id,
-      scopes_present: data.scopes_present,
-      entries: data.entries,
-    };
-    const text = JSON.stringify(payload, null, 2);
-    snippet.textContent = text.length > 4096 ? `${text.slice(0, 4096)}\n${t("truncated")}` : text;
-  } catch (error) {
-    snippet.textContent = error.message;
-  }
+  await Ao.HarnessConfigEditor.loadEffective();
 }
 
 async function loadHarnesses() {

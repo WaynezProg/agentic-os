@@ -1,6 +1,6 @@
 # 036 — Harness / Agentic Config Patch UI (P17)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: P16 (`specs/035-catalog-patch-ui.md`), harness config bridge (`specs/020-harness-config-bridge.md`), configuration scope mapper (`specs/013-configuration-scope-mapper.md`), safe-edit engine (`specs/027-safe-native-config-editing.md`)
 Blocks: P18 (`specs/037-profile-backend-patch.md`)
