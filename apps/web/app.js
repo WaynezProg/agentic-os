@@ -29,6 +29,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.CatalogEditor.init();
   Ao.HarnessConfigEditor.init();
   Ao.ProfileEditor.init();
+  Ao.RegistryEditor.init();
   bindTabs();
   bindControls();
   refreshAll();
@@ -188,6 +189,8 @@ async function loadHealth() {
     return false;
   }
 }
+
+Ao.loadAgents = loadAgents;
 
 async function loadAgents() {
   const body = byId("agents-body");

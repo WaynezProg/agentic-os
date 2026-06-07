@@ -17,6 +17,7 @@
     <script src="ui/catalog-editor.js"></script>
     <script src="ui/config-editor.js"></script>
     <script src="ui/profile-editor.js"></script>
+    <script src="ui/registry-editor.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -138,6 +139,59 @@
           <button id="refresh-agents" type="button">重新整理代理</button>
         </div>
         <p id="agents-message" class="message" aria-live="polite"></p>
+        <section id="registry-editor-section" class="subpanel">
+          <h3>Harness Instance Registry</h3>
+          <div class="row">
+            <button id="registry-load" type="button">載入編輯器</button>
+          </div>
+          <div id="registry-editor-controls" class="config-editor" hidden>
+            <div class="eval-grid">
+              <label for="registry-id">id</label>
+              <input id="registry-id" type="text" spellcheck="false" />
+              <label for="registry-label">label</label>
+              <input id="registry-label" type="text" spellcheck="false" />
+              <label for="registry-command">command（JSON array 或空白分隔）</label>
+              <input id="registry-command" type="text" spellcheck="false" />
+              <label for="registry-cwd-mode">cwd_mode</label>
+              <select id="registry-cwd-mode"></select>
+              <label for="registry-health-command">health_command</label>
+              <input id="registry-health-command" type="text" spellcheck="false" />
+              <label for="registry-attach-command">attach_command</label>
+              <input id="registry-attach-command" type="text" spellcheck="false" />
+              <label for="registry-log-paths">log_paths（逗號分隔）</label>
+              <input id="registry-log-paths" type="text" spellcheck="false" />
+              <label for="registry-default-provider">default_provider</label>
+              <input id="registry-default-provider" type="text" spellcheck="false" />
+              <label for="registry-config-path">config_path</label>
+              <input id="registry-config-path" type="text" spellcheck="false" />
+            </div>
+            <div class="row">
+              <button id="registry-dry-run" type="button">預覽變更</button>
+              <button id="registry-apply" type="button" disabled>套用</button>
+              <button id="registry-disable" type="button">停用</button>
+            </div>
+            <pre id="registry-diff-preview" class="log-preview">編輯 instance 後按「預覽變更」。</pre>
+            <div id="registry-validation-errors" class="message is-error" hidden></div>
+            <div id="registry-validation-warnings" class="message" hidden></div>
+            <p id="registry-patch-message" class="message"></p>
+          </div>
+          <section id="registry-patch-history" hidden>
+            <h4>修補紀錄</h4>
+            <div class="table-shell">
+              <table aria-label="Registry 修補紀錄">
+                <thead>
+                  <tr>
+                    <th>patch_id</th><th>target</th><th>surface</th><th>source</th>
+                    <th>建立時間</th><th>還原時間</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="registry-patch-history-body">
+                  <tr><td colspan="7">尚無修補紀錄。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
         <div class="table-shell">
           <table id="agents-table">
             <thead>

@@ -13,6 +13,7 @@ API_JS = WEB_DIR / "api.js"
 CATALOG_EDITOR_JS = WEB_DIR / "ui" / "catalog-editor.js"
 CONFIG_EDITOR_JS = WEB_DIR / "ui" / "config-editor.js"
 PROFILE_EDITOR_JS = WEB_DIR / "ui" / "profile-editor.js"
+REGISTRY_EDITOR_JS = WEB_DIR / "ui" / "registry-editor.js"
 ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
 ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
 
@@ -26,6 +27,7 @@ def _web_javascript_sources() -> str:
             CATALOG_EDITOR_JS,
             CONFIG_EDITOR_JS,
             PROFILE_EDITOR_JS,
+            REGISTRY_EDITOR_JS,
             ROLLBACK_JS,
             ACTIONS_JS,
         )
@@ -481,9 +483,19 @@ def test_index_html_loads_catalog_patch_modules_before_app_js() -> None:
     catalog_pos = html.index('src="ui/catalog-editor.js"')
     config_pos = html.index('src="ui/config-editor.js"')
     profile_pos = html.index('src="ui/profile-editor.js"')
+    registry_pos = html.index('src="ui/registry-editor.js"')
     actions_pos = html.index('src="ui/actions.js"')
     app_pos = html.index('src="app.js"')
-    assert api_pos < rollback_pos < catalog_pos < config_pos < profile_pos < actions_pos < app_pos
+    assert (
+        api_pos
+        < rollback_pos
+        < catalog_pos
+        < config_pos
+        < profile_pos
+        < registry_pos
+        < actions_pos
+        < app_pos
+    )
 
 
 def test_harness_config_patch_ui_modules_exist() -> None:
@@ -563,6 +575,38 @@ def test_profile_editor_references_profile_endpoints() -> None:
     assert "base_mtime" in editor
     assert "stale_target" in editor
     assert "ENV_VAR_PATTERN" in editor or "A-Z][A-Z0-9_]" in editor
+
+
+def test_registry_editor_ui_modules_exist() -> None:
+    assert REGISTRY_EDITOR_JS.is_file()
+
+
+def test_registry_editor_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    for element_id in [
+        "registry-id",
+        "registry-label",
+        "registry-command",
+        "registry-cwd-mode",
+        "registry-dry-run",
+        "registry-apply",
+        "registry-diff-preview",
+        "registry-validation-errors",
+        "registry-validation-warnings",
+        "registry-patch-history-body",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_registry_editor_references_registry_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = REGISTRY_EDITOR_JS.read_text(encoding="utf-8")
+    for endpoint in ["/registry/agents", "/registry/agents/{id}/disable", "/registry/schema"]:
+        assert endpoint in api_js
+    assert "registryAgents" in editor
+    assert "registrySchema" in editor
+    assert "base_mtime" in editor
+    assert "stale_target" in editor
 
 
 def test_readme_documents_p3_usage_and_limits() -> None:
