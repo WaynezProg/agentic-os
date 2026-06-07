@@ -79,28 +79,54 @@ window.AgenticOs = window.AgenticOs || {};
     URL.revokeObjectURL(url);
   }
 
+  function readSetupBundle() {
+    const bundleInput = byId("setup-bundle-input");
+    const bundleText = bundleInput?.value?.trim();
+    if (!bundleText) {
+      throw new Error("先匯出 bundle 或貼上有效 JSON");
+    }
+    return JSON.parse(bundleText);
+  }
+
+  function writeSetupBundle(data) {
+    const bundleInput = byId("setup-bundle-input");
+    if (bundleInput) {
+      bundleInput.value = JSON.stringify(data, null, 2);
+    }
+  }
+
+  function writeImportResult(data) {
+    const output = byId("setup-import-result-output");
+    if (output) {
+      output.textContent = JSON.stringify(data, null, 2);
+    }
+  }
+
+  function writeImportError(message) {
+    const output = byId("setup-import-result-output");
+    if (output) {
+      output.textContent = message;
+    }
+  }
+
   async function exportSetup() {
     const cwd = byId("setup-cwd")?.value.trim() || "";
     const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
     const data = await Ao.apiFetch(`${Ao.buildEndpoint("setupExport")}${query}`);
-    byId("setup-import-export-output").textContent = JSON.stringify(data, null, 2);
+    writeSetupBundle(data);
+    writeImportResult("已匯出 bundle 至上方輸入區。");
     return data;
   }
 
   async function importSetup(dryRun) {
-    const output = byId("setup-import-export-output");
-    const bundleText = output?.textContent?.trim();
-    if (!bundleText || bundleText.startsWith("匯出")) {
-      throw new Error("先匯出 bundle 或貼上有效 JSON");
-    }
-    const bundle = JSON.parse(bundleText);
+    const bundle = readSetupBundle();
     const cwd = byId("setup-cwd")?.value.trim() || "";
     const params = new URLSearchParams({ dry_run: dryRun ? "true" : "false" });
     if (cwd) {
       params.set("cwd", cwd);
     }
     const result = await Ao.postJson(`${Ao.buildEndpoint("setupImport")}?${params}`, bundle);
-    output.textContent = JSON.stringify(result, null, 2);
+    writeImportResult(result);
     return result;
   }
 
@@ -114,21 +140,21 @@ window.AgenticOs = window.AgenticOs || {};
     });
     byId("setup-export-btn")?.addEventListener("click", () => {
       exportSetup().catch((error) => {
-        byId("setup-import-export-output").textContent = error.message;
+        writeImportError(error.message);
       });
     });
     byId("setup-import-dry-run")?.addEventListener("click", () => {
       importSetup(true).catch((error) => {
-        byId("setup-import-export-output").textContent = error.message;
+        writeImportError(error.message);
       });
     });
     byId("setup-import-apply")?.addEventListener("click", () => {
       if (!Ao.isLocalWritable()) {
-        byId("setup-import-export-output").textContent = "遠端模式不可套用匯入";
+        writeImportError("遠端模式不可套用匯入");
         return;
       }
       importSetup(false).catch((error) => {
-        byId("setup-import-export-output").textContent = error.message;
+        writeImportError(error.message);
       });
     });
     byId("remote-console-refresh")?.addEventListener("click", () => {

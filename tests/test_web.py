@@ -728,7 +728,8 @@ def test_product_polish_modules_exist() -> None:
     for element_id in [
         "product-version",
         "diagnostics-snapshot",
-        "setup-import-export-output",
+        "setup-bundle-input",
+        "setup-import-result-output",
         "setup-export-btn",
         "product-logs-download",
     ]:
