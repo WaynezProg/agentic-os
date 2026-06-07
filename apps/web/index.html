@@ -12,6 +12,10 @@
     />
     <link rel="stylesheet" href="styles.css?v=zh-hant" />
     <script src="i18n.js"></script>
+    <script src="api.js"></script>
+    <script src="ui/rollback.js"></script>
+    <script src="ui/catalog-editor.js"></script>
+    <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -612,13 +616,43 @@
         <div class="table-shell">
           <table aria-label="工作流介面">
             <thead>
-              <tr><th>id</th><th>類型</th><th>名稱</th><th>範圍</th><th>來源</th><th>狀態</th><th>覆寫者</th><th>覆寫</th></tr>
+              <tr><th>id</th><th>類型</th><th>名稱</th><th>範圍</th><th>來源</th><th>狀態</th><th>覆寫者</th><th>覆寫</th><th>操作</th></tr>
             </thead>
             <tbody id="catalog-body">
-              <tr><td colspan="8">選 Harness 後按「載入」。</td></tr>
+              <tr><td colspan="9">選 Harness 後按「載入」。</td></tr>
             </tbody>
           </table>
         </div>
+        <p id="catalog-future-surfaces" class="message" hidden>Hooks / Skills / Commands 編輯器預留入口（後續 phase）。</p>
+        <div id="catalog-editor-controls" class="catalog-editor" hidden>
+          <div class="row">
+            <button id="catalog-dry-run" type="button" disabled>預覽變更</button>
+            <button id="catalog-apply" type="button" disabled>套用</button>
+          </div>
+          <pre id="catalog-diff-preview" class="log-preview">選擇 MCP 變更後按「預覽變更」。</pre>
+          <p id="catalog-patch-message" class="message"></p>
+        </div>
+        <section id="catalog-patch-history" hidden>
+          <h3>修補紀錄</h3>
+          <div class="table-shell">
+            <table aria-label="修補紀錄">
+              <thead>
+                <tr>
+                  <th>patch_id</th>
+                  <th>target</th>
+                  <th>surface</th>
+                  <th>source</th>
+                  <th>建立時間</th>
+                  <th>還原時間</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="catalog-patch-history-body">
+                <tr><td colspan="7">載入 Harness 後顯示修補紀錄。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="panel-approvals" class="panel" role="tabpanel" aria-labelledby="tab-approvals">

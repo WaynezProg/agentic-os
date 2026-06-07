@@ -9,6 +9,18 @@ WEB_DIR = ROOT / "apps" / "web"
 INDEX_HTML = WEB_DIR / "index.html"
 STYLES_CSS = WEB_DIR / "styles.css"
 APP_JS = WEB_DIR / "app.js"
+API_JS = WEB_DIR / "api.js"
+CATALOG_EDITOR_JS = WEB_DIR / "ui" / "catalog-editor.js"
+ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
+ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
+
+
+def _web_javascript_sources() -> str:
+    return "".join(
+        path.read_text(encoding="utf-8")
+        for path in (APP_JS, API_JS, CATALOG_EDITOR_JS, ROLLBACK_JS, ACTIONS_JS)
+        if path.is_file()
+    )
 
 
 def test_static_web_files_exist() -> None:
@@ -176,7 +188,7 @@ def test_policy_summary_and_evaluation_controls_exist() -> None:
 
 
 def test_javascript_references_required_daemon_endpoints() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
 
     for endpoint in [
         "/health",
@@ -284,7 +296,7 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
 
     combined = (
         INDEX_HTML.read_text(encoding="utf-8")
-        + APP_JS.read_text(encoding="utf-8")
+        + _web_javascript_sources()
         + (WEB_DIR / "i18n.js").read_text(encoding="utf-8")
     )
     for token in ["vite", "webpack", "parcel", "npm install", "node_modules"]:
@@ -299,14 +311,14 @@ def test_catalog_harness_select_has_seven_options() -> None:
 
 def test_harness_native_config_panel_exists() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
     assert 'id="harness-config-snippet"' in html
     assert "loadHarnessNativeConfig" in js
     assert "/harness-config/{harness_id}/effective" in js
 
 
 def test_javascript_does_not_pass_endpoint_keys_directly_to_api_fetch() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
 
     assert re.search(r'apiFetch\("[A-Za-z][A-Za-z0-9]*"', js) is None
 
@@ -324,7 +336,7 @@ def test_fleet_tab_and_panel_exist() -> None:
 
 
 def test_fleet_javascript_references_fleet_endpoints() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
     for endpoint in [
         "/fleet/health",
         "/fleet/{agent_id}/health",
@@ -357,7 +369,7 @@ def test_fleet_tab_has_audit_events_section() -> None:
 
 
 def test_javascript_references_audit_endpoints() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
     for endpoint in [
         "/audit/events",
         "/audit/policy-coverage",
@@ -394,6 +406,50 @@ def test_javascript_has_approval_workflow_handlers() -> None:
     assert "rejectApproval" in js
     assert 'data-action="approve-approval"' in js
     assert 'data-action="reject-approval"' in js
+
+
+def test_catalog_patch_ui_modules_exist() -> None:
+    assert API_JS.is_file()
+    assert CATALOG_EDITOR_JS.is_file()
+    assert ROLLBACK_JS.is_file()
+    assert ACTIONS_JS.is_file()
+
+
+def test_catalog_patch_ui_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    for element_id in [
+        "catalog-dry-run",
+        "catalog-apply",
+        "catalog-diff-preview",
+        "catalog-patch-history-body",
+        "catalog-editor-controls",
+    ]:
+        assert f'id="{element_id}"' in html
+    assert 'data-action="catalog-enable-mcp"' in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    assert 'data-action="catalog-disable-mcp"' in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    assert 'data-action="patch-rollback"' in ROLLBACK_JS.read_text(encoding="utf-8")
+
+
+def test_catalog_patch_ui_references_patch_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    rollback_js = ROLLBACK_JS.read_text(encoding="utf-8")
+
+    assert "/catalog/{harness}/surfaces/patch" in api_js
+    assert "catalogPatch" in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    assert "/patches" in api_js
+    assert "/patches/{patch_id}/rollback" in api_js
+    assert "patchRollback" in rollback_js
+
+
+def test_index_html_loads_catalog_patch_modules_before_app_js() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    api_pos = html.index('src="api.js"')
+    rollback_pos = html.index('src="ui/rollback.js"')
+    catalog_pos = html.index('src="ui/catalog-editor.js"')
+    actions_pos = html.index('src="ui/actions.js"')
+    app_pos = html.index('src="app.js"')
+    assert api_pos < rollback_pos < catalog_pos < actions_pos < app_pos
 
 
 def test_readme_documents_p3_usage_and_limits() -> None:

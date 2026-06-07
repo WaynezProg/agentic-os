@@ -1,47 +1,9 @@
 "use strict";
 
-const DEFAULT_API_URL = "http://127.0.0.1:8767";
+const Ao = window.AgenticOs;
+const DEFAULT_API_URL = Ao.DEFAULT_API_URL;
+const ENDPOINTS = Ao.ENDPOINTS;
 const MAX_LOG_ENTRIES = 300;
-
-const ENDPOINTS = Object.freeze({
-  health: "/health",
-  agents: "/agents",
-  sessions: "/sessions",
-  sessionDetail: "/sessions/{session_id}",
-  sessionLogs: "/sessions/{session_id}/logs",
-  sessionStop: "/sessions/{session_id}/stop",
-  sessionRetry: "/sessions/{session_id}/retry",
-  sessionEvents: "/sessions/{session_id}/events",
-  sessionTimeline: "/sessions/{session_id}/timeline",
-  sessionAttach: "/sessions/{session_id}/attach",
-  sessionRun: "/sessions",
-  sessionSummary: "/sessions/{session_id}/memory/summary",
-  sessionReview: "/sessions/{session_id}/memory/review",
-  memoryReview: "/memory/review",
-  memoryApprove: "/memory/review/{item_id}/approve",
-  memoryReject: "/memory/review/{item_id}/reject",
-  memoryList: "/memory",
-  memorySearch: "/memory/search",
-  skills: "/skills",
-  mcp: "/mcp",
-  policySummary: "/policy",
-  policyEvaluate: "/policy/evaluate",
-  approvals: "/approvals",
-  approvalApprove: "/approvals/{approval_id}/approve",
-  approvalReject: "/approvals/{approval_id}/reject",
-  fleetHealth: "/fleet/health",
-  fleetInstanceHealth: "/fleet/{agent_id}/health",
-  fleetEvents: "/fleet/events",
-  fleetCapacity: "/fleet/capacity",
-  fleetProbe: "/fleet/probe",
-  auditEvents: "/audit/events",
-  auditPolicyCoverage: "/audit/policy-coverage",
-  harnesses: "/harnesses",
-  harnessHealth: "/harnesses/{harness_id}/health",
-  catalogSurfaces: "/catalog/{harness}/surfaces",
-  harnessConfigEffective: "/harness-config/{harness_id}/effective",
-  approvalsFiltered: "/approvals",
-});
 
 const HTML_ENTITIES = Object.freeze({
   "&": "&amp;",
@@ -64,6 +26,7 @@ const state = {
 document.addEventListener("DOMContentLoaded", async () => {
   byId("api-url").value = DEFAULT_API_URL;
   await initDesktopConnection();
+  Ao.CatalogEditor.init();
   bindTabs();
   bindControls();
   refreshAll();
@@ -77,6 +40,7 @@ async function initDesktopConnection() {
   try {
     const profile = await invoke("get_connection_profile");
     state.connectionProfile = profile;
+    Ao.setConnectionProfile(profile);
     if (profile.mode === "remote") {
       byId("api-url").value = profile.api_url;
       byId("api-url").readOnly = true;
@@ -191,88 +155,11 @@ async function refreshAll() {
   }
 }
 
-function apiBase() {
-  const value = byId("api-url").value.trim() || DEFAULT_API_URL;
-  return value.replace(/\/+$/, "");
-}
-
-function buildEndpoint(name, params = {}) {
-  let path = ENDPOINTS[name];
-  Object.entries(params).forEach(([key, value]) => {
-    path = path.replace(`{${key}}`, encodeURIComponent(value));
-  });
-  return path;
-}
-
-async function apiFetch(path, options = {}) {
-  if (state.connectionProfile?.mode === "remote" && window.__TAURI__?.core?.invoke) {
-    return apiFetchViaDesktop(path, options);
-  }
-  const headers = {
-    Accept: "application/json",
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
-    ...(options.headers || {}),
-  };
-  const response = await fetch(`${apiBase()}${path}`, { ...options, headers });
-  const text = await response.text();
-  const payload = text ? parseJson(text) : {};
-
-  if (!response.ok) {
-    const detail = normalizeErrorDetail(payload.detail || response.statusText);
-    const error = new Error(`${response.status} ${detail}`);
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
-  }
-  return payload;
-}
-
-async function apiFetchViaDesktop(path, options = {}) {
-  const method = (options.method || "GET").toUpperCase();
-  const body =
-    options.body === undefined
-      ? null
-      : typeof options.body === "string"
-        ? options.body
-        : JSON.stringify(options.body);
-  try {
-    const text = await window.__TAURI__.core.invoke("connection_api_fetch", {
-      method,
-      path,
-      body,
-    });
-    return text ? parseJson(text) : {};
-  } catch (error) {
-    const message = String(error);
-    const errorObject = new Error(message);
-    errorObject.status = 0;
-    errorObject.payload = { detail: message };
-    throw errorObject;
-  }
-}
-
-function parseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { detail: text };
-  }
-}
-
-function normalizeErrorDetail(detail) {
-  if (typeof detail === "string") {
-    return detail;
-  }
-  return JSON.stringify(detail);
-}
-
-async function postEmpty(path) {
-  return apiFetch(path, { method: "POST", body: JSON.stringify({}) });
-}
-
-async function postJson(path, payload) {
-  return apiFetch(path, { method: "POST", body: JSON.stringify(payload) });
-}
+const apiBase = Ao.apiBase;
+const buildEndpoint = Ao.buildEndpoint.bind(Ao);
+const apiFetch = Ao.apiFetch.bind(Ao);
+const postEmpty = Ao.postEmpty.bind(Ao);
+const postJson = Ao.postJson.bind(Ao);
 
 async function loadSessionDetail(sessionId) {
   return apiFetch(buildEndpoint("sessionDetail", { session_id: sessionId }), { method: "GET" });
@@ -897,6 +784,26 @@ async function handleActionClick(event) {
   const agentId = button.dataset.agentId;
   const itemId = button.dataset.itemId;
   const approvalId = button.dataset.approvalId;
+
+  if (Ao.isCatalogAction(action)) {
+    if (!Ao.CatalogEditor.isWritable()) {
+      return;
+    }
+    button.disabled = true;
+    try {
+      await Ao.dispatchCatalogAction(action, button);
+    } catch (error) {
+      const message = document.getElementById("catalog-patch-message");
+      if (message) {
+        message.textContent = error.message;
+        message.classList.add("is-error");
+      }
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
   button.disabled = true;
 
   try {
@@ -1199,39 +1106,7 @@ async function loadHarnessHealth(harnessId) {
 }
 
 async function loadCatalog() {
-  const harness = byId("catalog-harness").value;
-  const type = byId("catalog-type").value;
-  const body = byId("catalog-body");
-  try {
-    let path = buildEndpoint("catalogSurfaces", { harness });
-    if (type) {
-      path += `?surface_type=${encodeURIComponent(type)}`;
-    }
-    const data = await apiFetch(path);
-    const surfaces = asArray(data.surfaces);
-    if (!surfaces.length) {
-      renderEmptyRow(body, 8, t("emptyNoSurfaces"));
-      return;
-    }
-    body.innerHTML = surfaces
-      .map(
-        (s) => `
-          <tr>
-            <td class="cell-id">${escapeHtml(s.id)}</td>
-            <td>${escapeHtml(s.type)}</td>
-            <td>${escapeHtml(s.name)}</td>
-            <td><span class="pill">${escapeHtml(s.scope)}</span></td>
-            <td>${escapeHtml(s.source)}</td>
-            <td>${s.enabled ? "enabled" : "disabled"}</td>
-            <td>${valueOrDash(s.overridden_by)}</td>
-            <td>${valueOrDash(s.overrides)}</td>
-          </tr>
-        `,
-      )
-      .join("");
-  } catch (error) {
-    renderErrorRow(body, 8, error.message);
-  }
+  await Ao.CatalogEditor.loadCatalog();
 }
 
 async function loadApprovalsTab() {

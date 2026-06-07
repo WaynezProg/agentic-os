@@ -1,6 +1,6 @@
 # 035 — Catalog Patch UI + Frontend Operation Shell (P16)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: P10/P11 catalog patch engine (`specs/012-workflow-surface-catalog.md`, `specs/014-workflow-surface-catalog.md`, `specs/019-workflow-catalog-expansion.md`), safe-edit engine (`specs/027-safe-native-config-editing.md`)
 Blocks: P17 (`specs/036-config-patch-ui.md`)
