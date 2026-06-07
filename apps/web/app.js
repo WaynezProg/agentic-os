@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await initDesktopConnection();
   Ao.CatalogEditor.init();
   Ao.HarnessConfigEditor.init();
+  Ao.ProfileEditor.init();
   bindTabs();
   bindControls();
   refreshAll();

@@ -50,6 +50,14 @@ window.AgenticOs = window.AgenticOs || {};
     harnessConfigDiff: "/harness-config/{harness_id}/diff",
     harnessConfigExplain: "/harness-config/{harness_id}/explain",
     harnessConfigPatch: "/harness-config/{harness_id}/patch",
+    profiles: "/profiles",
+    profileDetail: "/profiles/{name}",
+    profileDelete: "/profiles/{name}",
+    profileDiff: "/profiles/{name}/diff",
+    profileBind: "/projects/{project_path}/bind-profile",
+    registryAgents: "/registry/agents",
+    registryAgentDisable: "/registry/agents/{id}/disable",
+    registrySchema: "/registry/schema",
     approvalsFiltered: "/approvals",
   });
 

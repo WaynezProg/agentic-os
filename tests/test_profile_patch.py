@@ -168,6 +168,80 @@ def test_profile_upsert_writes_via_engine(tmp_path: Path) -> None:
     assert parsed["run_profiles"]["engine"]["default_env"] == {"MY_TOKEN": "should-not-appear"}
 
 
+def test_profile_create_edit_delete_round_trip(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    create = client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo)},
+        json={
+            "name": "rt",
+            "harness_id": "shell",
+            "provider": "openai",
+            "model": "gpt-4",
+            "default_env": {"OPENAI_API_KEY": "OPENAI_API_KEY"},
+        },
+    )
+    assert create.status_code == 201
+
+    edit_preview = client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo), "dry_run": "true"},
+        json={
+            "name": "rt",
+            "harness_id": "shell",
+            "provider": "anthropic",
+            "model": "claude-3-7-sonnet-latest",
+            "default_env": {"ANTHROPIC_API_KEY": "ANTHROPIC_API_KEY"},
+        },
+    )
+    base_mtime = edit_preview.json()["base_mtime"]
+    edit = client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo), "base_mtime": str(base_mtime)},
+        json={
+            "name": "rt",
+            "harness_id": "shell",
+            "provider": "anthropic",
+            "model": "claude-3-7-sonnet-latest",
+            "default_env": {"ANTHROPIC_API_KEY": "ANTHROPIC_API_KEY"},
+        },
+    )
+    assert edit.status_code == 201
+    listed = client.get("/profiles", params={"cwd": str(repo)})
+    profile = next(p for p in listed.json()["run_profiles"] if p["name"] == "rt")
+    assert profile["provider"] == "anthropic"
+
+    deleted = client.delete("/profiles/rt", params={"scope": "local", "cwd": str(repo)})
+    assert deleted.status_code == 200
+    listed = client.get("/profiles", params={"cwd": str(repo)})
+    assert "rt" not in {item["name"] for item in listed.json()["run_profiles"]}
+
+
+def test_profile_default_env_stores_names_not_secret_values(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo)},
+        json={
+            "name": "secrets",
+            "harness_id": "shell",
+            "provider": "local",
+            "model": "local",
+            "default_env": {"MY_SECRET": "MY_SECRET"},
+        },
+    )
+    profile_path = repo / ".agentic-os" / "profiles.toml"
+    raw = profile_path.read_text(encoding="utf-8")
+    assert "sk-live" not in raw
+    parsed = tomllib.loads(raw)
+    assert parsed["run_profiles"]["secrets"]["default_env"] == {"MY_SECRET": "MY_SECRET"}
+
+
 def test_profile_scope_diff(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     repo = tmp_path / "repo"

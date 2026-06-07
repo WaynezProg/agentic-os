@@ -16,6 +16,7 @@
     <script src="ui/rollback.js"></script>
     <script src="ui/catalog-editor.js"></script>
     <script src="ui/config-editor.js"></script>
+    <script src="ui/profile-editor.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -157,6 +158,96 @@
             </tbody>
           </table>
         </div>
+        <section id="profile-editor-section" class="subpanel">
+          <h3>Run Profile</h3>
+          <div class="row">
+            <button id="profile-load" type="button">載入 profiles</button>
+            <button id="profile-new" type="button">新增</button>
+          </div>
+          <div class="table-shell">
+            <table aria-label="Run profiles">
+              <thead>
+                <tr><th>name</th><th>harness</th><th>provider</th><th>model</th><th>操作</th></tr>
+              </thead>
+              <tbody id="profile-list-body">
+                <tr><td colspan="5">按「載入 profiles」。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="profile-editor-controls" class="config-editor" hidden>
+            <div class="eval-grid">
+              <label for="profile-name">name</label>
+              <input id="profile-name" type="text" spellcheck="false" />
+              <label for="profile-harness-id">harness_id</label>
+              <input id="profile-harness-id" type="text" spellcheck="false" />
+              <label for="profile-provider">provider</label>
+              <input id="profile-provider" type="text" spellcheck="false" />
+              <label for="profile-model">model</label>
+              <input id="profile-model" type="text" spellcheck="false" />
+              <label for="profile-scope">scope</label>
+              <select id="profile-scope">
+                <option value="local" selected>local</option>
+                <option value="global">global</option>
+              </select>
+              <label for="profile-message-prefix">message_prefix</label>
+              <input id="profile-message-prefix" type="text" spellcheck="false" />
+              <label for="profile-max-tokens">max_tokens_budget</label>
+              <input id="profile-max-tokens" type="number" min="0" />
+              <label for="profile-default-env">default_env（env-var 名稱，逗號分隔）</label>
+              <input id="profile-default-env" type="text" placeholder="MY_TOKEN,OTHER_KEY" spellcheck="false" />
+              <label for="profile-cwd-root">cwd_root</label>
+              <input id="profile-cwd-root" type="text" spellcheck="false" />
+              <label for="profile-cwd-prefix">cwd_prefix</label>
+              <input id="profile-cwd-prefix" type="text" spellcheck="false" />
+              <label for="profile-repo-glob">repo_glob</label>
+              <input id="profile-repo-glob" type="text" spellcheck="false" />
+            </div>
+            <div class="row">
+              <button id="profile-dry-run" type="button">預覽變更</button>
+              <button id="profile-apply" type="button" disabled>套用</button>
+              <button id="profile-delete" type="button">刪除</button>
+              <button id="profile-delete-cascade" type="button">Cascade 刪除</button>
+            </div>
+            <pre id="profile-diff-preview" class="log-preview">選擇或建立 profile 後按「預覽變更」。</pre>
+            <div id="profile-validation-errors" class="message is-error" hidden></div>
+            <p id="profile-bound-projects" class="message is-error" hidden></p>
+            <p id="profile-patch-message" class="message"></p>
+          </div>
+          <h4>Project 綁定</h4>
+          <div class="row">
+            <label for="profile-bind-path">project_path</label>
+            <input id="profile-bind-path" type="text" spellcheck="false" />
+            <label for="profile-bind-name">run_profile</label>
+            <input id="profile-bind-name" type="text" spellcheck="false" />
+            <button id="profile-bind-submit" type="button">綁定</button>
+          </div>
+          <div class="table-shell">
+            <table aria-label="Project profile bindings">
+              <thead>
+                <tr><th>project_path</th><th>run_profile</th><th>備註</th></tr>
+              </thead>
+              <tbody id="profile-bindings-body">
+                <tr><td colspan="3">載入 profiles 後顯示綁定。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <section id="profile-patch-history" hidden>
+            <h4>修補紀錄</h4>
+            <div class="table-shell">
+              <table aria-label="Profile 修補紀錄">
+                <thead>
+                  <tr>
+                    <th>patch_id</th><th>target</th><th>surface</th><th>source</th>
+                    <th>建立時間</th><th>還原時間</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="profile-patch-history-body">
+                  <tr><td colspan="7">尚無修補紀錄。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
         <section id="run-form-section" class="subpanel" hidden>
           <h3>執行 session</h3>
           <div class="eval-grid">

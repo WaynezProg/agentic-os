@@ -1,6 +1,6 @@
 # 038 — Profile / Provider UI (P19)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: P18 (`specs/037-profile-backend-patch.md`), run/project profile (`specs/025-run-project-profile.md`)
 Blocks: —
