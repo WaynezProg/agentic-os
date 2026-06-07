@@ -18,6 +18,10 @@
     <script src="ui/config-editor.js"></script>
     <script src="ui/profile-editor.js"></script>
     <script src="ui/registry-editor.js"></script>
+    <script src="ui/control-plane-editor.js"></script>
+    <script src="ui/approval-workbench.js"></script>
+    <script src="ui/remote-console.js"></script>
+    <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -498,11 +502,12 @@
                     <th>原因</th>
                     <th>替代</th>
                     <th>下架</th>
+                    <th class="control-plane-action-col">操作</th>
                   </tr>
                 </thead>
                 <tbody id="skills-body">
                   <tr>
-                    <td colspan="8">尚無資料。</td>
+                    <td colspan="9">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -522,11 +527,12 @@
                     <th>原因</th>
                     <th>替代</th>
                     <th>下架</th>
+                    <th class="control-plane-action-col">操作</th>
                   </tr>
                 </thead>
                 <tbody id="mcp-body">
                   <tr>
-                    <td colspan="8">尚無資料。</td>
+                    <td colspan="9">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -569,11 +575,12 @@
                     <th>原因</th>
                     <th>替代</th>
                     <th>下架</th>
+                    <th class="control-plane-action-col">操作</th>
                   </tr>
                 </thead>
                 <tbody id="policy-summary-body">
                   <tr>
-                    <td colspan="7">尚無資料。</td>
+                    <td colspan="8">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -600,6 +607,96 @@
             </div>
             <pre id="policy-eval-result" class="summary-output" aria-live="polite"></pre>
           </section>
+        </div>
+        <div id="control-plane-editor-controls" class="control-plane-editor" hidden>
+          <div class="subpanel-head">
+            <h3>技能 / MCP / 政策編輯</h3>
+            <div class="actions">
+              <button type="button" data-action="cp-create" data-domain="skills">新增技能</button>
+              <button type="button" data-action="cp-create" data-domain="mcp">新增 MCP</button>
+              <button type="button" data-action="cp-create" data-domain="policy">新增政策</button>
+            </div>
+          </div>
+          <div id="control-plane-skill-form" class="control-plane-form" hidden>
+            <h4>技能 <span id="control-plane-skill-id"></span></h4>
+            <div class="eval-grid">
+              <label for="cp-skill-label">名稱</label>
+              <input id="cp-skill-label" type="text" />
+              <label for="cp-skill-description">描述</label>
+              <input id="cp-skill-description" type="text" />
+              <label for="cp-skill-source">來源</label>
+              <input id="cp-skill-source" type="text" value="local" />
+              <label for="cp-skill-entrypoint">入口</label>
+              <input id="cp-skill-entrypoint" type="text" />
+              <label for="cp-skill-tags">標籤（逗號分隔）</label>
+              <input id="cp-skill-tags" type="text" />
+              <label for="cp-skill-enabled">啟用</label>
+              <input id="cp-skill-enabled" type="checkbox" checked />
+            </div>
+            <div class="actions">
+              <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" data-action="cp-cancel">取消</button>
+            </div>
+          </div>
+          <div id="control-plane-mcp-form" class="control-plane-form" hidden>
+            <h4>MCP <span id="control-plane-mcp-id"></span></h4>
+            <p class="message">command/url 需重新輸入；預覽已 redact，不可回送。</p>
+            <div class="eval-grid">
+              <label for="cp-mcp-label">名稱</label>
+              <input id="cp-mcp-label" type="text" />
+              <label for="cp-mcp-description">描述</label>
+              <input id="cp-mcp-description" type="text" />
+              <label for="cp-mcp-transport">傳輸</label>
+              <select id="cp-mcp-transport">
+                <option value="stdio">stdio</option>
+                <option value="http">http</option>
+              </select>
+              <label for="cp-mcp-command">command</label>
+              <input id="cp-mcp-command" type="text" placeholder="npx" />
+              <label for="cp-mcp-args">args（空白分隔）</label>
+              <input id="cp-mcp-args" type="text" />
+              <label for="cp-mcp-url">url（http transport）</label>
+              <input id="cp-mcp-url" type="text" />
+              <label for="cp-mcp-env">env keys（逗號分隔，僅名稱）</label>
+              <input id="cp-mcp-env" type="text" placeholder="MCP_TOKEN" />
+              <label for="cp-mcp-enabled">啟用</label>
+              <input id="cp-mcp-enabled" type="checkbox" checked />
+            </div>
+            <div class="actions">
+              <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" data-action="cp-cancel">取消</button>
+            </div>
+          </div>
+          <div id="control-plane-policy-form" class="control-plane-form" hidden>
+            <h4>政策 <span id="control-plane-policy-id"></span></h4>
+            <div class="eval-grid">
+              <label for="cp-policy-enabled">啟用</label>
+              <input id="cp-policy-enabled" type="checkbox" checked />
+              <label for="cp-policy-readonly">唯讀</label>
+              <input id="cp-policy-readonly" type="checkbox" />
+              <label for="cp-policy-skills">allowed_skill_ids</label>
+              <input id="cp-policy-skills" type="text" />
+              <label for="cp-policy-mcp">allowed_mcp_server_ids</label>
+              <input id="cp-policy-mcp" type="text" />
+              <label for="cp-policy-tools">allowed_tool_names</label>
+              <input id="cp-policy-tools" type="text" />
+              <label for="cp-policy-approval-tools">approval_required_tool_names</label>
+              <input id="cp-policy-approval-tools" type="text" />
+              <label for="cp-policy-models">allowed_model_ids</label>
+              <input id="cp-policy-models" type="text" />
+              <label for="cp-policy-cwd-roots">cwd_roots</label>
+              <input id="cp-policy-cwd-roots" type="text" />
+              <label for="cp-policy-rate-limit">rate_limit_per_minute</label>
+              <input id="cp-policy-rate-limit" type="number" value="60" min="1" />
+            </div>
+            <div class="actions">
+              <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" data-action="cp-cancel">取消</button>
+            </div>
+          </div>
+          <div id="control-plane-validation-errors" class="message is-error" hidden></div>
+          <pre id="control-plane-diff-preview" class="log-preview">變更 diff 將顯示於此。</pre>
+          <p id="control-plane-message" class="message" aria-live="polite"></p>
         </div>
       </section>
 
@@ -871,7 +968,7 @@
       </section>
 
       <section id="panel-approvals" class="panel" role="tabpanel" aria-labelledby="tab-approvals">
-        <h2>核准佇列</h2>
+        <h2>核准工作台</h2>
         <div class="row">
           <label for="approval-status-filter">狀態</label>
           <select id="approval-status-filter">
@@ -883,8 +980,11 @@
           </select>
           <button id="approval-load" type="button">載入</button>
         </div>
-        <div class="table-shell">
-          <table aria-label="核准佇列">
+        <div id="approvals-workbench" class="approval-workbench" aria-live="polite">
+          <p class="message">按「載入」查看核准工作台。</p>
+        </div>
+        <div class="table-shell" hidden aria-hidden="true">
+          <table aria-label="核准佇列（相容）">
             <thead>
               <tr><th>id</th><th>harness</th><th>狀態</th><th>來源 session</th><th>核准 session</th><th>原因</th><th>操作</th></tr>
             </thead>
@@ -942,6 +1042,45 @@
           <div id="overview-approvals" class="card stat-card">
             <h3>待核准</h3>
             <div id="overview-approvals-body" class="card-body">載入中…</div>
+          </div>
+          <div id="remote-console" class="card stat-card">
+            <h3>遠端操作台</h3>
+            <div class="card-body">
+              <p>模式：<span id="remote-console-mode">-</span></p>
+              <p id="remote-console-health" class="message">載入中…</p>
+              <div id="remote-console-token">token 狀態載入中…</div>
+              <div class="actions">
+                <button type="button" id="remote-console-refresh">重新整理</button>
+                <button type="button" data-localhost-action="remote.pairing.start" id="remote-pairing-start" hidden>配對（本機）</button>
+                <button type="button" data-localhost-action="remote.devices.rotate" id="remote-token-rotate" hidden>輪替 token（本機）</button>
+              </div>
+            </div>
+          </div>
+          <div id="setup-import-export" class="card stat-card">
+            <h3>專案設定匯出/匯入</h3>
+            <div class="card-body">
+              <label for="setup-cwd">專案 cwd</label>
+              <input id="setup-cwd" type="text" placeholder="/path/to/project" />
+              <div class="actions">
+                <button type="button" id="setup-export-btn">匯出 bundle</button>
+                <button type="button" id="setup-import-dry-run">匯入預覽</button>
+                <button type="button" id="setup-import-apply">匯入套用</button>
+              </div>
+              <pre id="setup-import-export-output" class="log-preview">匯出或匯入結果顯示於此。</pre>
+            </div>
+          </div>
+          <div id="desktop-polish" class="card stat-card">
+            <h3>產品資訊</h3>
+            <div class="card-body">
+              <p id="product-version">版本載入中…</p>
+              <p id="diagnostics-snapshot">診斷載入中…</p>
+              <div class="actions">
+                <button type="button" id="product-update-check">檢查更新（stub）</button>
+                <button type="button" id="product-logs-download">下載日誌 zip</button>
+                <button type="button" id="product-diagnostics-refresh">重新整理診斷</button>
+              </div>
+              <p id="product-update-result" class="message"></p>
+            </div>
           </div>
         </div>
       </section>

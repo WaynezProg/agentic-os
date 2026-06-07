@@ -14,6 +14,10 @@ CATALOG_EDITOR_JS = WEB_DIR / "ui" / "catalog-editor.js"
 CONFIG_EDITOR_JS = WEB_DIR / "ui" / "config-editor.js"
 PROFILE_EDITOR_JS = WEB_DIR / "ui" / "profile-editor.js"
 REGISTRY_EDITOR_JS = WEB_DIR / "ui" / "registry-editor.js"
+CONTROL_PLANE_EDITOR_JS = WEB_DIR / "ui" / "control-plane-editor.js"
+APPROVAL_WORKBENCH_JS = WEB_DIR / "ui" / "approval-workbench.js"
+REMOTE_CONSOLE_JS = WEB_DIR / "ui" / "remote-console.js"
+PRODUCT_POLISH_JS = WEB_DIR / "ui" / "product-polish.js"
 ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
 ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
 
@@ -28,6 +32,10 @@ def _web_javascript_sources() -> str:
             CONFIG_EDITOR_JS,
             PROFILE_EDITOR_JS,
             REGISTRY_EDITOR_JS,
+            CONTROL_PLANE_EDITOR_JS,
+            APPROVAL_WORKBENCH_JS,
+            REMOTE_CONSOLE_JS,
+            PRODUCT_POLISH_JS,
             ROLLBACK_JS,
             ACTIONS_JS,
         )
@@ -440,7 +448,9 @@ def test_catalog_patch_ui_controls_exist_in_html() -> None:
         assert f'id="{element_id}"' in html
     assert 'data-action="catalog-enable-mcp"' in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
     assert 'data-action="catalog-disable-mcp"' in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
-    assert 'data-action="patch-rollback"' in ROLLBACK_JS.read_text(encoding="utf-8")
+    rollback_source = ROLLBACK_JS.read_text(encoding="utf-8")
+    assert "patch-rollback" in rollback_source
+    assert "control-plane-rollback" in rollback_source
 
 
 def test_catalog_patch_ui_references_patch_endpoints() -> None:
@@ -623,3 +633,105 @@ def test_readme_documents_p3_usage_and_limits() -> None:
         "Secrets must not be stored",
     ]:
         assert token in readme
+
+
+def test_control_plane_editor_modules_exist() -> None:
+    assert CONTROL_PLANE_EDITOR_JS.is_file()
+
+
+def test_control_plane_editor_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/control-plane-editor.js"' in html
+    for element_id in [
+        "control-plane-editor-controls",
+        "control-plane-skill-form",
+        "control-plane-mcp-form",
+        "control-plane-policy-form",
+        "cp-mcp-command",
+        "cp-mcp-env",
+        "control-plane-diff-preview",
+        "control-plane-validation-errors",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_control_plane_editor_references_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = CONTROL_PLANE_EDITOR_JS.read_text(encoding="utf-8")
+    rollback_js = ROLLBACK_JS.read_text(encoding="utf-8")
+    for endpoint in [
+        "/skills/{skill_id}/history",
+        "/skills/{skill_id}/rollback",
+        "/mcp/{server_id}/history",
+        "/mcp/{server_id}/rollback",
+        "/policy/{agent_id}/history",
+        "/policy/{agent_id}/rollback",
+    ]:
+        assert endpoint in api_js
+    assert "skillHistory" in editor
+    assert "control-plane-rollback" in rollback_js
+    assert "historyPath" in rollback_js
+    assert "command_preview" not in editor or "never pre-fill" in editor.lower() or "重新輸入" in editor
+
+
+def test_control_plane_mcp_edit_avoids_redacted_resubmit() -> None:
+    editor = CONTROL_PLANE_EDITOR_JS.read_text(encoding="utf-8")
+    assert "cp-mcp-command" in editor
+    assert '[REDACTED]' in editor
+    assert 'byId("cp-mcp-command").value = ""' in editor
+
+
+def test_index_html_loads_control_plane_editor_before_app_js() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    cp_pos = html.index('src="ui/control-plane-editor.js"')
+    app_pos = html.index('src="app.js"')
+    assert cp_pos < app_pos
+
+
+def test_approval_workbench_modules_exist() -> None:
+    assert APPROVAL_WORKBENCH_JS.is_file()
+
+
+def test_approval_workbench_renders_context_fields() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    workbench = APPROVAL_WORKBENCH_JS.read_text(encoding="utf-8")
+    assert 'id="approvals-workbench"' in html
+    assert 'src="ui/approval-workbench.js"' in html
+    for token in [
+        "觸發原因",
+        "來源 session",
+        "argv",
+        "cwd",
+        "政策結果",
+        "retry-approval-session",
+        "view-session-events",
+        "approval.reason",
+        "approval.argv",
+        "approval.cwd",
+    ]:
+        assert token in workbench or token in html
+
+
+def test_remote_console_modules_exist() -> None:
+    assert REMOTE_CONSOLE_JS.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/remote-console.js"' in html
+    assert 'id="remote-console"' in html
+    assert "remoteAffordances" in API_JS.read_text(encoding="utf-8")
+    assert "remote.pairing.start" in REMOTE_CONSOLE_JS.read_text(encoding="utf-8")
+
+
+def test_product_polish_modules_exist() -> None:
+    assert PRODUCT_POLISH_JS.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/product-polish.js"' in html
+    for element_id in [
+        "product-version",
+        "diagnostics-snapshot",
+        "setup-import-export-output",
+        "setup-export-btn",
+        "product-logs-download",
+    ]:
+        assert f'id="{element_id}"' in html
+    assert "diagnosticsResources" in API_JS.read_text(encoding="utf-8")
+    assert "versionInfo" in API_JS.read_text(encoding="utf-8")

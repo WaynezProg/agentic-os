@@ -1,6 +1,6 @@
 # 044 — Remote Operator Console (P25)
 
-Status: Draft
+Status: Complete
 Date: 2026-06-07
 Depends on: remote access adapter (`specs/030-remote-access-adapter.md`), remote approval loop (`specs/032-remote-approval-loop.md`), remote token lifecycle (`specs/033-remote-token-lifecycle.md`), HTTPS hardening (`specs/034-remote-https-hardening.md`)
 Blocks: —

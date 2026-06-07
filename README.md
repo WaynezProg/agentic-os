@@ -58,8 +58,13 @@ Phase positioning:
 | P20 | **complete** — registry editor backend | safe write to `agents.toml` via engine; `validate_registry` gate; `registry.reload()` on write/rollback | `POST /registry/agents`, `POST /registry/agents/{id}/disable`, `GET /registry/schema` | registry UI (P21) |
 | P21 | **complete** — registry editor UI | form-based `ui/registry-editor.js` with schema-driven `cwd_mode` dropdown and patch rollback | Agents tab registry editor; redacted diff display | MCP/skill/policy rollback UI (P23) |
 | P22 | **complete** — MCP/skill/policy rollback backend | DB-native `control_plane_history` with mutation envelope + per-entity history/rollback routes | `GET/POST /{skills,mcp,policy}/{id}/history|rollback`; redacted snapshots | catalog rollback UI (P23) |
+| P23 | **complete** — MCP/skill/policy management UI | form-based `ui/control-plane-editor.js` with history/rollback per entity | Skills/MCP tab edit + disable + history; env-name only; no live MCP connect | remote writes (P25) |
+| P24 | **complete** — approval workbench | per-request cards with argv/cwd/policy context; approve/reject/retry | `ui/approval-workbench.js`; SSE in remote mode | in-harness live tool approval |
+| P25 | **complete** — remote operator console | `GET /remote/affordances`; hide localhost-only admin in remote mode | `ui/remote-console.js`; token status without value leakage | certificate pinning |
+| P26 | **complete** — project setup import/export | portable bundle export; dry-run diff then gated import | `GET /setup/export`, `POST /setup/import`; `import_export.py` | package management |
+| P27 | **complete** — desktop product polish | diagnostics, version stub, bounded redacted logs zip | `GET /version`, `GET /setup/logs.zip`, `ui/product-polish.js` | auto-update infra |
 
-**Main (2026-06-07):** P11.5–P17 remote access + catalog/config patch UI **complete**; **P18–P22** add profile/registry safe editing and catalog rollback backend. Agents tab supports run profile and harness instance registry editors in local mode; remote mode stays read-only until P25.
+**Main (2026-06-07):** P11.5–P27 add remote access, catalog/config/profile/registry editors, control-plane UI, approval workbench, remote console, setup import/export, and desktop polish. Remote mode gates writes via affordances; local mode supports full management surfaces.
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,

@@ -1,6 +1,6 @@
 # 045 — Project Agent Setup Import / Export (P26)
 
-Status: Draft
+Status: Complete
 Date: 2026-06-07
 Depends on: profiles (`specs/025-run-project-profile.md`), catalog (`specs/012-workflow-surface-catalog.md`), skills/MCP/policy (`specs/004-skills-mcp-policy.md`), registry (`specs/039-registry-editor-backend.md`)
 Blocks: —
