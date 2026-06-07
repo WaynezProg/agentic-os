@@ -442,6 +442,28 @@ def test_catalog_patch_ui_references_patch_endpoints() -> None:
     assert "patchRollback" in rollback_js
 
 
+def test_catalog_enable_uses_operator_input_not_redacted_preview() -> None:
+    # Catalog surface command_preview / url are redacted at storage time;
+    # deriving an enable config from them would write "[REDACTED]" into the
+    # real harness config. Enable must read operator-entered form values only.
+    editor = CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert "command_preview" not in editor
+    assert "buildMcpConfigFromRegistry" not in editor
+    assert "configure-mcp-server" not in editor
+
+    for element_id in [
+        "catalog-enable-form",
+        "catalog-enable-command",
+        "catalog-enable-args",
+        "catalog-enable-url",
+        "catalog-enable-env",
+        "catalog-enable-stage",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
 def test_index_html_loads_catalog_patch_modules_before_app_js() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
     api_pos = html.index('src="api.js"')

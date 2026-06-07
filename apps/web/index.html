@@ -625,6 +625,25 @@
         </div>
         <p id="catalog-future-surfaces" class="message" hidden>Hooks / Skills / Commands 編輯器預留入口（後續 phase）。</p>
         <div id="catalog-editor-controls" class="catalog-editor" hidden>
+          <div id="catalog-enable-form" class="catalog-enable-form" hidden>
+            <p>啟用 MCP「<span id="catalog-enable-name"></span>」— 填入實際設定；secret 一律以 <code>${ENV_NAME}</code> 參照，不要貼明碼。</p>
+            <div class="row">
+              <label for="catalog-enable-command">command</label>
+              <input id="catalog-enable-command" type="text" placeholder="npx" />
+              <label for="catalog-enable-args">args（空白分隔）</label>
+              <input id="catalog-enable-args" type="text" placeholder="-y @scope/server" />
+            </div>
+            <div class="row">
+              <label for="catalog-enable-url">url（http transport，與 command 擇一）</label>
+              <input id="catalog-enable-url" type="text" placeholder="https://host/mcp" />
+              <label for="catalog-enable-env">env keys（逗號分隔 → ${KEY}）</label>
+              <input id="catalog-enable-env" type="text" placeholder="MCP_TOKEN, API_KEY" />
+            </div>
+            <div class="row">
+              <button id="catalog-enable-stage" type="button">加入變更</button>
+              <button id="catalog-enable-cancel" type="button">取消</button>
+            </div>
+          </div>
           <div class="row">
             <button id="catalog-dry-run" type="button" disabled>預覽變更</button>
             <button id="catalog-apply" type="button" disabled>套用</button>

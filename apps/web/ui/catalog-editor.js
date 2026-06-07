@@ -12,9 +12,9 @@ window.AgenticOs = window.AgenticOs || {};
   });
 
   const PATCH_SOURCE = "web-catalog-editor";
-  const mcpConfigCache = new Map();
 
   let pendingOps = null;
+  let enableTarget = null;
 
   function escapeHtml(value) {
     const text = value === null || value === undefined || value === "" ? "-" : String(value);
@@ -76,56 +76,89 @@ window.AgenticOs = window.AgenticOs || {};
     }
   }
 
-  function buildMcpConfigFromRegistry(server) {
-    const preview = asArray(server.command_preview);
-    if (server.transport === "stdio" && preview.length > 0) {
-      const config = { command: preview[0] };
-      if (preview.length > 1) {
-        config.args = preview.slice(1);
-      }
-      const envKeys = asArray(server.env_keys);
-      if (envKeys.length) {
-        config.env = Object.fromEntries(envKeys.map((key) => [key, `\${${key}}`]));
-      }
-      return config;
-    }
-    if (server.url) {
-      return { url: server.url };
-    }
-    return null;
+  function parseArgs(text) {
+    return String(text || "")
+      .trim()
+      .split(/\s+/)
+      .filter((part) => part.length > 0);
   }
 
-  async function resolveEnableConfig(serverName) {
-    if (mcpConfigCache.has(serverName)) {
-      return mcpConfigCache.get(serverName);
-    }
-    try {
-      const server = await Ao.apiFetch(Ao.buildEndpoint("mcpDetail", { server_id: serverName }));
-      const config = buildMcpConfigFromRegistry(server);
-      if (config) {
-        mcpConfigCache.set(serverName, config);
-        return config;
-      }
-    } catch {
-      // fall through
-    }
-    return { command: "echo", args: ["configure-mcp-server"] };
+  function parseEnvKeys(text) {
+    return String(text || "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter((key) => key.length > 0);
   }
 
-  function rememberMcpConfig(serverName, config) {
-    if (config && typeof config === "object") {
-      mcpConfigCache.set(serverName, config);
+  function showEnableForm(name, scope) {
+    enableTarget = { name, scope: scope || "project" };
+    byId("catalog-enable-name").textContent = name;
+    [
+      "catalog-enable-command",
+      "catalog-enable-args",
+      "catalog-enable-url",
+      "catalog-enable-env",
+    ].forEach((id) => {
+      byId(id).value = "";
+    });
+    byId("catalog-enable-form").hidden = false;
+    byId("catalog-enable-command").focus();
+    setEditorMessage(`填入「${name}」的實際設定後按「加入變更」。`);
+  }
+
+  function hideEnableForm() {
+    enableTarget = null;
+    const form = document.getElementById("catalog-enable-form");
+    if (form) {
+      form.hidden = true;
     }
   }
 
-  async function buildEnableOp(serverName, scope) {
-    const config = await resolveEnableConfig(serverName);
-    return {
+  // Enable config comes from operator-entered values only. The catalog command
+  // preview / url are redacted at storage time, so deriving config from them
+  // would write "[REDACTED]" into the real harness config. Secrets are
+  // referenced by env-var name (${KEY}), never inlined.
+  function buildEnableConfigFromForm() {
+    const url = byId("catalog-enable-url").value.trim();
+    const command = byId("catalog-enable-command").value.trim();
+    const envKeys = parseEnvKeys(byId("catalog-enable-env").value);
+    let config = null;
+    if (url) {
+      config = { url };
+    } else if (command) {
+      config = { command };
+      const args = parseArgs(byId("catalog-enable-args").value);
+      if (args.length) {
+        config.args = args;
+      }
+    } else {
+      return null;
+    }
+    if (envKeys.length) {
+      config.env = Object.fromEntries(envKeys.map((key) => [key, `\${${key}}`]));
+    }
+    return config;
+  }
+
+  function stageEnableFromForm() {
+    if (!enableTarget) {
+      return;
+    }
+    const config = buildEnableConfigFromForm();
+    if (!config) {
+      setEditorMessage("請至少填入 command 或 url。", true);
+      return;
+    }
+    const op = {
       op: "enable_mcp_server",
-      name: serverName,
-      scope: scope || "project",
+      name: enableTarget.name,
+      scope: enableTarget.scope,
       config,
     };
+    const targetName = enableTarget.name;
+    hideEnableForm();
+    setPendingOps([op]);
+    setEditorMessage(`已選擇啟用 MCP「${targetName}」，請預覽變更。`);
   }
 
   function buildDisableOp(serverName, scope) {
@@ -183,6 +216,7 @@ window.AgenticOs = window.AgenticOs || {};
 
   async function loadCatalog() {
     toggleEditorChrome();
+    hideEnableForm();
     const harness = byId("catalog-harness").value;
     const type = byId("catalog-type").value;
     const body = byId("catalog-body");
@@ -212,13 +246,12 @@ window.AgenticOs = window.AgenticOs || {};
     }
   }
 
-  async function stageEnableMcp(name, scope) {
-    const op = await buildEnableOp(name, scope);
-    setPendingOps([op]);
-    setEditorMessage(`已選擇啟用 MCP「${name}」，請預覽變更。`);
+  function stageEnableMcp(name, scope) {
+    showEnableForm(name, scope);
   }
 
   function stageDisableMcp(name, scope) {
+    hideEnableForm();
     setPendingOps([buildDisableOp(name, scope)]);
     setEditorMessage(`已選擇停用 MCP「${name}」，請預覽變更。`);
   }
@@ -280,6 +313,13 @@ window.AgenticOs = window.AgenticOs || {};
     byId("catalog-apply").addEventListener("click", () => {
       applyPatch();
     });
+    byId("catalog-enable-stage").addEventListener("click", () => {
+      stageEnableFromForm();
+    });
+    byId("catalog-enable-cancel").addEventListener("click", () => {
+      hideEnableForm();
+      setEditorMessage("已取消啟用。");
+    });
   }
 
   function init() {
@@ -293,7 +333,6 @@ window.AgenticOs = window.AgenticOs || {};
     loadCatalog,
     stageEnableMcp,
     stageDisableMcp,
-    rememberMcpConfig,
     isWritable,
   };
 })(window.AgenticOs);
