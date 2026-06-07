@@ -3,17 +3,17 @@
 window.AgenticOs = window.AgenticOs || {};
 
 (function initActions(Ao) {
-  const CATALOG_ACTIONS = new Set([
+  const DELEGATED_ACTIONS = new Set([
     "catalog-enable-mcp",
     "catalog-disable-mcp",
     "patch-rollback",
   ]);
 
-  function isCatalogAction(action) {
-    return CATALOG_ACTIONS.has(action);
+  function isDelegatedAction(action) {
+    return DELEGATED_ACTIONS.has(action);
   }
 
-  async function dispatchCatalogAction(action, button) {
+  async function dispatchDelegatedAction(action, button) {
     if (action === "catalog-enable-mcp") {
       const name = button.dataset.mcpName;
       const scope = button.dataset.mcpScope || "project";
@@ -28,8 +28,12 @@ window.AgenticOs = window.AgenticOs || {};
     }
     if (action === "patch-rollback") {
       const patchId = button.dataset.patchId;
-      const harness = document.getElementById("catalog-harness")?.value;
       await Ao.PatchRollback.rollbackPatch(patchId, "web-patch-rollback");
+      if (button.closest("#config-patch-history")) {
+        await Ao.HarnessConfigEditor.reloadAfterRollback();
+        return;
+      }
+      const harness = document.getElementById("catalog-harness")?.value;
       if (Ao.CatalogEditor?.loadCatalog) {
         await Ao.CatalogEditor.loadCatalog();
       } else if (harness) {
@@ -41,6 +45,8 @@ window.AgenticOs = window.AgenticOs || {};
     }
   }
 
-  Ao.dispatchCatalogAction = dispatchCatalogAction;
-  Ao.isCatalogAction = isCatalogAction;
+  Ao.dispatchDelegatedAction = dispatchDelegatedAction;
+  Ao.isDelegatedAction = isDelegatedAction;
+  Ao.dispatchCatalogAction = dispatchDelegatedAction;
+  Ao.isCatalogAction = isDelegatedAction;
 })(window.AgenticOs);
