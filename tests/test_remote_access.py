@@ -134,16 +134,6 @@ def _require_localhost_operator_route_examples() -> list[tuple[str, str]]:
     ]
 
 
-def _example_path(template: str) -> str:
-    parts: list[str] = []
-    for seg in template.split("/"):
-        if seg.startswith("{") and seg.endswith("}"):
-            parts.append("sample/nested" if seg[1:-1].endswith(":path") else "sample")
-        else:
-            parts.append(seg)
-    return "/".join(parts)
-
-
 def test_localhost_only_affordances_match_guards(tmp_path: Path) -> None:
     spec_ids = {spec.id for spec in LOCALHOST_ONLY_ACTION_SPECS}
     assert spec_ids == LOCALHOST_ONLY_ACTIONS
@@ -163,16 +153,8 @@ def test_localhost_only_affordances_match_guards(tmp_path: Path) -> None:
     assert localhost_only_route_action_id("POST", "/remote/pairing/complete") is None
     assert not is_remote_admin_route("POST", "/remote/pairing/complete")
 
-    # Enforcement is structural: the remote gateway middleware rejects every
-    # registered localhost-only action for a gateway (non-localhost) client.
-    # Asserting the behaviour for every spec is stronger than counting guard
-    # call sites and cannot silently regress when a new action is added.
-    enforcement_client = make_client(tmp_path)
-    for spec in LOCALHOST_ONLY_ACTION_SPECS:
-        path = _example_path(spec.path_template)
-        rejected = enforcement_client.request(spec.method, path, headers=GATEWAY_HEADERS, json={})
-        assert rejected.status_code == 403, f"{spec.id} ({spec.method} {path}) not enforced for gateway client"
-
+    # Behavioural enforcement (every spec rejects a gateway client) is asserted
+    # spec-by-spec in tests/test_remote_admin_routes.py.
     client = make_client(tmp_path)
     response = client.get("/remote/affordances")
     assert response.status_code == 200

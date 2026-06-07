@@ -704,6 +704,25 @@ def test_api_allows_delete_cors_preflight(tmp_path: Path) -> None:
     assert "DELETE" in allowed_methods
 
 
+def test_api_allows_put_cors_preflight(tmp_path: Path) -> None:
+    # Workspace selection and run-template updates issue PUT from the web UI
+    # (5173 -> 8767); the preflight must advertise PUT or those calls are blocked.
+    client = make_client(tmp_path)
+
+    response = client.options(
+        "/workspaces/active",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "PUT",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    allowed_methods = response.headers.get("access-control-allow-methods", "")
+    assert "PUT" in allowed_methods
+
+
 def test_fleet_health_empty(tmp_app) -> None:
     client = TestClient(tmp_app)
     response = client.get("/fleet/health")

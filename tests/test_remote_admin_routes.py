@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from agentic_os.remote_affordances import LOCALHOST_ONLY_ACTION_SPECS, LocalhostOnlyAction
 from test_api import make_client
 
 # Simulates a request arriving through the remote gateway (i.e. not a direct
@@ -11,48 +12,35 @@ from test_api import make_client
 # with 403 regardless of bearer token — UI hiding is never the boundary (§2A).
 GATEWAY_HEADERS = {"X-Agentic-OS-Gateway": "1"}
 
-# (method, path) for representative write surfaces that the UI marks
-# localhost-only. Bodies are irrelevant: the gateway middleware rejects before
-# the route handler runs.
-LOCALHOST_ONLY_WRITE_ROUTES: list[tuple[str, str]] = [
-    ("POST", "/profiles"),
-    ("DELETE", "/profiles/sample"),
-    ("POST", "/projects/repo/bind-profile"),
-    ("POST", "/skills/sample"),
-    ("POST", "/skills/sample/rollback"),
-    ("POST", "/skills/sample/disable"),
-    ("POST", "/skills/sample/deprecate"),
-    ("POST", "/skills/sample/undeprecate"),
-    ("POST", "/mcp/sample"),
-    ("POST", "/mcp/sample/rollback"),
-    ("POST", "/mcp/sample/disable"),
-    ("POST", "/mcp/sample/deprecate"),
-    ("POST", "/mcp/sample/undeprecate"),
-    ("POST", "/policy/sample"),
-    ("POST", "/policy/sample/rollback"),
-    ("POST", "/policy/sample/deprecate"),
-    ("POST", "/policy/sample/undeprecate"),
-    ("POST", "/policy/evaluate"),
-    ("POST", "/catalog/sample/surfaces/patch"),
-    ("POST", "/patches/sample/rollback"),
-    ("POST", "/registry/agents"),
-    ("POST", "/registry/agents/sample/disable"),
-    ("POST", "/config/sample/patch"),
-    ("POST", "/harness-config/sample/patch"),
-    ("POST", "/setup/import"),
-    ("GET", "/setup/logs.zip"),
-]
+
+def _example_path(template: str) -> str:
+    """Materialise a concrete request path from a route template.
+
+    `{name}` -> one segment, `{name:path}` -> a multi-segment value, so the
+    gateway middleware's path matching is exercised exactly as in production.
+    """
+    parts: list[str] = []
+    for seg in template.split("/"):
+        if seg.startswith("{") and seg.endswith("}"):
+            parts.append("sample/nested" if seg[1:-1].endswith(":path") else "sample")
+        else:
+            parts.append(seg)
+    return "/".join(parts)
 
 
-@pytest.mark.parametrize("method,path", LOCALHOST_ONLY_WRITE_ROUTES)
-def test_localhost_only_write_route_rejects_gateway_client(
-    tmp_path: Path, method: str, path: str
+# Drive coverage off the registry itself: adding a spec automatically adds a
+# test case, so a new localhost-only route can never ship unguarded.
+@pytest.mark.parametrize("spec", LOCALHOST_ONLY_ACTION_SPECS, ids=lambda spec: spec.id)
+def test_localhost_only_route_rejects_gateway_client(
+    tmp_path: Path, spec: LocalhostOnlyAction
 ) -> None:
     client = make_client(tmp_path)
-    response = client.request(method, path, headers=GATEWAY_HEADERS, json={})
+    path = _example_path(spec.path_template)
+    # Bodies are irrelevant: the gateway middleware rejects before the handler.
+    response = client.request(spec.method, path, headers=GATEWAY_HEADERS, json={})
     assert response.status_code == 403, (
-        f"{method} {path} reachable via gateway (got {response.status_code}); "
-        "remote write boundary must be server-side"
+        f"{spec.id} ({spec.method} {path}) reachable via gateway "
+        f"(got {response.status_code}); remote write boundary must be server-side"
     )
 
 
@@ -63,7 +51,7 @@ def test_localhost_only_write_route_rejects_gateway_client(
         ("POST", "/profiles"),
     ],
 )
-def test_localhost_only_write_route_allows_direct_localhost(
+def test_localhost_only_route_allows_direct_localhost(
     tmp_path: Path, method: str, path: str
 ) -> None:
     # Same routes, without the gateway header, are NOT blanket-blocked: a direct
