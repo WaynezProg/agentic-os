@@ -732,6 +732,7 @@ def test_product_polish_modules_exist() -> None:
         "setup-import-result-output",
         "setup-export-btn",
         "product-logs-download",
+        "product-repair-config",
     ]:
         assert f'id="{element_id}"' in html
     assert "diagnosticsResources" in API_JS.read_text(encoding="utf-8")
@@ -739,4 +740,5 @@ def test_product_polish_modules_exist() -> None:
     polish = PRODUCT_POLISH_JS.read_text(encoding="utf-8")
     assert "setup-bundle-input" in polish
     assert "setup-import-result-output" in polish
+    assert "product-repair-config" in polish
     assert "connection_api_fetch" not in polish or "遠端模式不支援日誌" in polish

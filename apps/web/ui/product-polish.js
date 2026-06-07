@@ -3,14 +3,19 @@
 window.AgenticOs = window.AgenticOs || {};
 
 (function initProductPolish(Ao) {
+  let eventsBound = false;
+
   function byId(id) {
     return document.getElementById(id);
   }
 
   function toggleLocalOnlyActions() {
-    const logsBtn = byId("product-logs-download");
-    if (logsBtn) {
-      logsBtn.hidden = !Ao.isLocalWritable();
+    const writable = Ao.isLocalWritable();
+    for (const elementId of ["product-logs-download", "product-repair-config"]) {
+      const element = byId(elementId);
+      if (element) {
+        element.hidden = !writable;
+      }
     }
   }
 
@@ -125,7 +130,25 @@ window.AgenticOs = window.AgenticOs || {};
     return result;
   }
 
+  function openRepairConfig() {
+    if (!Ao.isLocalWritable()) {
+      return;
+    }
+    if (Ao.showTab) {
+      Ao.showTab("harnesses");
+    }
+    const controls = byId("config-editor-controls");
+    if (controls) {
+      controls.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    Ao.HarnessConfigEditor?.loadEffective?.();
+  }
+
   function bindEvents() {
+    if (eventsBound) {
+      return;
+    }
+    eventsBound = true;
     byId("product-diagnostics-refresh")?.addEventListener("click", loadDiagnostics);
     byId("product-update-check")?.addEventListener("click", checkUpdates);
     byId("product-logs-download")?.addEventListener("click", () => {
@@ -133,6 +156,7 @@ window.AgenticOs = window.AgenticOs || {};
         byId("product-update-result").textContent = error.message;
       });
     });
+    byId("product-repair-config")?.addEventListener("click", openRepairConfig);
     byId("setup-export-btn")?.addEventListener("click", () => {
       exportSetup().catch((error) => {
         writeImportError(error.message);

@@ -50,6 +50,7 @@ async function initDesktopConnection() {
       byId("api-url").readOnly = true;
       byId("api-url").title = "Remote gateway (Bearer via desktop Keychain)";
     }
+    Ao.ProductPolish?.toggleLocalOnlyActions?.();
   } catch (error) {
     console.warn("desktop connection profile unavailable", error);
   }
@@ -120,6 +121,8 @@ function showTab(tabName, options = {}) {
     loadActiveTab();
   }
 }
+
+Ao.showTab = showTab;
 
 function loadActiveTab() {
   if (state.activeTab === "agents") {
