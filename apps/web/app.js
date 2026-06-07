@@ -1304,6 +1304,10 @@ async function loadOverview() {
   } catch {
     byId("overview-approvals-body").textContent = t("overviewError");
   }
+
+  if (Ao.ProductPolish?.init) {
+    await Ao.ProductPolish.init();
+  }
 }
 
 function healthPillClass(state) {

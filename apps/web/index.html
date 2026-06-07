@@ -20,6 +20,8 @@
     <script src="ui/registry-editor.js"></script>
     <script src="ui/control-plane-editor.js"></script>
     <script src="ui/approval-workbench.js"></script>
+    <script src="ui/remote-console.js"></script>
+    <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -1040,6 +1042,45 @@
           <div id="overview-approvals" class="card stat-card">
             <h3>待核准</h3>
             <div id="overview-approvals-body" class="card-body">載入中…</div>
+          </div>
+          <div id="remote-console" class="card stat-card">
+            <h3>遠端操作台</h3>
+            <div class="card-body">
+              <p>模式：<span id="remote-console-mode">-</span></p>
+              <p id="remote-console-health" class="message">載入中…</p>
+              <div id="remote-console-token">token 狀態載入中…</div>
+              <div class="actions">
+                <button type="button" id="remote-console-refresh">重新整理</button>
+                <button type="button" data-localhost-action="remote.pairing.start" id="remote-pairing-start" hidden>配對（本機）</button>
+                <button type="button" data-localhost-action="remote.devices.rotate" id="remote-token-rotate" hidden>輪替 token（本機）</button>
+              </div>
+            </div>
+          </div>
+          <div id="setup-import-export" class="card stat-card">
+            <h3>專案設定匯出/匯入</h3>
+            <div class="card-body">
+              <label for="setup-cwd">專案 cwd</label>
+              <input id="setup-cwd" type="text" placeholder="/path/to/project" />
+              <div class="actions">
+                <button type="button" id="setup-export-btn">匯出 bundle</button>
+                <button type="button" id="setup-import-dry-run">匯入預覽</button>
+                <button type="button" id="setup-import-apply">匯入套用</button>
+              </div>
+              <pre id="setup-import-export-output" class="log-preview">匯出或匯入結果顯示於此。</pre>
+            </div>
+          </div>
+          <div id="desktop-polish" class="card stat-card">
+            <h3>產品資訊</h3>
+            <div class="card-body">
+              <p id="product-version">版本載入中…</p>
+              <p id="diagnostics-snapshot">診斷載入中…</p>
+              <div class="actions">
+                <button type="button" id="product-update-check">檢查更新（stub）</button>
+                <button type="button" id="product-logs-download">下載日誌 zip</button>
+                <button type="button" id="product-diagnostics-refresh">重新整理診斷</button>
+              </div>
+              <p id="product-update-result" class="message"></p>
+            </div>
           </div>
         </div>
       </section>

@@ -16,6 +16,8 @@ PROFILE_EDITOR_JS = WEB_DIR / "ui" / "profile-editor.js"
 REGISTRY_EDITOR_JS = WEB_DIR / "ui" / "registry-editor.js"
 CONTROL_PLANE_EDITOR_JS = WEB_DIR / "ui" / "control-plane-editor.js"
 APPROVAL_WORKBENCH_JS = WEB_DIR / "ui" / "approval-workbench.js"
+REMOTE_CONSOLE_JS = WEB_DIR / "ui" / "remote-console.js"
+PRODUCT_POLISH_JS = WEB_DIR / "ui" / "product-polish.js"
 ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
 ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
 
@@ -32,6 +34,8 @@ def _web_javascript_sources() -> str:
             REGISTRY_EDITOR_JS,
             CONTROL_PLANE_EDITOR_JS,
             APPROVAL_WORKBENCH_JS,
+            REMOTE_CONSOLE_JS,
+            PRODUCT_POLISH_JS,
             ROLLBACK_JS,
             ACTIONS_JS,
         )
@@ -706,3 +710,28 @@ def test_approval_workbench_renders_context_fields() -> None:
         "approval.cwd",
     ]:
         assert token in workbench or token in html
+
+
+def test_remote_console_modules_exist() -> None:
+    assert REMOTE_CONSOLE_JS.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/remote-console.js"' in html
+    assert 'id="remote-console"' in html
+    assert "remoteAffordances" in API_JS.read_text(encoding="utf-8")
+    assert "remote.pairing.start" in REMOTE_CONSOLE_JS.read_text(encoding="utf-8")
+
+
+def test_product_polish_modules_exist() -> None:
+    assert PRODUCT_POLISH_JS.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/product-polish.js"' in html
+    for element_id in [
+        "product-version",
+        "diagnostics-snapshot",
+        "setup-import-export-output",
+        "setup-export-btn",
+        "product-logs-download",
+    ]:
+        assert f'id="{element_id}"' in html
+    assert "diagnosticsResources" in API_JS.read_text(encoding="utf-8")
+    assert "versionInfo" in API_JS.read_text(encoding="utf-8")

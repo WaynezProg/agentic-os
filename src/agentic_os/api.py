@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+import io
 import sqlite3
 import subprocess
 import time
+import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -12,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agentic_os.approvals import ApprovalCreate, ApprovalRecord, ApprovalStatus, ApprovalStore
@@ -25,6 +27,7 @@ from agentic_os.control_plane import (
     PolicyUpsert,
     SkillUpsert,
     SunsetChange,
+    _redact_value,
 )
 from agentic_os.control_plane_history import (
     ControlPlaneMutationResult,
@@ -41,6 +44,12 @@ from agentic_os.catalog import (
     resolve_standalone_surface_path,
     resolve_surface_write_target,
     scan as catalog_scan,
+)
+from agentic_os.import_export import (
+    ImportExportContext,
+    MissingEnvVarsError,
+    export_setup,
+    import_setup,
 )
 from agentic_os.harness_config import (
     HARNESS_CONFIG_SCOPES,
@@ -2599,6 +2608,78 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         if approval_id is not None:
             content["approval_id"] = approval_id
         return JSONResponse(status_code=status_code, content=content)
+
+    def _import_export_context() -> ImportExportContext:
+        return ImportExportContext(
+            control_plane=control_plane,
+            registry=registry,
+            registry_path=registry_path,
+            safe_edit_engine=safe_edit_engine,
+            audit_store=audit_store,
+        )
+
+    @app.get("/version")
+    def version_info() -> dict[str, object]:
+        return {
+            "version": "0.1.0",
+            "update_available": False,
+            "update_check": "stub",
+        }
+
+    @app.get("/setup/logs.zip")
+    def setup_logs_zip(limit: int = Query(default=5000, ge=1, le=5000)) -> StreamingResponse:
+        buffer = io.BytesIO()
+        sessions = store.list_sessions()[:25]
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for session in sessions:
+                stdout_path = Path(session.stdout_log)
+                stderr_path = Path(session.stderr_log)
+                if not stdout_path.exists() and not stderr_path.exists():
+                    continue
+                result = logs.read_merged(stdout_path, stderr_path, max_lines=limit)
+                redacted_lines = [
+                    f"{entry.ts}\t{entry.stream}\t{_redact_value(entry.line)}"
+                    for entry in result.entries
+                ]
+                archive.writestr(
+                    f"{session.id}/merged.log",
+                    "\n".join(redacted_lines),
+                )
+        buffer.seek(0)
+        return StreamingResponse(
+            buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="agentic-os-logs.zip"'},
+        )
+
+    @app.get("/setup/export")
+    def setup_export(cwd: str | None = Query(default=None)) -> dict[str, object]:
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        return export_setup(_import_export_context(), cwd_path)
+
+    @app.post("/setup/import")
+    def setup_import(
+        bundle: dict[str, object],
+        cwd: str | None = Query(default=None),
+        dry_run: bool = Query(default=True),
+    ) -> dict[str, object]:
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        try:
+            return import_setup(
+                _import_export_context(),
+                cwd_path,
+                bundle,
+                dry_run=dry_run,
+            )
+        except MissingEnvVarsError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": "missing_env_vars",
+                    "missing": exc.names,
+                    "message": str(exc),
+                },
+            ) from exc
 
     register_remote_routes(app, remote=remote_access, audit_store=audit_store)
 

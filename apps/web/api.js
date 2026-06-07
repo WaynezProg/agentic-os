@@ -73,6 +73,13 @@ window.AgenticOs = window.AgenticOs || {};
     registryAgentDisable: "/registry/agents/{id}/disable",
     registrySchema: "/registry/schema",
     approvalsFiltered: "/approvals",
+    remoteAffordances: "/remote/affordances",
+    remoteDevices: "/remote/devices",
+    setupExport: "/setup/export",
+    setupImport: "/setup/import",
+    diagnosticsResources: "/diagnostics/resources",
+    setupLogsZip: "/setup/logs.zip",
+    versionInfo: "/version",
   });
 
   let connectionProfile = null;
