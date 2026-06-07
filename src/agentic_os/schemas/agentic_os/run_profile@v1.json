@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "run_profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["harness_id", "provider", "model"],
+        "properties": {
+          "harness_id": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "default_env": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "message_prefix": { "type": "string" },
+          "max_tokens_budget": { "type": "integer" },
+          "notes": { "type": "string" },
+          "cwd_root": { "type": "string" },
+          "cwd_prefix": { "type": "string" },
+          "repo_glob": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "project_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["project_path", "run_profile"],
+        "properties": {
+          "project_path": { "type": "string", "minLength": 1 },
+          "run_profile": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -73,6 +73,7 @@ class SafeEditEngine:
         source: str,
         dry_run: bool = False,
         base_mtime: float | None = None,
+        extra_validator: Callable[[dict[str, Any]], list[str]] | None = None,
     ) -> PatchResult:
         patch_id = f"p_{uuid.uuid4().hex}"
         before = self._load_document(target)
@@ -82,6 +83,8 @@ class SafeEditEngine:
                 raise PermissionError(msg)
         after = PatchEngine.apply(before, ops)
         errors = self.schema_registry.validate_document(target.harness_id, target.kind, after)
+        if extra_validator is not None:
+            errors = [*errors, *extra_validator(after)]
         validation = {"ok": not errors, "errors": errors}
         diff = PatchEngine.diff(before, after)
         file_path = target.file_path

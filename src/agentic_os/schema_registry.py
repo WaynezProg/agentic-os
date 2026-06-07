@@ -39,6 +39,8 @@ _PATH_WHITELIST: dict[tuple[str, str], tuple[str, ...]] = {
     ("hermes", "mcp_server"): ("mcp_servers",),
     ("hermes", "harness_config"): _TOML_HARNESS_CONFIG_PREFIXES,
     ("agentic_os", "config"): ("harness", "daemon", "fleet"),
+    ("agentic_os", "run_profile"): ("run_profiles", "project_profiles"),
+    ("agentic_os", "registry"): ("agents",),
 }
 
 

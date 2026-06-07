@@ -384,29 +384,128 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"unknown profile: {name}")
         return profile.model_dump()
 
+    def _apply_profile_patch(
+        target: PatchTarget,
+        ops: list[PatchOp],
+        *,
+        source: str,
+        dry_run: bool = False,
+        base_mtime: float | None = None,
+    ) -> PatchResult:
+        try:
+            return safe_edit_engine.apply(
+                target,
+                ops,
+                source=source,
+                dry_run=dry_run,
+                base_mtime=base_mtime,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
+
     @app.post("/profiles", status_code=201)
     def upsert_profile(
         profile: profiles_module.RunProfileInput,
         scope: str = Query(default="local"),
         cwd: str | None = Query(default=None),
+        dry_run: bool = Query(default=False),
+        source: str = Query(default="api"),
+        base_mtime: float | None = Query(default=None),
     ) -> dict[str, object]:
         if scope not in {"local", "global"}:
             raise HTTPException(
                 status_code=400,
                 detail={"message": f"unsupported scope: {scope}", "supported": ["local", "global"]},
             )
-        resolved_cwd = str(Path(cwd).resolve()) if cwd else str(Path.cwd())
-        saved = profiles_module.upsert_run_profile(
-            profile,
-            scope=scope,
-            cwd=None if scope == "global" else resolved_cwd,
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        target = profiles_module.profile_patch_target(scope, cwd_path)
+        ops = profiles_module.upsert_profile_ops(profile)
+        result = _apply_profile_patch(
+            target,
+            ops,
+            source=source,
+            dry_run=dry_run,
+            base_mtime=base_mtime,
         )
-        return saved.model_dump()
+        if dry_run:
+            return _patch_result_dict(result)
+        return profile.model_dump()
+
+    @app.delete("/profiles/{name}")
+    def delete_profile(
+        name: str,
+        scope: str = Query(default="local"),
+        cwd: str | None = Query(default=None),
+        cascade: bool = Query(default=False),
+        dry_run: bool = Query(default=False),
+        source: str = Query(default="api"),
+        base_mtime: float | None = Query(default=None),
+    ) -> dict[str, object]:
+        if scope not in {"local", "global"}:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": f"unsupported scope: {scope}", "supported": ["local", "global"]},
+            )
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        profile_path = profiles_module.profile_file_path(scope, cwd_path)
+        bundle = profiles_module._read_bundle(profile_path)
+        if name not in bundle.run_profiles:
+            raise HTTPException(status_code=404, detail=f"unknown profile: {name}")
+        bound = profiles_module.bound_projects_for_profile(bundle, name)
+        if bound and not cascade:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "bound", "projects": bound},
+            )
+        target = profiles_module.profile_patch_target(scope, cwd_path)
+        ops = profiles_module.delete_profile_ops(name, bundle, cascade=cascade)
+        result = _apply_profile_patch(
+            target,
+            ops,
+            source=source,
+            dry_run=dry_run,
+            base_mtime=base_mtime,
+        )
+        return _patch_result_dict(result)
+
+    @app.get("/profiles/{name}/diff")
+    def profile_diff(
+        name: str,
+        scope: str = Query(default="local"),
+        other_scope: str = Query(default="global"),
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        if scope not in {"local", "global"} or other_scope not in {"local", "global"}:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "unsupported scope", "supported": ["local", "global"]},
+            )
+        cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
+        return profiles_module.profile_scope_diff(
+            scope,
+            other_scope,
+            cwd_path,
+            name=name,
+        )
 
     @app.post("/projects/{project_path:path}/bind-profile")
     def bind_project_profile(
         project_path: str,
         request: ProjectProfileBindRequest,
+        dry_run: bool = Query(default=False),
+        source: str = Query(default="api"),
+        base_mtime: float | None = Query(default=None),
     ) -> dict[str, object]:
         resolved_project = str(Path(unquote(project_path)).resolve())
         if profiles_module.show_profile(request.run_profile, resolved_project) is None:
@@ -417,9 +516,20 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                     "available": sorted(profiles_module.list_profiles(resolved_project)),
                 },
             )
-        profiles_module.bind_project_profile(
-            resolved_project, request.run_profile, resolved_project
+        cwd_path = Path(resolved_project)
+        local_path = profiles_module.local_profile_path(cwd_path)
+        bundle = profiles_module._read_bundle(local_path)
+        target = profiles_module.profile_patch_target("local", cwd_path)
+        ops = profiles_module.bind_project_profile_ops(bundle, resolved_project, request.run_profile)
+        result = _apply_profile_patch(
+            target,
+            ops,
+            source=source,
+            dry_run=dry_run,
+            base_mtime=base_mtime,
         )
+        if dry_run:
+            return _patch_result_dict(result)
         return {
             "project_path": resolved_project,
             "run_profile": request.run_profile,
