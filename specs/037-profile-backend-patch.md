@@ -1,6 +1,6 @@
 # 037 — Run Profile Backend: Delete / Diff / Rollback (P18)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: run/project profile (`specs/025-run-project-profile.md`), safe-edit engine (`specs/027-safe-native-config-editing.md`)
 Blocks: P19 (`specs/038-profile-provider-ui.md`)

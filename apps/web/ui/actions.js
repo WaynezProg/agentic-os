@@ -33,6 +33,14 @@ window.AgenticOs = window.AgenticOs || {};
         await Ao.HarnessConfigEditor.reloadAfterRollback();
         return;
       }
+      if (button.closest("#profile-patch-history")) {
+        await Ao.ProfileEditor.reloadAfterRollback();
+        return;
+      }
+      if (button.closest("#registry-patch-history")) {
+        await Ao.RegistryEditor.reloadAfterRollback();
+        return;
+      }
       const harness = document.getElementById("catalog-harness")?.value;
       if (Ao.CatalogEditor?.loadCatalog) {
         await Ao.CatalogEditor.loadCatalog();

@@ -71,6 +71,8 @@ def test_stale_project_binding_raises_unknown_profile(tmp_path: Path) -> None:
 
 
 def test_upsert_run_profile_local_and_global(tmp_path: Path, monkeypatch) -> None:
+    from test_api import make_client
+
     global_root = tmp_path / "global-home"
     monkeypatch.setattr(
         profiles, "global_profile_path", lambda: global_root / ".agentic-os" / "profiles.toml"
@@ -78,31 +80,41 @@ def test_upsert_run_profile_local_and_global(tmp_path: Path, monkeypatch) -> Non
 
     local_repo = tmp_path / "repo"
     local_repo.mkdir()
-    profile = profiles.RunProfileInput(
-        name="dev",
-        harness_id="cursor",
-        provider="cursor",
-        model="default",
-        max_tokens_budget=1000,
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(local_repo)},
+        json={
+            "name": "dev",
+            "harness_id": "cursor",
+            "provider": "cursor",
+            "model": "default",
+            "max_tokens_budget": 1000,
+        },
     )
-    profiles.upsert_run_profile(profile, scope="local", cwd=local_repo)
+    assert response.status_code == 201
     loaded = profiles.show_profile("dev", cwd=local_repo)
     assert loaded is not None
     assert loaded.harness_id == "cursor"
 
-    profiles.upsert_run_profile(
-        profiles.RunProfileInput(
-            name="global-default",
-            harness_id="shell",
-            provider="local",
-            model="local",
-        ),
-        scope="global",
+    global_resp = client.post(
+        "/profiles",
+        params={"scope": "global"},
+        json={
+            "name": "global-default",
+            "harness_id": "shell",
+            "provider": "local",
+            "model": "local",
+        },
     )
+    assert global_resp.status_code == 201
     assert profiles.show_profile("global-default", cwd=local_repo) is not None
 
 
 def test_bind_project_profile_preserves_local_profiles(tmp_path: Path) -> None:
+    from test_api import make_client
+
     cwd = tmp_path / "repo"
     cwd.mkdir()
     profile_path = cwd / ".agentic-os" / "profiles.toml"
@@ -119,7 +131,12 @@ default_env = {}
         encoding="utf-8",
     )
 
-    profiles.bind_project_profile(str(cwd), "default", cwd)
+    client = make_client(tmp_path)
+    response = client.post(
+        f"/projects/{cwd}/bind-profile",
+        json={"run_profile": "default"},
+    )
+    assert response.status_code == 200
 
     bundle = profiles._read_bundle(profile_path)
     assert "default" in bundle.run_profiles

@@ -1,6 +1,6 @@
 # 041 — MCP / Skill / Policy Rollback Backend (P22)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: skills/MCP/policy catalog (`specs/004-skills-mcp-policy.md`), deprecation lifecycle (`specs/011-deprecation-lifecycle.md`)
 Blocks: P23 (`specs/042-mcp-skill-policy-ui.md`)

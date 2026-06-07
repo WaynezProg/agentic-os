@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from agentic_os.patch_engine import PatchEngine, PatchOp
+from agentic_os.safe_edit import PatchTarget
+from agentic_os.toml_io import load_toml
+
+PROFILE_HARNESS_ID = "agentic_os"
+PROFILE_KIND = "run_profile"
 
 
 class RunProfileInput(BaseModel):
@@ -82,38 +88,127 @@ def show_profile(name: str, cwd: str | Path | None) -> RunProfileInput | None:
     return list_profiles(cwd).get(name)
 
 
-def upsert_run_profile(
-    profile: RunProfileInput,
-    *,
-    scope: str = "local",
-    cwd: str | Path | None = None,
-) -> RunProfileInput:
+def profile_file_path(scope: str, cwd: str | Path | None) -> Path:
     if scope not in {"local", "global"}:
         raise ValueError(f"unsupported profile scope: {scope}")
+    return global_profile_path() if scope == "global" else local_profile_path(cwd)
 
-    profile_path = global_profile_path() if scope == "global" else local_profile_path(cwd)
-    bundle = _read_bundle(profile_path)
-    run_profiles = dict(bundle.run_profiles)
-    run_profiles[profile.name] = profile
-    _write_bundle(
-        profile_path,
-        ProfileFileBundle(run_profiles=run_profiles, project_bindings=bundle.project_bindings),
+
+def profile_patch_target(scope: str, cwd: Path) -> PatchTarget:
+    file_path = profile_file_path(scope, cwd)
+    return PatchTarget(
+        harness_id=PROFILE_HARNESS_ID,
+        cwd=cwd,
+        scope=scope,
+        target_kind=PROFILE_KIND,
+        kind=PROFILE_KIND,
+        file_path=file_path,
+        file_format="toml",
     )
-    return profile
 
 
-def bind_project_profile(
+def profile_to_document_value(profile: RunProfileInput) -> dict[str, Any]:
+    payload = profile.model_dump(exclude={"name"})
+    result: dict[str, Any] = {
+        "harness_id": payload["harness_id"],
+        "provider": payload["provider"],
+        "model": payload["model"],
+    }
+    if payload.get("default_env"):
+        result["default_env"] = payload["default_env"]
+    if payload.get("message_prefix"):
+        result["message_prefix"] = payload["message_prefix"]
+    if payload.get("max_tokens_budget") is not None:
+        result["max_tokens_budget"] = payload["max_tokens_budget"]
+    if payload.get("notes"):
+        result["notes"] = payload["notes"]
+    if payload.get("cwd_root"):
+        result["cwd_root"] = payload["cwd_root"]
+    if payload.get("cwd_prefix"):
+        result["cwd_prefix"] = payload["cwd_prefix"]
+    if payload.get("repo_glob"):
+        result["repo_glob"] = payload["repo_glob"]
+    return result
+
+
+def project_profiles_document(bindings: list[tuple[str, str]]) -> list[dict[str, str]]:
+    return [{"project_path": project_path, "run_profile": profile_name} for project_path, profile_name in bindings]
+
+
+def upsert_profile_ops(profile: RunProfileInput) -> list[PatchOp]:
+    return [
+        PatchOp(
+            op="merge",
+            path="run_profiles",
+            value={profile.name: profile_to_document_value(profile)},
+        )
+    ]
+
+
+def bind_project_profile_ops(
+    bundle: ProfileFileBundle,
     project_path: str,
     run_profile: str,
-    cwd: str | Path | None,
-) -> None:
+) -> list[PatchOp]:
     resolved_project = str(Path(project_path).resolve())
-    local_path = local_profile_path(cwd)
-    bundle = _read_bundle(local_path)
     filtered = [entry for entry in bundle.project_bindings if entry[0] != resolved_project]
     filtered.append((resolved_project, run_profile))
-    updated = ProfileFileBundle(run_profiles=bundle.run_profiles, project_bindings=filtered)
-    _write_bundle(local_path, updated)
+    return [
+        PatchOp(op="remove", path="project_profiles"),
+        PatchOp(op="merge", path="project_profiles", value=project_profiles_document(filtered)),
+    ]
+
+
+def delete_profile_ops(
+    name: str,
+    bundle: ProfileFileBundle,
+    *,
+    cascade: bool,
+) -> list[PatchOp]:
+    ops: list[PatchOp] = [PatchOp(op="remove", path=f"run_profiles.{name}")]
+    if cascade:
+        filtered = [entry for entry in bundle.project_bindings if entry[1] != name]
+        ops.extend(
+            [
+                PatchOp(op="remove", path="project_profiles"),
+                PatchOp(
+                    op="merge",
+                    path="project_profiles",
+                    value=project_profiles_document(filtered),
+                ),
+            ]
+        )
+    return ops
+
+
+def bound_projects_for_profile(bundle: ProfileFileBundle, name: str) -> list[str]:
+    return [project_path for project_path, profile_name in bundle.project_bindings if profile_name == name]
+
+
+def profile_scope_diff(
+    scope: str,
+    other_scope: str,
+    cwd: Path,
+    *,
+    name: str | None = None,
+) -> dict[str, Any]:
+    doc_a = load_toml(profile_file_path(scope, cwd))
+    doc_b = load_toml(profile_file_path(other_scope, cwd))
+    if name is not None:
+        before = doc_a.get("run_profiles", {}).get(name)
+        after = doc_b.get("run_profiles", {}).get(name)
+        return {
+            "scope": scope,
+            "other_scope": other_scope,
+            "name": name,
+            "before": before,
+            "after": after,
+        }
+    return {
+        "scope": scope,
+        "other_scope": other_scope,
+        "diff": PatchEngine.diff(doc_a, doc_b),
+    }
 
 
 def resolve_project_profile(
@@ -265,45 +360,3 @@ def _parse_profile(profile_name: str, payload: dict[str, Any]) -> RunProfileInpu
     )
 
 
-def _write_bundle(profile_path: Path, bundle: ProfileFileBundle) -> None:
-    lines: list[str] = []
-
-    for profile_name in sorted(bundle.run_profiles.keys()):
-        profile = bundle.run_profiles[profile_name]
-        lines.append(f'[run_profiles."{_escape_toml_key(profile_name)}"]')
-        lines.append(f"harness_id = {json.dumps(profile.harness_id)}")
-        lines.append(f"provider = {json.dumps(profile.provider)}")
-        lines.append(f"model = {json.dumps(profile.model)}")
-        lines.append(f"message_prefix = {json.dumps(profile.message_prefix)}")
-        lines.append(f"default_env = {_format_inline_table(profile.default_env)}")
-        if profile.max_tokens_budget is not None:
-            lines.append(f"max_tokens_budget = {profile.max_tokens_budget}")
-        if profile.cwd_root is not None:
-            lines.append(f"cwd_root = {json.dumps(profile.cwd_root)}")
-        if profile.cwd_prefix is not None:
-            lines.append(f"cwd_prefix = {json.dumps(profile.cwd_prefix)}")
-        if profile.repo_glob is not None:
-            lines.append(f"repo_glob = {json.dumps(profile.repo_glob)}")
-        if profile.notes:
-            lines.append(f"notes = {json.dumps(profile.notes)}")
-        lines.append("")
-
-    for project_path, profile_name in bundle.project_bindings:
-        lines.append("[[project_profiles]]")
-        lines.append(f"project_path = {json.dumps(project_path)}")
-        lines.append(f"run_profile = {json.dumps(profile_name)}")
-        lines.append("")
-
-    profile_path.parent.mkdir(parents=True, exist_ok=True)
-    profile_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-
-
-def _format_inline_table(values: dict[str, str]) -> str:
-    if not values:
-        return "{}"
-    entries = [f"{json.dumps(k)} = {json.dumps(v)}" for k, v in sorted(values.items())]
-    return "{ " + ", ".join(entries) + " }"
-
-
-def _escape_toml_key(value: str) -> str:
-    return value.replace("\\", r"\\").replace('"', r"\"")

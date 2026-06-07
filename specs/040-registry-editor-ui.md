@@ -1,6 +1,6 @@
 # 040 — Harness Instance Registry Editor UI (P21)
 
-Status: Draft
+Status: Implemented
 Date: 2026-06-07
 Depends on: P20 (`specs/039-registry-editor-backend.md`), harness instance profile schema (`specs/007-harness-instance-profile-p3.7.md`)
 Blocks: —
