@@ -9,13 +9,20 @@ window.AgenticOs = window.AgenticOs || {};
     return document.getElementById(id);
   }
 
+  function isActionAllowed(actionId) {
+    return Ao.RemoteConsole?.isActionAllowed(actionId) ?? Ao.isLocalWritable();
+  }
+
   function toggleLocalOnlyActions() {
-    const writable = Ao.isLocalWritable();
-    for (const elementId of ["product-logs-download", "product-repair-config"]) {
-      const element = byId(elementId);
-      if (element) {
-        element.hidden = !writable;
-      }
+    const logsAllowed = isActionAllowed("ui.download.logs-zip");
+    const repairAllowed = isActionAllowed("ui.repair.config");
+    const logsBtn = byId("product-logs-download");
+    const repairBtn = byId("product-repair-config");
+    if (logsBtn) {
+      logsBtn.hidden = !logsAllowed;
+    }
+    if (repairBtn) {
+      repairBtn.hidden = !repairAllowed;
     }
   }
 
@@ -62,7 +69,7 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   async function downloadLogs() {
-    if (!Ao.isLocalWritable()) {
+    if (!isActionAllowed("ui.download.logs-zip")) {
       throw new Error("遠端模式不支援日誌 zip 下載（僅本機）");
     }
     const path = `${Ao.apiBase()}${Ao.buildEndpoint("setupLogsZip")}`;
@@ -131,7 +138,7 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function openRepairConfig() {
-    if (!Ao.isLocalWritable()) {
+    if (!isActionAllowed("ui.repair.config")) {
       return;
     }
     if (Ao.showTab) {
@@ -168,7 +175,7 @@ window.AgenticOs = window.AgenticOs || {};
       });
     });
     byId("setup-import-apply")?.addEventListener("click", () => {
-      if (!Ao.isLocalWritable()) {
+      if (!isActionAllowed("ui.write.setup-import")) {
         writeImportError("遠端模式不可套用匯入");
         return;
       }
@@ -181,17 +188,24 @@ window.AgenticOs = window.AgenticOs || {};
     });
   }
 
-  async function init() {
+  function bind() {
     bindEvents();
     toggleLocalOnlyActions();
+  }
+
+  async function refresh() {
     await Promise.allSettled([loadVersion(), loadDiagnostics()]);
-    if (Ao.RemoteConsole?.init) {
-      await Ao.RemoteConsole.init();
-    }
+  }
+
+  async function init() {
+    bind();
+    await refresh();
   }
 
   Ao.ProductPolish = {
     init,
+    bind,
+    refresh,
     loadDiagnostics,
     loadVersion,
     exportSetup,

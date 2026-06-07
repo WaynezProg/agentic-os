@@ -26,6 +26,10 @@ const state = {
 document.addEventListener("DOMContentLoaded", async () => {
   byId("api-url").value = DEFAULT_API_URL;
   await initDesktopConnection();
+  if (Ao.RemoteConsole?.init) {
+    await Ao.RemoteConsole.init();
+  }
+  Ao.ProductPolish?.bind?.();
   Ao.CatalogEditor.init();
   Ao.HarnessConfigEditor.init();
   Ao.ProfileEditor.init();
@@ -50,7 +54,11 @@ async function initDesktopConnection() {
       byId("api-url").readOnly = true;
       byId("api-url").title = "Remote gateway (Bearer via desktop Keychain)";
     }
-    Ao.ProductPolish?.toggleLocalOnlyActions?.();
+    if (Ao.RemoteConsole?.init) {
+      await Ao.RemoteConsole.init();
+    } else {
+      Ao.ProductPolish?.toggleLocalOnlyActions?.();
+    }
   } catch (error) {
     console.warn("desktop connection profile unavailable", error);
   }
@@ -523,7 +531,9 @@ async function loadSkillsMcp() {
 Ao.reloadControlPlaneTables = loadSkillsMcp;
 
 function renderControlPlaneActions(domain, recordId) {
-  if (!Ao.isLocalWritable()) {
+  const writable =
+    Ao.RemoteConsole?.isActionAllowed?.("ui.write.control-plane") ?? Ao.isLocalWritable();
+  if (!writable) {
     return "";
   }
   const historyContainer = `cp-history-${domain}-${recordId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -856,7 +866,8 @@ async function handleActionClick(event) {
   const approvalId = button.dataset.approvalId;
 
   if (Ao.isDelegatedAction(action)) {
-    if (!Ao.isLocalWritable()) {
+    const writable = Ao.RemoteConsole?.isActionAllowed?.("ui.write.catalog") ?? Ao.isLocalWritable();
+    if (!writable) {
       return;
     }
     button.disabled = true;
@@ -1308,8 +1319,8 @@ async function loadOverview() {
     byId("overview-approvals-body").textContent = t("overviewError");
   }
 
-  if (Ao.ProductPolish?.init) {
-    await Ao.ProductPolish.init();
+  if (Ao.ProductPolish?.refresh) {
+    await Ao.ProductPolish.refresh();
   }
 }
 
