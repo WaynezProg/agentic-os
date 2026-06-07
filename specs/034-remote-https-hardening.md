@@ -3,7 +3,7 @@
 Status: Implemented
 Date: 2026-06-07
 Depends on: P12 (`specs/030-remote-access-adapter.md`), P12.5 (`specs/031-keychain-ios-companion.md`)
-Blocks: P16 (APNs push notifications)
+Blocks: P16 (`specs/035-catalog-patch-ui.md`). Note: APNs push is deferred indefinitely; P16 is reassigned to Catalog Patch UI.
 
 ## Positioning
 
@@ -45,7 +45,7 @@ Enforcement points (iOS):
 |------|--------------|
 | Client-side HTTPS / loopback-http policy | Certificate pinning, mTLS |
 | Reject cleartext Bearer to remote hosts | Server-side TLS termination choices |
-| Documented rule in README + this spec | APNs push (P16) |
+| Documented rule in README + this spec | APNs push (deferred) |
 
 ## Acceptance criteria
 
