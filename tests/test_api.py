@@ -668,6 +668,25 @@ def test_api_allows_localhost_cors_preflight(tmp_path: Path) -> None:
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
+
+
+def test_api_allows_delete_cors_preflight(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.options(
+        "/profiles/example",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+    allowed_methods = response.headers.get("access-control-allow-methods", "")
+    assert "DELETE" in allowed_methods
+
+
 def test_fleet_health_empty(tmp_app) -> None:
     client = TestClient(tmp_app)
     response = client.get("/fleet/health")
