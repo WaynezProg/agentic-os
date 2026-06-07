@@ -572,6 +572,7 @@ def test_profile_editor_controls_exist_in_html() -> None:
         "profile-diff-preview",
         "profile-validation-errors",
         "profile-patch-history-body",
+        "profile-cwd-input",
     ]:
         assert f'id="{element_id}"' in html
 
@@ -715,10 +716,13 @@ def test_approval_workbench_renders_context_fields() -> None:
 def test_remote_console_modules_exist() -> None:
     assert REMOTE_CONSOLE_JS.is_file()
     html = INDEX_HTML.read_text(encoding="utf-8")
+    remote_console = REMOTE_CONSOLE_JS.read_text(encoding="utf-8")
     assert 'src="ui/remote-console.js"' in html
     assert 'id="remote-console"' in html
     assert "remoteAffordances" in API_JS.read_text(encoding="utf-8")
-    assert "remote.pairing.start" in REMOTE_CONSOLE_JS.read_text(encoding="utf-8")
+    assert "remote.pairing.start" in remote_console
+    assert "isActionAllowed" in remote_console
+    assert "ui.write.profile" in remote_console
 
 
 def test_product_polish_modules_exist() -> None:
@@ -742,3 +746,8 @@ def test_product_polish_modules_exist() -> None:
     assert "setup-import-result-output" in polish
     assert "product-repair-config" in polish
     assert "connection_api_fetch" not in polish or "遠端模式不支援日誌" in polish
+    assert "bind," in polish
+    assert "refresh," in polish
+    app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    assert "ProductPolish?.bind" in app_js
+    assert "profile-cwd-input" in PROFILE_EDITOR_JS.read_text(encoding="utf-8")

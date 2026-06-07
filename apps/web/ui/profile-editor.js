@@ -33,7 +33,19 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function isWritable() {
-    return Ao.isLocalWritable();
+    return Ao.RemoteConsole?.isActionAllowed("ui.write.profile") ?? Ao.isLocalWritable();
+  }
+
+  function getProfileCwdQuery() {
+    const cwdInput = document.getElementById("profile-cwd-input");
+    const cwd = cwdInput?.value?.trim() || "";
+    return cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+  }
+
+  function resolvedProfileCwd() {
+    const cwdInput = document.getElementById("profile-cwd-input");
+    const cwd = cwdInput?.value?.trim() || "";
+    return cwd || profileListCwd;
   }
 
   function toggleEditorChrome() {
@@ -154,8 +166,9 @@ window.AgenticOs = window.AgenticOs || {};
 
   function buildProfileQuery(scope, dryRun, baseMtime) {
     const params = new URLSearchParams({ scope, dry_run: dryRun ? "true" : "false" });
-    if (profileListCwd) {
-      params.set("cwd", profileListCwd);
+    const cwd = resolvedProfileCwd();
+    if (cwd) {
+      params.set("cwd", cwd);
     }
     if (baseMtime !== null && baseMtime !== undefined) {
       params.set("base_mtime", String(baseMtime));
@@ -165,10 +178,11 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function buildProfileDetailQuery() {
-    if (!profileListCwd) {
+    const cwd = resolvedProfileCwd();
+    if (!cwd) {
       return "";
     }
-    return `?cwd=${encodeURIComponent(profileListCwd)}`;
+    return `?cwd=${encodeURIComponent(cwd)}`;
   }
 
   async function loadProfiles() {
@@ -179,10 +193,14 @@ window.AgenticOs = window.AgenticOs || {};
     resetApplyState();
     byId("profile-diff-preview").textContent = "選擇或建立 profile 後按「預覽變更」。";
     try {
-      const data = await Ao.apiFetch(Ao.buildEndpoint("profiles"));
+      const data = await Ao.apiFetch(`${Ao.buildEndpoint("profiles")}${getProfileCwdQuery()}`);
       const profiles = Array.isArray(data.run_profiles) ? data.run_profiles : [];
       const bindings = Array.isArray(data.project_bindings) ? data.project_bindings : [];
       profileListCwd = data.cwd || null;
+      const cwdInput = document.getElementById("profile-cwd-input");
+      if (cwdInput && data.cwd) {
+        cwdInput.value = data.cwd;
+      }
       renderProfileList(profiles, bindings, data.cwd);
       if (isWritable()) {
         await Ao.PatchRollback.loadPatchHistory({
@@ -314,8 +332,9 @@ window.AgenticOs = window.AgenticOs || {};
       cascade: cascade ? "true" : "false",
       source: PATCH_SOURCE,
     });
-    if (profileListCwd) {
-      params.set("cwd", profileListCwd);
+    const cwd = resolvedProfileCwd();
+    if (cwd) {
+      params.set("cwd", cwd);
     }
     try {
       const result = await Ao.apiFetch(
@@ -426,5 +445,6 @@ window.AgenticOs = window.AgenticOs || {};
     loadProfiles,
     reloadAfterRollback,
     isWritable,
+    toggleEditorChrome,
   };
 })(window.AgenticOs);
