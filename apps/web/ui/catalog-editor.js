@@ -59,7 +59,7 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function isWritable() {
-    return Ao.isLocalWritable();
+    return Ao.RemoteConsole?.isActionAllowed("ui.write.catalog") ?? Ao.isLocalWritable();
   }
 
   function toggleEditorChrome() {
@@ -334,5 +334,6 @@ window.AgenticOs = window.AgenticOs || {};
     stageEnableMcp,
     stageDisableMcp,
     isWritable,
+    toggleEditorChrome,
   };
 })(window.AgenticOs);

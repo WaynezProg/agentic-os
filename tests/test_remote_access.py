@@ -10,6 +10,8 @@ from agentic_os.remote_access import RemoteAccessError, RemoteAccessService
 from agentic_os.remote_affordances import (
     LOCALHOST_ONLY_ACTIONS,
     LOCALHOST_ONLY_ACTION_SPECS,
+    UI_LOCALHOST_ONLY_ACTIONS,
+    affordance_localhost_only_actions,
     localhost_only_route_action_id,
 )
 from agentic_os.remote_gateway import is_remote_admin_route
@@ -184,7 +186,8 @@ def test_localhost_only_affordances_match_guards(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     response = client.get("/remote/affordances")
     assert response.status_code == 200
-    assert set(response.json()["localhost_only"]) == LOCALHOST_ONLY_ACTIONS
+    assert set(response.json()["localhost_only"]) == affordance_localhost_only_actions()
+    assert UI_LOCALHOST_ONLY_ACTIONS.issubset(affordance_localhost_only_actions())
 
 
 def test_gateway_proxied_sessions_allow_valid_bearer(tmp_path: Path) -> None:

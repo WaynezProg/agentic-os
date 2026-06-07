@@ -31,7 +31,7 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function isWritable() {
-    return Ao.isLocalWritable();
+    return Ao.RemoteConsole?.isActionAllowed("ui.write.registry") ?? Ao.isLocalWritable();
   }
 
   function toggleEditorChrome() {
@@ -312,5 +312,6 @@ window.AgenticOs = window.AgenticOs || {};
     loadRegistryEditor,
     reloadAfterRollback,
     isWritable,
+    toggleEditorChrome,
   };
 })(window.AgenticOs);

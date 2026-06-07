@@ -37,7 +37,7 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function isWritable() {
-    return Ao.isLocalWritable();
+    return Ao.RemoteConsole?.isActionAllowed("ui.write.control-plane") ?? Ao.isLocalWritable();
   }
 
   function setMessage(message, isError = false) {

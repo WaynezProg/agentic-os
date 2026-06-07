@@ -93,6 +93,9 @@ window.AgenticOs = window.AgenticOs || {};
   };
 
   Ao.isLocalWritable = function isLocalWritable() {
+    if (Ao.RemoteConsole?.isActionAllowed) {
+      return Ao.RemoteConsole.isActionAllowed("ui.write.harness-config");
+    }
     return connectionProfile?.mode !== "remote";
   };
 

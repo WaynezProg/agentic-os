@@ -51,7 +51,7 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   function isWritable() {
-    return Ao.isLocalWritable();
+    return Ao.RemoteConsole?.isActionAllowed("ui.write.harness-config") ?? Ao.isLocalWritable();
   }
 
   function createConfigEditor(descriptor) {
@@ -298,6 +298,7 @@ window.AgenticOs = window.AgenticOs || {};
       applyPatch,
       reloadAfterRollback,
       isWritable,
+      toggleEditorChrome,
     };
   }
 

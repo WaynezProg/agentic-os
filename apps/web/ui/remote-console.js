@@ -11,6 +11,24 @@ window.AgenticOs = window.AgenticOs || {};
     "'": "&#39;",
   });
 
+  const UI_LOCALHOST_ONLY_FALLBACK = Object.freeze([
+    "ui.write.catalog",
+    "ui.write.control-plane",
+    "ui.write.harness-config",
+    "ui.write.profile",
+    "ui.write.registry",
+    "ui.write.setup-import",
+    "ui.download.logs-zip",
+    "ui.repair.config",
+  ]);
+
+  const REMOTE_ADMIN_FALLBACK = Object.freeze([
+    "remote.pairing.start",
+    "remote.devices.list",
+    "remote.devices.delete",
+    "remote.devices.rotate",
+  ]);
+
   let localhostOnly = new Set();
 
   function escapeHtml(value) {
@@ -26,8 +44,15 @@ window.AgenticOs = window.AgenticOs || {};
     return Ao.getConnectionProfile()?.mode === "remote";
   }
 
+  function isActionAllowed(actionId) {
+    if (!isRemote()) {
+      return true;
+    }
+    return !localhostOnly.has(actionId);
+  }
+
   function actionHidden(actionId) {
-    return isRemote() && localhostOnly.has(actionId);
+    return !isActionAllowed(actionId);
   }
 
   async function loadAffordances() {
@@ -35,14 +60,10 @@ window.AgenticOs = window.AgenticOs || {};
       const data = await Ao.apiFetch(Ao.buildEndpoint("remoteAffordances"));
       localhostOnly = new Set(Array.isArray(data.localhost_only) ? data.localhost_only : []);
     } catch {
-      localhostOnly = new Set([
-        "remote.pairing.start",
-        "remote.devices.list",
-        "remote.devices.delete",
-        "remote.devices.rotate",
-      ]);
+      localhostOnly = new Set([...REMOTE_ADMIN_FALLBACK, ...UI_LOCALHOST_ONLY_FALLBACK]);
     }
     renderActionGates();
+    refreshWriteGating();
   }
 
   function renderActionGates() {
@@ -50,6 +71,15 @@ window.AgenticOs = window.AgenticOs || {};
       const actionId = element.dataset.localhostAction;
       element.hidden = actionHidden(actionId);
     });
+  }
+
+  function refreshWriteGating() {
+    Ao.ProductPolish?.toggleLocalOnlyActions?.();
+    Ao.CatalogEditor?.toggleEditorChrome?.();
+    Ao.HarnessConfigEditor?.toggleEditorChrome?.();
+    Ao.ProfileEditor?.toggleEditorChrome?.();
+    Ao.RegistryEditor?.toggleEditorChrome?.();
+    Ao.ControlPlaneEditor?.toggleEditorChrome?.();
   }
 
   async function refreshStatus() {
@@ -105,5 +135,7 @@ window.AgenticOs = window.AgenticOs || {};
     refreshStatus,
     loadAffordances,
     actionHidden,
+    isActionAllowed,
+    refreshWriteGating,
   };
 })(window.AgenticOs);

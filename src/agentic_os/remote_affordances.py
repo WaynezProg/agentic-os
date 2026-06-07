@@ -19,6 +19,24 @@ LOCALHOST_ONLY_ACTION_SPECS: tuple[LocalhostOnlyAction, ...] = (
 
 LOCALHOST_ONLY_ACTIONS: frozenset[str] = frozenset(spec.id for spec in LOCALHOST_ONLY_ACTION_SPECS)
 
+# UI surfaces hidden in remote mode (no matching HTTP route guard).
+UI_LOCALHOST_ONLY_ACTIONS: frozenset[str] = frozenset(
+    {
+        "ui.write.catalog",
+        "ui.write.control-plane",
+        "ui.write.harness-config",
+        "ui.write.profile",
+        "ui.write.registry",
+        "ui.write.setup-import",
+        "ui.download.logs-zip",
+        "ui.repair.config",
+    }
+)
+
+
+def affordance_localhost_only_actions() -> frozenset[str]:
+    return LOCALHOST_ONLY_ACTIONS | UI_LOCALHOST_ONLY_ACTIONS
+
 
 def localhost_only_route_action_id(method: str, path: str) -> str | None:
     for spec in LOCALHOST_ONLY_ACTION_SPECS:
