@@ -19,6 +19,7 @@
     <script src="ui/profile-editor.js"></script>
     <script src="ui/registry-editor.js"></script>
     <script src="ui/control-plane-editor.js"></script>
+    <script src="ui/approval-workbench.js"></script>
     <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -965,7 +966,7 @@
       </section>
 
       <section id="panel-approvals" class="panel" role="tabpanel" aria-labelledby="tab-approvals">
-        <h2>核准佇列</h2>
+        <h2>核准工作台</h2>
         <div class="row">
           <label for="approval-status-filter">狀態</label>
           <select id="approval-status-filter">
@@ -977,8 +978,11 @@
           </select>
           <button id="approval-load" type="button">載入</button>
         </div>
-        <div class="table-shell">
-          <table aria-label="核准佇列">
+        <div id="approvals-workbench" class="approval-workbench" aria-live="polite">
+          <p class="message">按「載入」查看核准工作台。</p>
+        </div>
+        <div class="table-shell" hidden aria-hidden="true">
+          <table aria-label="核准佇列（相容）">
             <thead>
               <tr><th>id</th><th>harness</th><th>狀態</th><th>來源 session</th><th>核准 session</th><th>原因</th><th>操作</th></tr>
             </thead>

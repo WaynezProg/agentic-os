@@ -927,6 +927,12 @@ async function handleActionClick(event) {
       await approveApproval(approvalId);
     } else if (action === "reject-approval" && approvalId) {
       await rejectApproval(approvalId);
+    } else if (action === "view-session-events" && sessionId) {
+      showTab("sessions");
+      await selectSession(sessionId);
+      await loadSessionTimeline(sessionId);
+    } else if (action === "retry-approval-session" && sessionId) {
+      await Ao.ApprovalWorkbench.retrySession(sessionId, approvalId || button.dataset.approvalId);
     }
   } catch (error) {
     if (["approve-memory", "reject-memory", "view-summary"].includes(action)) {
@@ -953,7 +959,6 @@ async function rejectApproval(approvalId) {
   setMessage("agents-message", `rejected ${approvalId}`);
   await Promise.allSettled([loadApprovals(), loadApprovalsTab()]);
 }
-
 async function loadFleet() {
   await Promise.allSettled([loadFleetHealth(), loadFleetCapacity(), loadFleetEvents(), loadAuditEvents()]);
 }
@@ -1163,6 +1168,8 @@ async function loadCatalog() {
 }
 
 async function loadApprovalsTab() {
+  await Ao.ApprovalWorkbench.loadWorkbench();
+  Ao.ApprovalWorkbench.connectApprovalStream();
   try {
     const status = byId("approval-status-filter").value;
     const params = status ? { status } : {};

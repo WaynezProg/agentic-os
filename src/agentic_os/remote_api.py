@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 from agentic_os.audit import AuditEvent, AuditStore
 from agentic_os.remote_access import RemoteAccessError, RemoteAccessService
+from agentic_os.remote_affordances import LOCALHOST_ONLY_ACTIONS
 from agentic_os.remote_gateway import (
     client_is_localhost,
     extract_bearer_token,
@@ -41,6 +42,10 @@ def register_remote_routes(
         if device_id is None:
             raise HTTPException(status_code=401, detail="invalid_or_revoked_token")
         return device_id
+
+    @app.get("/remote/affordances")
+    def remote_affordances() -> dict[str, list[str]]:
+        return {"localhost_only": sorted(LOCALHOST_ONLY_ACTIONS)}
 
     @app.post("/remote/pairing/start")
     def remote_pairing_start(request: Request) -> dict[str, str]:

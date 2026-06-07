@@ -13,6 +13,7 @@ window.AgenticOs = window.AgenticOs || {};
     sessionLogs: "/sessions/{session_id}/logs",
     sessionStop: "/sessions/{session_id}/stop",
     sessionRetry: "/sessions/{session_id}/retry",
+    events: "/events",
     sessionEvents: "/sessions/{session_id}/events",
     sessionTimeline: "/sessions/{session_id}/timeline",
     sessionAttach: "/sessions/{session_id}/attach",

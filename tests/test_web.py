@@ -15,6 +15,7 @@ CONFIG_EDITOR_JS = WEB_DIR / "ui" / "config-editor.js"
 PROFILE_EDITOR_JS = WEB_DIR / "ui" / "profile-editor.js"
 REGISTRY_EDITOR_JS = WEB_DIR / "ui" / "registry-editor.js"
 CONTROL_PLANE_EDITOR_JS = WEB_DIR / "ui" / "control-plane-editor.js"
+APPROVAL_WORKBENCH_JS = WEB_DIR / "ui" / "approval-workbench.js"
 ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
 ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
 
@@ -30,6 +31,7 @@ def _web_javascript_sources() -> str:
             PROFILE_EDITOR_JS,
             REGISTRY_EDITOR_JS,
             CONTROL_PLANE_EDITOR_JS,
+            APPROVAL_WORKBENCH_JS,
             ROLLBACK_JS,
             ACTIONS_JS,
         )
@@ -680,3 +682,27 @@ def test_index_html_loads_control_plane_editor_before_app_js() -> None:
     cp_pos = html.index('src="ui/control-plane-editor.js"')
     app_pos = html.index('src="app.js"')
     assert cp_pos < app_pos
+
+
+def test_approval_workbench_modules_exist() -> None:
+    assert APPROVAL_WORKBENCH_JS.is_file()
+
+
+def test_approval_workbench_renders_context_fields() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    workbench = APPROVAL_WORKBENCH_JS.read_text(encoding="utf-8")
+    assert 'id="approvals-workbench"' in html
+    assert 'src="ui/approval-workbench.js"' in html
+    for token in [
+        "觸發原因",
+        "來源 session",
+        "argv",
+        "cwd",
+        "政策結果",
+        "retry-approval-session",
+        "view-session-events",
+        "approval.reason",
+        "approval.argv",
+        "approval.cwd",
+    ]:
+        assert token in workbench or token in html
