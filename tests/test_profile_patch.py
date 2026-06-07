@@ -7,6 +7,54 @@ import tomllib
 from test_api import make_client
 
 
+def test_show_profile_respects_cwd_and_scope(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    created = client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo)},
+        json={
+            "name": "dev",
+            "harness_id": "cursor",
+            "provider": "cursor",
+            "model": "default",
+        },
+    )
+    assert created.status_code == 201
+
+    shown = client.get("/profiles/dev", params={"cwd": str(repo)})
+    assert shown.status_code == 200
+    body = shown.json()
+    assert body["name"] == "dev"
+    assert body["scope"] == "local"
+    assert body["cwd"] == str(repo.resolve())
+
+
+def test_list_profiles_includes_scope(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    client.post(
+        "/profiles",
+        params={"scope": "local", "cwd": str(repo)},
+        json={
+            "name": "dev",
+            "harness_id": "cursor",
+            "provider": "cursor",
+            "model": "default",
+        },
+    )
+
+    listed = client.get("/profiles", params={"cwd": str(repo)})
+    assert listed.status_code == 200
+    profiles = listed.json()["run_profiles"]
+    dev = next(item for item in profiles if item["name"] == "dev")
+    assert dev["scope"] == "local"
+
+
 def test_delete_profile_removes_entry(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     repo = tmp_path / "repo"

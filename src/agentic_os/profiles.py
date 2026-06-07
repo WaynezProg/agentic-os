@@ -88,6 +88,19 @@ def show_profile(name: str, cwd: str | Path | None) -> RunProfileInput | None:
     return list_profiles(cwd).get(name)
 
 
+def profile_scope_map(cwd: str | Path | None) -> dict[str, str]:
+    scopes: dict[str, str] = {}
+    for profile in _load_profiles_from_path(global_profile_path()):
+        scopes[profile.name] = "global"
+    for profile in _load_profiles_from_path(local_profile_path(cwd)):
+        scopes[profile.name] = "local"
+    return scopes
+
+
+def resolve_profile_scope(name: str, cwd: str | Path | None) -> str | None:
+    return profile_scope_map(cwd).get(name)
+
+
 def profile_file_path(scope: str, cwd: str | Path | None) -> Path:
     if scope not in {"local", "global"}:
         raise ValueError(f"unsupported profile scope: {scope}")

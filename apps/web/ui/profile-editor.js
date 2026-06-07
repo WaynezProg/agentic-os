@@ -17,6 +17,7 @@ window.AgenticOs = window.AgenticOs || {};
   let previewBaseMtime = null;
   let pendingProfile = null;
   let pendingScope = "local";
+  let profileListCwd = null;
 
   function escapeHtml(value) {
     const text = value === null || value === undefined || value === "" ? "-" : String(value);
@@ -153,6 +154,9 @@ window.AgenticOs = window.AgenticOs || {};
 
   function buildProfileQuery(scope, dryRun, baseMtime) {
     const params = new URLSearchParams({ scope, dry_run: dryRun ? "true" : "false" });
+    if (profileListCwd) {
+      params.set("cwd", profileListCwd);
+    }
     if (baseMtime !== null && baseMtime !== undefined) {
       params.set("base_mtime", String(baseMtime));
     }
@@ -160,10 +164,17 @@ window.AgenticOs = window.AgenticOs || {};
     return params.toString();
   }
 
+  function buildProfileDetailQuery() {
+    if (!profileListCwd) {
+      return "";
+    }
+    return `?cwd=${encodeURIComponent(profileListCwd)}`;
+  }
+
   async function loadProfiles() {
     toggleEditorChrome();
     const body = byId("profile-list-body");
-    body.innerHTML = "<tr><td colspan=\"5\">載入中…</td></tr>";
+    body.innerHTML = "<tr><td colspan=\"6\">載入中…</td></tr>";
     clearValidationErrors();
     resetApplyState();
     byId("profile-diff-preview").textContent = "選擇或建立 profile 後按「預覽變更」。";
@@ -171,6 +182,7 @@ window.AgenticOs = window.AgenticOs || {};
       const data = await Ao.apiFetch(Ao.buildEndpoint("profiles"));
       const profiles = Array.isArray(data.run_profiles) ? data.run_profiles : [];
       const bindings = Array.isArray(data.project_bindings) ? data.project_bindings : [];
+      profileListCwd = data.cwd || null;
       renderProfileList(profiles, bindings, data.cwd);
       if (isWritable()) {
         await Ao.PatchRollback.loadPatchHistory({
@@ -180,25 +192,26 @@ window.AgenticOs = window.AgenticOs || {};
         });
       }
     } catch (error) {
-      body.innerHTML = `<tr><td colspan="5" class="message is-error">${escapeHtml(error.message)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="message is-error">${escapeHtml(error.message)}</td></tr>`;
     }
   }
 
   function renderProfileList(profiles, bindings, cwd) {
     const body = byId("profile-list-body");
     if (!profiles.length) {
-      body.innerHTML = "<tr><td colspan=\"5\">尚無 run profile。</td></tr>";
+      body.innerHTML = "<tr><td colspan=\"6\">尚無 run profile。</td></tr>";
     } else {
       body.innerHTML = profiles
         .map(
           (profile) => `
         <tr>
           <td>${escapeHtml(profile.name)}</td>
+          <td>${escapeHtml(profile.scope || "-")}</td>
           <td>${escapeHtml(profile.harness_id)}</td>
           <td>${escapeHtml(profile.provider)}</td>
           <td>${escapeHtml(profile.model)}</td>
           <td>
-            <button type="button" data-action="profile-select" data-profile-name="${escapeHtml(profile.name)}">編輯</button>
+            <button type="button" data-action="profile-select" data-profile-name="${escapeHtml(profile.name)}" data-profile-scope="${escapeHtml(profile.scope || "local")}">編輯</button>
           </td>
         </tr>`,
         )
@@ -221,11 +234,19 @@ window.AgenticOs = window.AgenticOs || {};
     }
   }
 
-  async function selectProfile(name) {
+  async function selectProfile(name, scopeHint = null) {
     try {
-      const data = await Ao.apiFetch(Ao.buildEndpoint("profileDetail", { name }));
+      const data = await Ao.apiFetch(
+        `${Ao.buildEndpoint("profileDetail", { name })}${buildProfileDetailQuery()}`,
+      );
+      if (data.cwd) {
+        profileListCwd = data.cwd;
+      }
       fillFormFromProfile(data);
-      setMessage(`已載入 profile：${name}`);
+      const scope = data.scope || scopeHint || "local";
+      byId("profile-scope").value = scope;
+      pendingScope = scope;
+      setMessage(`已載入 profile：${name}（scope=${scope}）`);
       resetApplyState();
     } catch (error) {
       setMessage(error.message, true);
@@ -293,6 +314,9 @@ window.AgenticOs = window.AgenticOs || {};
       cascade: cascade ? "true" : "false",
       source: PATCH_SOURCE,
     });
+    if (profileListCwd) {
+      params.set("cwd", profileListCwd);
+    }
     try {
       const result = await Ao.apiFetch(
         `${Ao.buildEndpoint("profileDelete", { name })}?${params}`,
@@ -387,7 +411,7 @@ window.AgenticOs = window.AgenticOs || {};
       if (!button) {
         return;
       }
-      selectProfile(button.dataset.profileName);
+      selectProfile(button.dataset.profileName, button.dataset.profileScope || null);
     });
   }
 

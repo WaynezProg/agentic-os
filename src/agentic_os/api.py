@@ -392,10 +392,14 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def list_profiles(cwd: str | None = Query(default=None)) -> dict[str, object]:
         resolved_cwd = str(Path(cwd).resolve()) if cwd else str(Path.cwd())
         profiles = profiles_module.list_profiles(resolved_cwd)
+        scopes = profiles_module.profile_scope_map(resolved_cwd)
         bindings = profiles_module.list_project_bindings(resolved_cwd)
         return {
-            "cwd": resolved_cwd,
-            "run_profiles": [profile.model_dump() for profile in profiles.values()],
+            "cwd": str(resolved_cwd),
+            "run_profiles": [
+                {**profile.model_dump(), "scope": scopes[profile.name]}
+                for profile in profiles.values()
+            ],
             "project_bindings": [
                 {"project_path": project_path, "run_profile": profile_name}
                 for project_path, profile_name in bindings
@@ -403,11 +407,20 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         }
 
     @app.get("/profiles/{name}")
-    def show_profile(name: str) -> dict[str, object]:
-        profile = profiles_module.show_profile(name, Path.cwd())
+    def show_profile(
+        name: str,
+        cwd: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        resolved_cwd = Path(cwd).resolve() if cwd else Path.cwd()
+        profile = profiles_module.show_profile(name, resolved_cwd)
         if profile is None:
             raise HTTPException(status_code=404, detail=f"unknown profile: {name}")
-        return profile.model_dump()
+        scope = profiles_module.resolve_profile_scope(name, resolved_cwd)
+        payload = profile.model_dump()
+        if scope is not None:
+            payload["scope"] = scope
+        payload["cwd"] = str(resolved_cwd)
+        return payload
 
     def _apply_profile_patch(
         target: PatchTarget,
