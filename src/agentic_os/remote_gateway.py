@@ -3,6 +3,12 @@ from __future__ import annotations
 from fastapi import HTTPException, Request
 from starlette.responses import JSONResponse
 
+from agentic_os.remote_affordances import (
+    LOCALHOST_ONLY_ACTIONS,
+    is_localhost_only_admin_route,
+    localhost_only_route_action_id,
+)
+
 GATEWAY_HEADER = "X-Agentic-OS-Gateway"
 GATEWAY_TRUST_VALUE = "1"
 LOCALHOST_CLIENTS = {"127.0.0.1", "::1", "testclient"}
@@ -26,15 +32,7 @@ def extract_bearer_token(request: Request) -> str | None:
 
 
 def is_remote_admin_route(method: str, path: str) -> bool:
-    if method == "POST" and path == "/remote/pairing/start":
-        return True
-    if method == "GET" and path == "/remote/devices":
-        return True
-    if method == "DELETE" and path.startswith("/remote/devices/") and len(path) > len("/remote/devices/"):
-        return True
-    if method == "POST" and path.startswith("/remote/devices/") and path.endswith("/rotate"):
-        return True
-    return False
+    return is_localhost_only_admin_route(method, path)
 
 
 def is_pairing_complete_route(method: str, path: str) -> bool:
@@ -42,6 +40,9 @@ def is_pairing_complete_route(method: str, path: str) -> bool:
 
 
 def require_localhost_operator(request: Request) -> None:
+    action_id = localhost_only_route_action_id(request.method, request.url.path)
+    if action_id is None or action_id not in LOCALHOST_ONLY_ACTIONS:
+        raise HTTPException(status_code=500, detail="route_not_localhost_only_action")
     if via_trusted_gateway(request):
         raise HTTPException(status_code=403, detail="remote_admin_localhost_only")
     if not client_is_localhost(request):

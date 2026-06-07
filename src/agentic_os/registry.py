@@ -5,6 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentic_os.models import AgentDefinition
+from agentic_os.patch_engine import PatchOp
+from agentic_os.safe_edit import PatchTarget
+from agentic_os.toml_io import load_toml
+
+REGISTRY_HARNESS_ID = "agentic_os"
+REGISTRY_KIND = "registry"
 
 
 @dataclass(frozen=True)
@@ -18,6 +24,9 @@ class RenderedRun:
 class Registry:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._agents = self._load()
+
+    def reload(self) -> None:
         self._agents = self._load()
 
     def list_agents(self) -> list[AgentDefinition]:
@@ -64,6 +73,71 @@ class Registry:
 
 def render_command(command: list[str], message: str) -> list[str]:
     return [part.replace("{{message}}", message) for part in command]
+
+
+def registry_patch_target(registry_path: Path, cwd: Path) -> PatchTarget:
+    return PatchTarget(
+        harness_id=REGISTRY_HARNESS_ID,
+        cwd=cwd,
+        scope="registry",
+        target_kind=REGISTRY_KIND,
+        kind=REGISTRY_KIND,
+        file_path=registry_path,
+        file_format="toml",
+    )
+
+
+def load_registry_document(registry_path: Path) -> dict[str, object]:
+    return load_toml(registry_path)
+
+
+def agents_document(agents: list[AgentDefinition]) -> list[dict[str, object]]:
+    return [agent.model_dump(exclude_none=True) for agent in agents]
+
+
+def replace_agents_ops(agent_payloads: list[dict[str, object]]) -> list[PatchOp]:
+    return [
+        PatchOp(op="remove", path="agents"),
+        PatchOp(op="merge", path="agents", value=agent_payloads),
+    ]
+
+
+def merge_agent_instance(
+    current: list[AgentDefinition],
+    instance: AgentDefinition,
+) -> list[AgentDefinition]:
+    merged = [agent for agent in current if agent.id != instance.id]
+    merged.append(instance)
+    return sorted(merged, key=lambda agent: agent.id)
+
+
+def disable_agent_instance(current: list[AgentDefinition], agent_id: str) -> list[AgentDefinition]:
+    updated: list[AgentDefinition] = []
+    found = False
+    for agent in current:
+        if agent.id == agent_id:
+            found = True
+            updated.append(agent.model_copy(update={"enabled": False}))
+        else:
+            updated.append(agent)
+    if not found:
+        raise KeyError(f"unknown agent: {agent_id}")
+    return updated
+
+
+def validate_registry_document(doc: dict[str, object]) -> tuple[list[str], list[str]]:
+    raw_agents = doc.get("agents", [])
+    if not isinstance(raw_agents, list):
+        return ["agents must be a list"], []
+    agents: list[AgentDefinition] = []
+    for raw in raw_agents:
+        if not isinstance(raw, dict):
+            return ["agents entries must be objects"], []
+        try:
+            agents.append(AgentDefinition.model_validate(raw))
+        except Exception as exc:  # noqa: BLE001
+            return [str(exc)], []
+    return validate_registry(agents)
 
 
 def validate_registry(agents: list[AgentDefinition]) -> tuple[list[str], list[str]]:

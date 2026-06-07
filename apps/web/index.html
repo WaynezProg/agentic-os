@@ -12,6 +12,17 @@
     />
     <link rel="stylesheet" href="styles.css?v=zh-hant" />
     <script src="i18n.js"></script>
+    <script src="api.js"></script>
+    <script src="ui/rollback.js"></script>
+    <script src="ui/catalog-editor.js"></script>
+    <script src="ui/config-editor.js"></script>
+    <script src="ui/profile-editor.js"></script>
+    <script src="ui/registry-editor.js"></script>
+    <script src="ui/control-plane-editor.js"></script>
+    <script src="ui/approval-workbench.js"></script>
+    <script src="ui/remote-console.js"></script>
+    <script src="ui/product-polish.js"></script>
+    <script src="ui/actions.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -132,6 +143,59 @@
           <button id="refresh-agents" type="button">重新整理代理</button>
         </div>
         <p id="agents-message" class="message" aria-live="polite"></p>
+        <section id="registry-editor-section" class="subpanel">
+          <h3>Harness Instance Registry</h3>
+          <div class="row">
+            <button id="registry-load" type="button">載入編輯器</button>
+          </div>
+          <div id="registry-editor-controls" class="config-editor" hidden>
+            <div class="eval-grid">
+              <label for="registry-id">id</label>
+              <input id="registry-id" type="text" spellcheck="false" />
+              <label for="registry-label">label</label>
+              <input id="registry-label" type="text" spellcheck="false" />
+              <label for="registry-command">command（JSON array 或空白分隔）</label>
+              <input id="registry-command" type="text" spellcheck="false" />
+              <label for="registry-cwd-mode">cwd_mode</label>
+              <select id="registry-cwd-mode"></select>
+              <label for="registry-health-command">health_command</label>
+              <input id="registry-health-command" type="text" spellcheck="false" />
+              <label for="registry-attach-command">attach_command</label>
+              <input id="registry-attach-command" type="text" spellcheck="false" />
+              <label for="registry-log-paths">log_paths（逗號分隔）</label>
+              <input id="registry-log-paths" type="text" spellcheck="false" />
+              <label for="registry-default-provider">default_provider</label>
+              <input id="registry-default-provider" type="text" spellcheck="false" />
+              <label for="registry-config-path">config_path</label>
+              <input id="registry-config-path" type="text" spellcheck="false" />
+            </div>
+            <div class="row">
+              <button id="registry-dry-run" type="button">預覽變更</button>
+              <button id="registry-apply" type="button" disabled>套用</button>
+              <button id="registry-disable" type="button">停用</button>
+            </div>
+            <pre id="registry-diff-preview" class="log-preview">編輯 instance 後按「預覽變更」。</pre>
+            <div id="registry-validation-errors" class="message is-error" hidden></div>
+            <div id="registry-validation-warnings" class="message" hidden></div>
+            <p id="registry-patch-message" class="message"></p>
+          </div>
+          <section id="registry-patch-history" hidden>
+            <h4>修補紀錄</h4>
+            <div class="table-shell">
+              <table aria-label="Registry 修補紀錄">
+                <thead>
+                  <tr>
+                    <th>patch_id</th><th>target</th><th>surface</th><th>source</th>
+                    <th>建立時間</th><th>還原時間</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="registry-patch-history-body">
+                  <tr><td colspan="7">尚無修補紀錄。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
         <div class="table-shell">
           <table id="agents-table">
             <thead>
@@ -152,6 +216,96 @@
             </tbody>
           </table>
         </div>
+        <section id="profile-editor-section" class="subpanel">
+          <h3>Run Profile</h3>
+          <div class="row">
+            <button id="profile-load" type="button">載入 profiles</button>
+            <button id="profile-new" type="button">新增</button>
+          </div>
+          <div class="table-shell">
+            <table aria-label="Run profiles">
+              <thead>
+                <tr><th>name</th><th>harness</th><th>provider</th><th>model</th><th>操作</th></tr>
+              </thead>
+              <tbody id="profile-list-body">
+                <tr><td colspan="5">按「載入 profiles」。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="profile-editor-controls" class="config-editor" hidden>
+            <div class="eval-grid">
+              <label for="profile-name">name</label>
+              <input id="profile-name" type="text" spellcheck="false" />
+              <label for="profile-harness-id">harness_id</label>
+              <input id="profile-harness-id" type="text" spellcheck="false" />
+              <label for="profile-provider">provider</label>
+              <input id="profile-provider" type="text" spellcheck="false" />
+              <label for="profile-model">model</label>
+              <input id="profile-model" type="text" spellcheck="false" />
+              <label for="profile-scope">scope</label>
+              <select id="profile-scope">
+                <option value="local" selected>local</option>
+                <option value="global">global</option>
+              </select>
+              <label for="profile-message-prefix">message_prefix</label>
+              <input id="profile-message-prefix" type="text" spellcheck="false" />
+              <label for="profile-max-tokens">max_tokens_budget</label>
+              <input id="profile-max-tokens" type="number" min="0" />
+              <label for="profile-default-env">default_env（env-var 名稱，逗號分隔）</label>
+              <input id="profile-default-env" type="text" placeholder="MY_TOKEN,OTHER_KEY" spellcheck="false" />
+              <label for="profile-cwd-root">cwd_root</label>
+              <input id="profile-cwd-root" type="text" spellcheck="false" />
+              <label for="profile-cwd-prefix">cwd_prefix</label>
+              <input id="profile-cwd-prefix" type="text" spellcheck="false" />
+              <label for="profile-repo-glob">repo_glob</label>
+              <input id="profile-repo-glob" type="text" spellcheck="false" />
+            </div>
+            <div class="row">
+              <button id="profile-dry-run" type="button">預覽變更</button>
+              <button id="profile-apply" type="button" disabled>套用</button>
+              <button id="profile-delete" type="button">刪除</button>
+              <button id="profile-delete-cascade" type="button">Cascade 刪除</button>
+            </div>
+            <pre id="profile-diff-preview" class="log-preview">選擇或建立 profile 後按「預覽變更」。</pre>
+            <div id="profile-validation-errors" class="message is-error" hidden></div>
+            <p id="profile-bound-projects" class="message is-error" hidden></p>
+            <p id="profile-patch-message" class="message"></p>
+          </div>
+          <h4>Project 綁定</h4>
+          <div class="row">
+            <label for="profile-bind-path">project_path</label>
+            <input id="profile-bind-path" type="text" spellcheck="false" />
+            <label for="profile-bind-name">run_profile</label>
+            <input id="profile-bind-name" type="text" spellcheck="false" />
+            <button id="profile-bind-submit" type="button">綁定</button>
+          </div>
+          <div class="table-shell">
+            <table aria-label="Project profile bindings">
+              <thead>
+                <tr><th>project_path</th><th>run_profile</th><th>備註</th></tr>
+              </thead>
+              <tbody id="profile-bindings-body">
+                <tr><td colspan="3">載入 profiles 後顯示綁定。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <section id="profile-patch-history" hidden>
+            <h4>修補紀錄</h4>
+            <div class="table-shell">
+              <table aria-label="Profile 修補紀錄">
+                <thead>
+                  <tr>
+                    <th>patch_id</th><th>target</th><th>surface</th><th>source</th>
+                    <th>建立時間</th><th>還原時間</th><th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="profile-patch-history-body">
+                  <tr><td colspan="7">尚無修補紀錄。</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
         <section id="run-form-section" class="subpanel" hidden>
           <h3>執行 session</h3>
           <div class="eval-grid">
@@ -348,11 +502,12 @@
                     <th>原因</th>
                     <th>替代</th>
                     <th>下架</th>
+                    <th class="control-plane-action-col">操作</th>
                   </tr>
                 </thead>
                 <tbody id="skills-body">
                   <tr>
-                    <td colspan="8">尚無資料。</td>
+                    <td colspan="9">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -372,11 +527,12 @@
                     <th>原因</th>
                     <th>替代</th>
                     <th>下架</th>
+                    <th class="control-plane-action-col">操作</th>
                   </tr>
                 </thead>
                 <tbody id="mcp-body">
                   <tr>
-                    <td colspan="8">尚無資料。</td>
+                    <td colspan="9">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -419,11 +575,12 @@
                     <th>原因</th>
                     <th>替代</th>
                     <th>下架</th>
+                    <th class="control-plane-action-col">操作</th>
                   </tr>
                 </thead>
                 <tbody id="policy-summary-body">
                   <tr>
-                    <td colspan="7">尚無資料。</td>
+                    <td colspan="8">尚無資料。</td>
                   </tr>
                 </tbody>
               </table>
@@ -450,6 +607,96 @@
             </div>
             <pre id="policy-eval-result" class="summary-output" aria-live="polite"></pre>
           </section>
+        </div>
+        <div id="control-plane-editor-controls" class="control-plane-editor" hidden>
+          <div class="subpanel-head">
+            <h3>技能 / MCP / 政策編輯</h3>
+            <div class="actions">
+              <button type="button" data-action="cp-create" data-domain="skills">新增技能</button>
+              <button type="button" data-action="cp-create" data-domain="mcp">新增 MCP</button>
+              <button type="button" data-action="cp-create" data-domain="policy">新增政策</button>
+            </div>
+          </div>
+          <div id="control-plane-skill-form" class="control-plane-form" hidden>
+            <h4>技能 <span id="control-plane-skill-id"></span></h4>
+            <div class="eval-grid">
+              <label for="cp-skill-label">名稱</label>
+              <input id="cp-skill-label" type="text" />
+              <label for="cp-skill-description">描述</label>
+              <input id="cp-skill-description" type="text" />
+              <label for="cp-skill-source">來源</label>
+              <input id="cp-skill-source" type="text" value="local" />
+              <label for="cp-skill-entrypoint">入口</label>
+              <input id="cp-skill-entrypoint" type="text" />
+              <label for="cp-skill-tags">標籤（逗號分隔）</label>
+              <input id="cp-skill-tags" type="text" />
+              <label for="cp-skill-enabled">啟用</label>
+              <input id="cp-skill-enabled" type="checkbox" checked />
+            </div>
+            <div class="actions">
+              <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" data-action="cp-cancel">取消</button>
+            </div>
+          </div>
+          <div id="control-plane-mcp-form" class="control-plane-form" hidden>
+            <h4>MCP <span id="control-plane-mcp-id"></span></h4>
+            <p class="message">command/url 需重新輸入；預覽已 redact，不可回送。</p>
+            <div class="eval-grid">
+              <label for="cp-mcp-label">名稱</label>
+              <input id="cp-mcp-label" type="text" />
+              <label for="cp-mcp-description">描述</label>
+              <input id="cp-mcp-description" type="text" />
+              <label for="cp-mcp-transport">傳輸</label>
+              <select id="cp-mcp-transport">
+                <option value="stdio">stdio</option>
+                <option value="http">http</option>
+              </select>
+              <label for="cp-mcp-command">command</label>
+              <input id="cp-mcp-command" type="text" placeholder="npx" />
+              <label for="cp-mcp-args">args（空白分隔）</label>
+              <input id="cp-mcp-args" type="text" />
+              <label for="cp-mcp-url">url（http transport）</label>
+              <input id="cp-mcp-url" type="text" />
+              <label for="cp-mcp-env">env keys（逗號分隔，僅名稱）</label>
+              <input id="cp-mcp-env" type="text" placeholder="MCP_TOKEN" />
+              <label for="cp-mcp-enabled">啟用</label>
+              <input id="cp-mcp-enabled" type="checkbox" checked />
+            </div>
+            <div class="actions">
+              <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" data-action="cp-cancel">取消</button>
+            </div>
+          </div>
+          <div id="control-plane-policy-form" class="control-plane-form" hidden>
+            <h4>政策 <span id="control-plane-policy-id"></span></h4>
+            <div class="eval-grid">
+              <label for="cp-policy-enabled">啟用</label>
+              <input id="cp-policy-enabled" type="checkbox" checked />
+              <label for="cp-policy-readonly">唯讀</label>
+              <input id="cp-policy-readonly" type="checkbox" />
+              <label for="cp-policy-skills">allowed_skill_ids</label>
+              <input id="cp-policy-skills" type="text" />
+              <label for="cp-policy-mcp">allowed_mcp_server_ids</label>
+              <input id="cp-policy-mcp" type="text" />
+              <label for="cp-policy-tools">allowed_tool_names</label>
+              <input id="cp-policy-tools" type="text" />
+              <label for="cp-policy-approval-tools">approval_required_tool_names</label>
+              <input id="cp-policy-approval-tools" type="text" />
+              <label for="cp-policy-models">allowed_model_ids</label>
+              <input id="cp-policy-models" type="text" />
+              <label for="cp-policy-cwd-roots">cwd_roots</label>
+              <input id="cp-policy-cwd-roots" type="text" />
+              <label for="cp-policy-rate-limit">rate_limit_per_minute</label>
+              <input id="cp-policy-rate-limit" type="number" value="60" min="1" />
+            </div>
+            <div class="actions">
+              <button type="button" data-action="cp-save">儲存</button>
+              <button type="button" data-action="cp-cancel">取消</button>
+            </div>
+          </div>
+          <div id="control-plane-validation-errors" class="message is-error" hidden></div>
+          <pre id="control-plane-diff-preview" class="log-preview">變更 diff 將顯示於此。</pre>
+          <p id="control-plane-message" class="message" aria-live="polite"></p>
         </div>
       </section>
 
@@ -582,6 +829,56 @@
           <button id="harness-config-load" type="button">載入有效設定</button>
         </div>
         <pre id="harness-config-snippet" class="log-preview">選 Harness 並載入有效原生設定。</pre>
+        <div id="config-editor-controls" class="config-editor" hidden>
+          <h4>Path patch 編輯</h4>
+          <div class="row">
+            <label for="config-scope">範圍</label>
+            <select id="config-scope">
+              <option value="user">user</option>
+              <option value="project" selected>project</option>
+              <option value="local">local</option>
+            </select>
+            <label for="config-op">操作</label>
+            <select id="config-op">
+              <option value="merge">merge</option>
+              <option value="remove">remove</option>
+            </select>
+            <label for="config-path">path</label>
+            <input id="config-path" type="text" placeholder="permissions.allow[0]" />
+          </div>
+          <div class="row">
+            <label for="config-value">value (JSON, merge 必填)</label>
+            <textarea id="config-value" rows="4" placeholder='{"command":"npx"}'></textarea>
+          </div>
+          <div class="row">
+            <button id="config-dry-run" type="button">預覽變更</button>
+            <button id="config-apply" type="button" disabled>套用</button>
+          </div>
+          <pre id="config-diff-preview" class="log-preview">編輯 path patch 後按「預覽變更」。</pre>
+          <div id="config-validation-errors" class="message is-error" hidden></div>
+          <p id="config-patch-message" class="message"></p>
+        </div>
+        <section id="config-patch-history" hidden>
+          <h4>修補紀錄</h4>
+          <div class="table-shell">
+            <table aria-label="Harness 設定修補紀錄">
+              <thead>
+                <tr>
+                  <th>patch_id</th>
+                  <th>target</th>
+                  <th>surface</th>
+                  <th>source</th>
+                  <th>建立時間</th>
+                  <th>還原時間</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="config-patch-history-body">
+                <tr><td colspan="7">載入 Harness 後顯示修補紀錄。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="panel-catalog" class="panel" role="tabpanel" aria-labelledby="tab-catalog">
@@ -612,17 +909,66 @@
         <div class="table-shell">
           <table aria-label="工作流介面">
             <thead>
-              <tr><th>id</th><th>類型</th><th>名稱</th><th>範圍</th><th>來源</th><th>狀態</th><th>覆寫者</th><th>覆寫</th></tr>
+              <tr><th>id</th><th>類型</th><th>名稱</th><th>範圍</th><th>來源</th><th>狀態</th><th>覆寫者</th><th>覆寫</th><th>操作</th></tr>
             </thead>
             <tbody id="catalog-body">
-              <tr><td colspan="8">選 Harness 後按「載入」。</td></tr>
+              <tr><td colspan="9">選 Harness 後按「載入」。</td></tr>
             </tbody>
           </table>
         </div>
+        <p id="catalog-future-surfaces" class="message" hidden>Hooks / Skills / Commands 編輯器預留入口（後續 phase）。</p>
+        <div id="catalog-editor-controls" class="catalog-editor" hidden>
+          <div id="catalog-enable-form" class="catalog-enable-form" hidden>
+            <p>啟用 MCP「<span id="catalog-enable-name"></span>」— 填入實際設定；secret 一律以 <code>${ENV_NAME}</code> 參照，不要貼明碼。</p>
+            <div class="row">
+              <label for="catalog-enable-command">command</label>
+              <input id="catalog-enable-command" type="text" placeholder="npx" />
+              <label for="catalog-enable-args">args（空白分隔）</label>
+              <input id="catalog-enable-args" type="text" placeholder="-y @scope/server" />
+            </div>
+            <div class="row">
+              <label for="catalog-enable-url">url（http transport，與 command 擇一）</label>
+              <input id="catalog-enable-url" type="text" placeholder="https://host/mcp" />
+              <label for="catalog-enable-env">env keys（逗號分隔 → ${KEY}）</label>
+              <input id="catalog-enable-env" type="text" placeholder="MCP_TOKEN, API_KEY" />
+            </div>
+            <div class="row">
+              <button id="catalog-enable-stage" type="button">加入變更</button>
+              <button id="catalog-enable-cancel" type="button">取消</button>
+            </div>
+          </div>
+          <div class="row">
+            <button id="catalog-dry-run" type="button" disabled>預覽變更</button>
+            <button id="catalog-apply" type="button" disabled>套用</button>
+          </div>
+          <pre id="catalog-diff-preview" class="log-preview">選擇 MCP 變更後按「預覽變更」。</pre>
+          <p id="catalog-patch-message" class="message"></p>
+        </div>
+        <section id="catalog-patch-history" hidden>
+          <h3>修補紀錄</h3>
+          <div class="table-shell">
+            <table aria-label="修補紀錄">
+              <thead>
+                <tr>
+                  <th>patch_id</th>
+                  <th>target</th>
+                  <th>surface</th>
+                  <th>source</th>
+                  <th>建立時間</th>
+                  <th>還原時間</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="catalog-patch-history-body">
+                <tr><td colspan="7">載入 Harness 後顯示修補紀錄。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="panel-approvals" class="panel" role="tabpanel" aria-labelledby="tab-approvals">
-        <h2>核准佇列</h2>
+        <h2>核准工作台</h2>
         <div class="row">
           <label for="approval-status-filter">狀態</label>
           <select id="approval-status-filter">
@@ -634,8 +980,11 @@
           </select>
           <button id="approval-load" type="button">載入</button>
         </div>
-        <div class="table-shell">
-          <table aria-label="核准佇列">
+        <div id="approvals-workbench" class="approval-workbench" aria-live="polite">
+          <p class="message">按「載入」查看核准工作台。</p>
+        </div>
+        <div class="table-shell" hidden aria-hidden="true">
+          <table aria-label="核准佇列（相容）">
             <thead>
               <tr><th>id</th><th>harness</th><th>狀態</th><th>來源 session</th><th>核准 session</th><th>原因</th><th>操作</th></tr>
             </thead>
@@ -693,6 +1042,45 @@
           <div id="overview-approvals" class="card stat-card">
             <h3>待核准</h3>
             <div id="overview-approvals-body" class="card-body">載入中…</div>
+          </div>
+          <div id="remote-console" class="card stat-card">
+            <h3>遠端操作台</h3>
+            <div class="card-body">
+              <p>模式：<span id="remote-console-mode">-</span></p>
+              <p id="remote-console-health" class="message">載入中…</p>
+              <div id="remote-console-token">token 狀態載入中…</div>
+              <div class="actions">
+                <button type="button" id="remote-console-refresh">重新整理</button>
+                <button type="button" data-localhost-action="remote.pairing.start" id="remote-pairing-start" hidden>配對（本機）</button>
+                <button type="button" data-localhost-action="remote.devices.rotate" id="remote-token-rotate" hidden>輪替 token（本機）</button>
+              </div>
+            </div>
+          </div>
+          <div id="setup-import-export" class="card stat-card">
+            <h3>專案設定匯出/匯入</h3>
+            <div class="card-body">
+              <label for="setup-cwd">專案 cwd</label>
+              <input id="setup-cwd" type="text" placeholder="/path/to/project" />
+              <div class="actions">
+                <button type="button" id="setup-export-btn">匯出 bundle</button>
+                <button type="button" id="setup-import-dry-run">匯入預覽</button>
+                <button type="button" id="setup-import-apply">匯入套用</button>
+              </div>
+              <pre id="setup-import-export-output" class="log-preview">匯出或匯入結果顯示於此。</pre>
+            </div>
+          </div>
+          <div id="desktop-polish" class="card stat-card">
+            <h3>產品資訊</h3>
+            <div class="card-body">
+              <p id="product-version">版本載入中…</p>
+              <p id="diagnostics-snapshot">診斷載入中…</p>
+              <div class="actions">
+                <button type="button" id="product-update-check">檢查更新（stub）</button>
+                <button type="button" id="product-logs-download">下載日誌 zip</button>
+                <button type="button" id="product-diagnostics-refresh">重新整理診斷</button>
+              </div>
+              <p id="product-update-result" class="message"></p>
+            </div>
           </div>
         </div>
       </section>

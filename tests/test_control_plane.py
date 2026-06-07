@@ -497,3 +497,52 @@ def test_sunset_auto_disables_deprecated_records_on_read_and_evaluate(tmp_path: 
     assert store.get_policy("shell").enabled is False
     assert result.decision == "deny"
     assert result.reason == "policy disabled for shell"
+
+
+def test_skill_mutation_records_prior_snapshot(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+    mutation = store.upsert_skill_tracked(
+        "reviewer",
+        SkillUpsert(label="Reviewer v2", description="updated"),
+    )
+    history = store.list_skill_history("reviewer")
+    assert mutation.patch_id
+    assert len(history) == 1
+    assert history[0].patch_id == mutation.patch_id
+
+
+def test_skill_rollback_restores_prior_version(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_skill("reviewer", SkillUpsert(label="Reviewer"))
+    mutation = store.upsert_skill_tracked(
+        "reviewer",
+        SkillUpsert(label="Reviewer v2"),
+    )
+    rolled = store.rollback_skill("reviewer", mutation.patch_id)
+    assert rolled.record.label == "Reviewer"
+
+
+def test_mcp_snapshot_redacts_secret_values(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.upsert_mcp_server(
+        "figma",
+        McpServerUpsert(
+            label="Figma MCP",
+            transport="http",
+            command_preview=["figma-mcp", "--token", "SECRET"],
+            url="https://user:SECRET@example.invalid/mcp",
+            env_keys=["FIGMA_TOKEN"],
+        ),
+    )
+    history = store.list_mcp_history("figma")
+    assert history == []
+    mutation = store.upsert_mcp_server_tracked(
+        "figma",
+        McpServerUpsert(label="Figma MCP v2", transport="http", env_keys=["FIGMA_TOKEN"]),
+    )
+    entry = store.list_mcp_history("figma")[0]
+    stored = entry.snapshot_json
+    assert "SECRET" not in stored
+    assert "[REDACTED]" in stored
+    assert mutation.patch_id

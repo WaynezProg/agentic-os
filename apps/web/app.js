@@ -1,47 +1,9 @@
 "use strict";
 
-const DEFAULT_API_URL = "http://127.0.0.1:8767";
+const Ao = window.AgenticOs;
+const DEFAULT_API_URL = Ao.DEFAULT_API_URL;
+const ENDPOINTS = Ao.ENDPOINTS;
 const MAX_LOG_ENTRIES = 300;
-
-const ENDPOINTS = Object.freeze({
-  health: "/health",
-  agents: "/agents",
-  sessions: "/sessions",
-  sessionDetail: "/sessions/{session_id}",
-  sessionLogs: "/sessions/{session_id}/logs",
-  sessionStop: "/sessions/{session_id}/stop",
-  sessionRetry: "/sessions/{session_id}/retry",
-  sessionEvents: "/sessions/{session_id}/events",
-  sessionTimeline: "/sessions/{session_id}/timeline",
-  sessionAttach: "/sessions/{session_id}/attach",
-  sessionRun: "/sessions",
-  sessionSummary: "/sessions/{session_id}/memory/summary",
-  sessionReview: "/sessions/{session_id}/memory/review",
-  memoryReview: "/memory/review",
-  memoryApprove: "/memory/review/{item_id}/approve",
-  memoryReject: "/memory/review/{item_id}/reject",
-  memoryList: "/memory",
-  memorySearch: "/memory/search",
-  skills: "/skills",
-  mcp: "/mcp",
-  policySummary: "/policy",
-  policyEvaluate: "/policy/evaluate",
-  approvals: "/approvals",
-  approvalApprove: "/approvals/{approval_id}/approve",
-  approvalReject: "/approvals/{approval_id}/reject",
-  fleetHealth: "/fleet/health",
-  fleetInstanceHealth: "/fleet/{agent_id}/health",
-  fleetEvents: "/fleet/events",
-  fleetCapacity: "/fleet/capacity",
-  fleetProbe: "/fleet/probe",
-  auditEvents: "/audit/events",
-  auditPolicyCoverage: "/audit/policy-coverage",
-  harnesses: "/harnesses",
-  harnessHealth: "/harnesses/{harness_id}/health",
-  catalogSurfaces: "/catalog/{harness}/surfaces",
-  harnessConfigEffective: "/harness-config/{harness_id}/effective",
-  approvalsFiltered: "/approvals",
-});
 
 const HTML_ENTITIES = Object.freeze({
   "&": "&amp;",
@@ -64,6 +26,11 @@ const state = {
 document.addEventListener("DOMContentLoaded", async () => {
   byId("api-url").value = DEFAULT_API_URL;
   await initDesktopConnection();
+  Ao.CatalogEditor.init();
+  Ao.HarnessConfigEditor.init();
+  Ao.ProfileEditor.init();
+  Ao.RegistryEditor.init();
+  Ao.ControlPlaneEditor.toggleEditorChrome();
   bindTabs();
   bindControls();
   refreshAll();
@@ -77,6 +44,7 @@ async function initDesktopConnection() {
   try {
     const profile = await invoke("get_connection_profile");
     state.connectionProfile = profile;
+    Ao.setConnectionProfile(profile);
     if (profile.mode === "remote") {
       byId("api-url").value = profile.api_url;
       byId("api-url").readOnly = true;
@@ -191,88 +159,11 @@ async function refreshAll() {
   }
 }
 
-function apiBase() {
-  const value = byId("api-url").value.trim() || DEFAULT_API_URL;
-  return value.replace(/\/+$/, "");
-}
-
-function buildEndpoint(name, params = {}) {
-  let path = ENDPOINTS[name];
-  Object.entries(params).forEach(([key, value]) => {
-    path = path.replace(`{${key}}`, encodeURIComponent(value));
-  });
-  return path;
-}
-
-async function apiFetch(path, options = {}) {
-  if (state.connectionProfile?.mode === "remote" && window.__TAURI__?.core?.invoke) {
-    return apiFetchViaDesktop(path, options);
-  }
-  const headers = {
-    Accept: "application/json",
-    ...(options.body ? { "Content-Type": "application/json" } : {}),
-    ...(options.headers || {}),
-  };
-  const response = await fetch(`${apiBase()}${path}`, { ...options, headers });
-  const text = await response.text();
-  const payload = text ? parseJson(text) : {};
-
-  if (!response.ok) {
-    const detail = normalizeErrorDetail(payload.detail || response.statusText);
-    const error = new Error(`${response.status} ${detail}`);
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
-  }
-  return payload;
-}
-
-async function apiFetchViaDesktop(path, options = {}) {
-  const method = (options.method || "GET").toUpperCase();
-  const body =
-    options.body === undefined
-      ? null
-      : typeof options.body === "string"
-        ? options.body
-        : JSON.stringify(options.body);
-  try {
-    const text = await window.__TAURI__.core.invoke("connection_api_fetch", {
-      method,
-      path,
-      body,
-    });
-    return text ? parseJson(text) : {};
-  } catch (error) {
-    const message = String(error);
-    const errorObject = new Error(message);
-    errorObject.status = 0;
-    errorObject.payload = { detail: message };
-    throw errorObject;
-  }
-}
-
-function parseJson(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { detail: text };
-  }
-}
-
-function normalizeErrorDetail(detail) {
-  if (typeof detail === "string") {
-    return detail;
-  }
-  return JSON.stringify(detail);
-}
-
-async function postEmpty(path) {
-  return apiFetch(path, { method: "POST", body: JSON.stringify({}) });
-}
-
-async function postJson(path, payload) {
-  return apiFetch(path, { method: "POST", body: JSON.stringify(payload) });
-}
+const apiBase = Ao.apiBase;
+const buildEndpoint = Ao.buildEndpoint.bind(Ao);
+const apiFetch = Ao.apiFetch.bind(Ao);
+const postEmpty = Ao.postEmpty.bind(Ao);
+const postJson = Ao.postJson.bind(Ao);
 
 async function loadSessionDetail(sessionId) {
   return apiFetch(buildEndpoint("sessionDetail", { session_id: sessionId }), { method: "GET" });
@@ -299,6 +190,8 @@ async function loadHealth() {
     return false;
   }
 }
+
+Ao.loadAgents = loadAgents;
 
 async function loadAgents() {
   const body = byId("agents-body");
@@ -621,6 +514,55 @@ async function loadMemories(query = "") {
 
 async function loadSkillsMcp() {
   await Promise.allSettled([loadSkills(), loadMcpServers(), loadPolicies(), loadApprovals()]);
+  Ao.ControlPlaneEditor.toggleEditorChrome();
+}
+
+Ao.reloadControlPlaneTables = loadSkillsMcp;
+
+function renderControlPlaneActions(domain, recordId) {
+  if (!Ao.isLocalWritable()) {
+    return "";
+  }
+  const historyContainer = `cp-history-${domain}-${recordId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `
+    <td class="control-plane-action-col">
+      <div class="actions">
+        <button type="button" data-action="cp-edit" data-domain="${escapeHtml(domain)}" data-record-id="${escapeHtml(recordId)}">編輯</button>
+        <button type="button" data-action="cp-history" data-domain="${escapeHtml(domain)}" data-record-id="${escapeHtml(recordId)}" data-history-container="${escapeHtml(historyContainer)}">歷史</button>
+        ${
+          domain !== "policy"
+            ? `<button type="button" data-action="cp-disable" data-domain="${escapeHtml(domain)}" data-record-id="${escapeHtml(recordId)}">停用</button>`
+            : ""
+        }
+      </div>
+    </td>
+  `;
+}
+
+function renderControlPlaneHistoryRow(domain, recordId, colspan) {
+  const historyContainer = `cp-history-${domain}-${recordId}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `
+    <tr id="${escapeHtml(historyContainer)}" class="cp-history-row" hidden data-history-domain="${escapeHtml(domain)}" data-history-id="${escapeHtml(recordId)}">
+      <td colspan="${colspan}">
+        <table class="nested-table" aria-label="歷史紀錄">
+          <thead>
+            <tr>
+              <th>patch_id</th>
+              <th>target</th>
+              <th>surface</th>
+              <th>source</th>
+              <th>建立時間</th>
+              <th>還原時間</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="${escapeHtml(historyContainer)}-body">
+            <tr><td colspan="7">載入中…</td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+  `;
 }
 
 async function loadSkills() {
@@ -629,12 +571,13 @@ async function loadSkills() {
     const data = await apiFetch(buildEndpoint("skills"));
     const skills = asArray(data.skills);
     if (skills.length === 0) {
-      renderEmptyRow(body, 8, t("emptyNoSkills"));
+      renderEmptyRow(body, 9, t("emptyNoSkills"));
       return;
     }
     body.innerHTML = skills
-      .map(
-        (skill) => `
+      .flatMap(
+        (skill) => [
+          `
           <tr>
             <td class="cell-id">${escapeHtml(skill.id)}</td>
             <td>${escapeHtml(skill.label)}</td>
@@ -644,12 +587,15 @@ async function loadSkills() {
             <td>${escapeHtml(skill.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(skill.replacement_id)}</td>
             <td>${escapeHtml(skill.sunset_at)}</td>
+            ${renderControlPlaneActions("skills", skill.id)}
           </tr>
         `,
+          renderControlPlaneHistoryRow("skills", skill.id, 9),
+        ],
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 8, error.message);
+    renderErrorRow(body, 9, error.message);
   }
 }
 
@@ -659,12 +605,13 @@ async function loadMcpServers() {
     const data = await apiFetch(buildEndpoint("mcp"));
     const servers = asArray(data.servers);
     if (servers.length === 0) {
-      renderEmptyRow(body, 8, t("emptyNoMcp"));
+      renderEmptyRow(body, 9, t("emptyNoMcp"));
       return;
     }
     body.innerHTML = servers
-      .map(
-        (server) => `
+      .flatMap(
+        (server) => [
+          `
           <tr>
             <td class="cell-id">${escapeHtml(server.id)}</td>
             <td>${escapeHtml(server.label)}</td>
@@ -674,12 +621,15 @@ async function loadMcpServers() {
             <td>${escapeHtml(server.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(server.replacement_id)}</td>
             <td>${escapeHtml(server.sunset_at)}</td>
+            ${renderControlPlaneActions("mcp", server.id)}
           </tr>
         `,
+          renderControlPlaneHistoryRow("mcp", server.id, 9),
+        ],
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 8, error.message);
+    renderErrorRow(body, 9, error.message);
   }
 }
 
@@ -728,12 +678,13 @@ async function loadPolicies() {
     const data = await apiFetch(buildEndpoint("policySummary"));
     const policies = asArray(data.policies);
     if (policies.length === 0) {
-      renderEmptyRow(body, 7, t("emptyNoPolicies"));
+      renderEmptyRow(body, 8, t("emptyNoPolicies"));
       return;
     }
     body.innerHTML = policies
-      .map(
-        (policy) => `
+      .flatMap(
+        (policy) => [
+          `
           <tr>
             <td class="cell-id">${escapeHtml(policy.agent_id)}</td>
             <td>${policy.deprecated ? `<span class="pill is-deprecated">${escapeHtml(t("deprecated"))}</span>` : escapeHtml(String(policy.enabled !== false))}</td>
@@ -742,12 +693,15 @@ async function loadPolicies() {
             <td>${escapeHtml(policy.deprecation_reason)}</td>
             <td class="cell-id">${escapeHtml(policy.replacement_id)}</td>
             <td>${escapeHtml(policy.sunset_at)}</td>
+            ${renderControlPlaneActions("policy", policy.agent_id)}
           </tr>
         `,
+          renderControlPlaneHistoryRow("policy", policy.agent_id, 8),
+        ],
       )
       .join("");
   } catch (error) {
-    renderErrorRow(body, 7, error.message);
+    renderErrorRow(body, 8, error.message);
   }
 }
 
@@ -897,6 +851,26 @@ async function handleActionClick(event) {
   const agentId = button.dataset.agentId;
   const itemId = button.dataset.itemId;
   const approvalId = button.dataset.approvalId;
+
+  if (Ao.isDelegatedAction(action)) {
+    if (!Ao.isLocalWritable()) {
+      return;
+    }
+    button.disabled = true;
+    try {
+      await Ao.dispatchDelegatedAction(action, button);
+    } catch (error) {
+      const message = document.getElementById("catalog-patch-message");
+      if (message) {
+        message.textContent = error.message;
+        message.classList.add("is-error");
+      }
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
   button.disabled = true;
 
   try {
@@ -953,6 +927,12 @@ async function handleActionClick(event) {
       await approveApproval(approvalId);
     } else if (action === "reject-approval" && approvalId) {
       await rejectApproval(approvalId);
+    } else if (action === "view-session-events" && sessionId) {
+      showTab("sessions");
+      await selectSession(sessionId);
+      await loadSessionTimeline(sessionId);
+    } else if (action === "retry-approval-session" && sessionId) {
+      await Ao.ApprovalWorkbench.retrySession(sessionId, approvalId || button.dataset.approvalId);
     }
   } catch (error) {
     if (["approve-memory", "reject-memory", "view-summary"].includes(action)) {
@@ -979,7 +959,6 @@ async function rejectApproval(approvalId) {
   setMessage("agents-message", `rejected ${approvalId}`);
   await Promise.allSettled([loadApprovals(), loadApprovalsTab()]);
 }
-
 async function loadFleet() {
   await Promise.allSettled([loadFleetHealth(), loadFleetCapacity(), loadFleetEvents(), loadAuditEvents()]);
 }
@@ -1101,21 +1080,7 @@ async function loadAuditEvents() {
 }
 
 async function loadHarnessNativeConfig() {
-  const harnessId = byId("harness-config-id").value;
-  const snippet = byId("harness-config-snippet");
-  snippet.textContent = t("loading");
-  try {
-    const data = await apiFetch(buildEndpoint("harnessConfigEffective", { harness_id: harnessId }));
-    const payload = {
-      harness_id: data.harness_id,
-      scopes_present: data.scopes_present,
-      entries: data.entries,
-    };
-    const text = JSON.stringify(payload, null, 2);
-    snippet.textContent = text.length > 4096 ? `${text.slice(0, 4096)}\n${t("truncated")}` : text;
-  } catch (error) {
-    snippet.textContent = error.message;
-  }
+  await Ao.HarnessConfigEditor.loadEffective();
 }
 
 async function loadHarnesses() {
@@ -1199,42 +1164,12 @@ async function loadHarnessHealth(harnessId) {
 }
 
 async function loadCatalog() {
-  const harness = byId("catalog-harness").value;
-  const type = byId("catalog-type").value;
-  const body = byId("catalog-body");
-  try {
-    let path = buildEndpoint("catalogSurfaces", { harness });
-    if (type) {
-      path += `?surface_type=${encodeURIComponent(type)}`;
-    }
-    const data = await apiFetch(path);
-    const surfaces = asArray(data.surfaces);
-    if (!surfaces.length) {
-      renderEmptyRow(body, 8, t("emptyNoSurfaces"));
-      return;
-    }
-    body.innerHTML = surfaces
-      .map(
-        (s) => `
-          <tr>
-            <td class="cell-id">${escapeHtml(s.id)}</td>
-            <td>${escapeHtml(s.type)}</td>
-            <td>${escapeHtml(s.name)}</td>
-            <td><span class="pill">${escapeHtml(s.scope)}</span></td>
-            <td>${escapeHtml(s.source)}</td>
-            <td>${s.enabled ? "enabled" : "disabled"}</td>
-            <td>${valueOrDash(s.overridden_by)}</td>
-            <td>${valueOrDash(s.overrides)}</td>
-          </tr>
-        `,
-      )
-      .join("");
-  } catch (error) {
-    renderErrorRow(body, 8, error.message);
-  }
+  await Ao.CatalogEditor.loadCatalog();
 }
 
 async function loadApprovalsTab() {
+  await Ao.ApprovalWorkbench.loadWorkbench();
+  Ao.ApprovalWorkbench.connectApprovalStream();
   try {
     const status = byId("approval-status-filter").value;
     const params = status ? { status } : {};
@@ -1368,6 +1303,10 @@ async function loadOverview() {
     byId("overview-approvals-body").textContent = t("overviewApprovalsPending", { pending });
   } catch {
     byId("overview-approvals-body").textContent = t("overviewError");
+  }
+
+  if (Ao.ProductPolish?.init) {
+    await Ao.ProductPolish.init();
   }
 }
 

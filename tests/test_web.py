@@ -9,6 +9,38 @@ WEB_DIR = ROOT / "apps" / "web"
 INDEX_HTML = WEB_DIR / "index.html"
 STYLES_CSS = WEB_DIR / "styles.css"
 APP_JS = WEB_DIR / "app.js"
+API_JS = WEB_DIR / "api.js"
+CATALOG_EDITOR_JS = WEB_DIR / "ui" / "catalog-editor.js"
+CONFIG_EDITOR_JS = WEB_DIR / "ui" / "config-editor.js"
+PROFILE_EDITOR_JS = WEB_DIR / "ui" / "profile-editor.js"
+REGISTRY_EDITOR_JS = WEB_DIR / "ui" / "registry-editor.js"
+CONTROL_PLANE_EDITOR_JS = WEB_DIR / "ui" / "control-plane-editor.js"
+APPROVAL_WORKBENCH_JS = WEB_DIR / "ui" / "approval-workbench.js"
+REMOTE_CONSOLE_JS = WEB_DIR / "ui" / "remote-console.js"
+PRODUCT_POLISH_JS = WEB_DIR / "ui" / "product-polish.js"
+ROLLBACK_JS = WEB_DIR / "ui" / "rollback.js"
+ACTIONS_JS = WEB_DIR / "ui" / "actions.js"
+
+
+def _web_javascript_sources() -> str:
+    return "".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            APP_JS,
+            API_JS,
+            CATALOG_EDITOR_JS,
+            CONFIG_EDITOR_JS,
+            PROFILE_EDITOR_JS,
+            REGISTRY_EDITOR_JS,
+            CONTROL_PLANE_EDITOR_JS,
+            APPROVAL_WORKBENCH_JS,
+            REMOTE_CONSOLE_JS,
+            PRODUCT_POLISH_JS,
+            ROLLBACK_JS,
+            ACTIONS_JS,
+        )
+        if path.is_file()
+    )
 
 
 def test_static_web_files_exist() -> None:
@@ -176,7 +208,7 @@ def test_policy_summary_and_evaluation_controls_exist() -> None:
 
 
 def test_javascript_references_required_daemon_endpoints() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
 
     for endpoint in [
         "/health",
@@ -284,7 +316,7 @@ def test_no_node_build_or_package_requirement_is_introduced() -> None:
 
     combined = (
         INDEX_HTML.read_text(encoding="utf-8")
-        + APP_JS.read_text(encoding="utf-8")
+        + _web_javascript_sources()
         + (WEB_DIR / "i18n.js").read_text(encoding="utf-8")
     )
     for token in ["vite", "webpack", "parcel", "npm install", "node_modules"]:
@@ -299,14 +331,14 @@ def test_catalog_harness_select_has_seven_options() -> None:
 
 def test_harness_native_config_panel_exists() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
     assert 'id="harness-config-snippet"' in html
     assert "loadHarnessNativeConfig" in js
     assert "/harness-config/{harness_id}/effective" in js
 
 
 def test_javascript_does_not_pass_endpoint_keys_directly_to_api_fetch() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
 
     assert re.search(r'apiFetch\("[A-Za-z][A-Za-z0-9]*"', js) is None
 
@@ -324,7 +356,7 @@ def test_fleet_tab_and_panel_exist() -> None:
 
 
 def test_fleet_javascript_references_fleet_endpoints() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
     for endpoint in [
         "/fleet/health",
         "/fleet/{agent_id}/health",
@@ -357,7 +389,7 @@ def test_fleet_tab_has_audit_events_section() -> None:
 
 
 def test_javascript_references_audit_endpoints() -> None:
-    js = APP_JS.read_text(encoding="utf-8")
+    js = _web_javascript_sources()
     for endpoint in [
         "/audit/events",
         "/audit/policy-coverage",
@@ -396,6 +428,197 @@ def test_javascript_has_approval_workflow_handlers() -> None:
     assert 'data-action="reject-approval"' in js
 
 
+def test_catalog_patch_ui_modules_exist() -> None:
+    assert API_JS.is_file()
+    assert CATALOG_EDITOR_JS.is_file()
+    assert ROLLBACK_JS.is_file()
+    assert ACTIONS_JS.is_file()
+
+
+def test_catalog_patch_ui_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    for element_id in [
+        "catalog-dry-run",
+        "catalog-apply",
+        "catalog-diff-preview",
+        "catalog-patch-history-body",
+        "catalog-editor-controls",
+    ]:
+        assert f'id="{element_id}"' in html
+    assert 'data-action="catalog-enable-mcp"' in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    assert 'data-action="catalog-disable-mcp"' in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    rollback_source = ROLLBACK_JS.read_text(encoding="utf-8")
+    assert "patch-rollback" in rollback_source
+    assert "control-plane-rollback" in rollback_source
+
+
+def test_catalog_patch_ui_references_patch_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    rollback_js = ROLLBACK_JS.read_text(encoding="utf-8")
+
+    assert "/catalog/{harness}/surfaces/patch" in api_js
+    assert "catalogPatch" in CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    assert "/patches" in api_js
+    assert "/patches/{patch_id}/rollback" in api_js
+    assert "patchRollback" in rollback_js
+
+
+def test_catalog_enable_uses_operator_input_not_redacted_preview() -> None:
+    # Catalog surface command_preview / url are redacted at storage time;
+    # deriving an enable config from them would write "[REDACTED]" into the
+    # real harness config. Enable must read operator-entered form values only.
+    editor = CATALOG_EDITOR_JS.read_text(encoding="utf-8")
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert "command_preview" not in editor
+    assert "buildMcpConfigFromRegistry" not in editor
+    assert "configure-mcp-server" not in editor
+
+    for element_id in [
+        "catalog-enable-form",
+        "catalog-enable-command",
+        "catalog-enable-args",
+        "catalog-enable-url",
+        "catalog-enable-env",
+        "catalog-enable-stage",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_index_html_loads_catalog_patch_modules_before_app_js() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    api_pos = html.index('src="api.js"')
+    rollback_pos = html.index('src="ui/rollback.js"')
+    catalog_pos = html.index('src="ui/catalog-editor.js"')
+    config_pos = html.index('src="ui/config-editor.js"')
+    profile_pos = html.index('src="ui/profile-editor.js"')
+    registry_pos = html.index('src="ui/registry-editor.js"')
+    actions_pos = html.index('src="ui/actions.js"')
+    app_pos = html.index('src="app.js"')
+    assert (
+        api_pos
+        < rollback_pos
+        < catalog_pos
+        < config_pos
+        < profile_pos
+        < registry_pos
+        < actions_pos
+        < app_pos
+    )
+
+
+def test_harness_config_patch_ui_modules_exist() -> None:
+    assert CONFIG_EDITOR_JS.is_file()
+
+
+def test_harness_config_patch_ui_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    for element_id in [
+        "config-scope",
+        "config-op",
+        "config-path",
+        "config-value",
+        "config-dry-run",
+        "config-apply",
+        "config-diff-preview",
+        "config-validation-errors",
+        "config-patch-history-body",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_harness_config_patch_ui_references_patch_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = CONFIG_EDITOR_JS.read_text(encoding="utf-8")
+
+    for endpoint in [
+        "/harness-config/{harness_id}/patch",
+        "/harness-config/{harness_id}/diff",
+        "/harness-config/{harness_id}/explain",
+    ]:
+        assert endpoint in api_js
+    assert "harnessConfigPatch" in editor
+    assert "harnessConfigDiff" in editor
+    assert "harnessConfigExplain" in editor
+
+
+def test_harness_config_editor_optimistic_lock_and_cross_write_guard() -> None:
+    editor = CONFIG_EDITOR_JS.read_text(encoding="utf-8")
+
+    assert "base_mtime" in editor
+    assert "stale_target" in editor
+    assert 'basePath: "/harness-config"' in editor
+    assert 'family: "harness"' in editor
+    assert 'basePath: "/config"' not in editor.split("HARNESS_CONFIG_DESCRIPTOR")[0]
+
+
+def test_profile_editor_ui_modules_exist() -> None:
+    assert PROFILE_EDITOR_JS.is_file()
+
+
+def test_profile_editor_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    for element_id in [
+        "profile-name",
+        "profile-harness-id",
+        "profile-provider",
+        "profile-model",
+        "profile-scope",
+        "profile-default-env",
+        "profile-dry-run",
+        "profile-apply",
+        "profile-diff-preview",
+        "profile-validation-errors",
+        "profile-patch-history-body",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_profile_editor_references_profile_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = PROFILE_EDITOR_JS.read_text(encoding="utf-8")
+    for endpoint in ["/profiles", "/profiles/{name}", "/projects/{project_path}/bind-profile"]:
+        assert endpoint in api_js
+    assert "profileDetail" in editor
+    assert "base_mtime" in editor
+    assert "stale_target" in editor
+    assert "ENV_VAR_PATTERN" in editor or "A-Z][A-Z0-9_]" in editor
+
+
+def test_registry_editor_ui_modules_exist() -> None:
+    assert REGISTRY_EDITOR_JS.is_file()
+
+
+def test_registry_editor_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    for element_id in [
+        "registry-id",
+        "registry-label",
+        "registry-command",
+        "registry-cwd-mode",
+        "registry-dry-run",
+        "registry-apply",
+        "registry-diff-preview",
+        "registry-validation-errors",
+        "registry-validation-warnings",
+        "registry-patch-history-body",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_registry_editor_references_registry_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = REGISTRY_EDITOR_JS.read_text(encoding="utf-8")
+    for endpoint in ["/registry/agents", "/registry/agents/{id}/disable", "/registry/schema"]:
+        assert endpoint in api_js
+    assert "registryAgents" in editor
+    assert "registrySchema" in editor
+    assert "base_mtime" in editor
+    assert "stale_target" in editor
+
+
 def test_readme_documents_p3_usage_and_limits() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
@@ -410,3 +633,105 @@ def test_readme_documents_p3_usage_and_limits() -> None:
         "Secrets must not be stored",
     ]:
         assert token in readme
+
+
+def test_control_plane_editor_modules_exist() -> None:
+    assert CONTROL_PLANE_EDITOR_JS.is_file()
+
+
+def test_control_plane_editor_controls_exist_in_html() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/control-plane-editor.js"' in html
+    for element_id in [
+        "control-plane-editor-controls",
+        "control-plane-skill-form",
+        "control-plane-mcp-form",
+        "control-plane-policy-form",
+        "cp-mcp-command",
+        "cp-mcp-env",
+        "control-plane-diff-preview",
+        "control-plane-validation-errors",
+    ]:
+        assert f'id="{element_id}"' in html
+
+
+def test_control_plane_editor_references_endpoints() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    editor = CONTROL_PLANE_EDITOR_JS.read_text(encoding="utf-8")
+    rollback_js = ROLLBACK_JS.read_text(encoding="utf-8")
+    for endpoint in [
+        "/skills/{skill_id}/history",
+        "/skills/{skill_id}/rollback",
+        "/mcp/{server_id}/history",
+        "/mcp/{server_id}/rollback",
+        "/policy/{agent_id}/history",
+        "/policy/{agent_id}/rollback",
+    ]:
+        assert endpoint in api_js
+    assert "skillHistory" in editor
+    assert "control-plane-rollback" in rollback_js
+    assert "historyPath" in rollback_js
+    assert "command_preview" not in editor or "never pre-fill" in editor.lower() or "重新輸入" in editor
+
+
+def test_control_plane_mcp_edit_avoids_redacted_resubmit() -> None:
+    editor = CONTROL_PLANE_EDITOR_JS.read_text(encoding="utf-8")
+    assert "cp-mcp-command" in editor
+    assert '[REDACTED]' in editor
+    assert 'byId("cp-mcp-command").value = ""' in editor
+
+
+def test_index_html_loads_control_plane_editor_before_app_js() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    cp_pos = html.index('src="ui/control-plane-editor.js"')
+    app_pos = html.index('src="app.js"')
+    assert cp_pos < app_pos
+
+
+def test_approval_workbench_modules_exist() -> None:
+    assert APPROVAL_WORKBENCH_JS.is_file()
+
+
+def test_approval_workbench_renders_context_fields() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    workbench = APPROVAL_WORKBENCH_JS.read_text(encoding="utf-8")
+    assert 'id="approvals-workbench"' in html
+    assert 'src="ui/approval-workbench.js"' in html
+    for token in [
+        "觸發原因",
+        "來源 session",
+        "argv",
+        "cwd",
+        "政策結果",
+        "retry-approval-session",
+        "view-session-events",
+        "approval.reason",
+        "approval.argv",
+        "approval.cwd",
+    ]:
+        assert token in workbench or token in html
+
+
+def test_remote_console_modules_exist() -> None:
+    assert REMOTE_CONSOLE_JS.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/remote-console.js"' in html
+    assert 'id="remote-console"' in html
+    assert "remoteAffordances" in API_JS.read_text(encoding="utf-8")
+    assert "remote.pairing.start" in REMOTE_CONSOLE_JS.read_text(encoding="utf-8")
+
+
+def test_product_polish_modules_exist() -> None:
+    assert PRODUCT_POLISH_JS.is_file()
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'src="ui/product-polish.js"' in html
+    for element_id in [
+        "product-version",
+        "diagnostics-snapshot",
+        "setup-import-export-output",
+        "setup-export-btn",
+        "product-logs-download",
+    ]:
+        assert f'id="{element_id}"' in html
+    assert "diagnosticsResources" in API_JS.read_text(encoding="utf-8")
+    assert "versionInfo" in API_JS.read_text(encoding="utf-8")

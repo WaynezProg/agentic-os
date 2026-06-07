@@ -894,3 +894,58 @@ details.subpanel > summary:hover {
   }
 
 }
+
+.approval-workbench {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.approval-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: var(--panel);
+}
+
+.approval-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.approval-card-body {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.approval-card-body div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px;
+}
+
+.approval-card-body dt {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.approval-card-body dd {
+  margin: 0;
+}
+
+.approval-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.approval-retry-result {
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -9,6 +9,20 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
+from agentic_os.control_plane_history import (
+    HISTORY_SCHEMA,
+    ControlPlaneHistoryEntry,
+    ControlPlaneMutationResult,
+    HistoryConflictError,
+    entity_diff,
+    get_history_entry,
+    insert_history,
+    list_history,
+    mark_history_rolled_back,
+    new_patch_id,
+    next_history_version,
+)
+
 
 Decision = Literal["allow", "deny", "approval_required"]
 Transport = Literal["stdio", "http", "sse"]
@@ -224,7 +238,7 @@ class ControlPlaneStore:
     def init(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
-            conn.executescript(SCHEMA)
+            conn.executescript(SCHEMA + HISTORY_SCHEMA)
             _add_column_if_missing(conn, "skills", "deprecated INTEGER NOT NULL DEFAULT 0")
             _add_column_if_missing(conn, "skills", "deprecated_at TEXT")
             _add_column_if_missing(conn, "skills", "deprecation_reason TEXT NOT NULL DEFAULT ''")
@@ -250,10 +264,47 @@ class ControlPlaneStore:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def upsert_skill(self, skill_id: str, request: SkillUpsert) -> SkillRecord:
+    def _snapshot_record(self, record: object) -> dict[str, Any]:
+        return _redact_value(asdict(record))
+
+    def list_skill_history(self, skill_id: str, *, limit: int = 50) -> list[ControlPlaneHistoryEntry]:
+        _validate_id(skill_id)
+        with self.connect() as conn:
+            return list_history(conn, entity_type="skill", entity_id=skill_id, limit=limit)
+
+    def list_mcp_history(self, server_id: str, *, limit: int = 50) -> list[ControlPlaneHistoryEntry]:
+        _validate_id(server_id)
+        with self.connect() as conn:
+            return list_history(conn, entity_type="mcp", entity_id=server_id, limit=limit)
+
+    def list_policy_history(self, agent_id: str, *, limit: int = 50) -> list[ControlPlaneHistoryEntry]:
+        _validate_id(agent_id)
+        with self.connect() as conn:
+            return list_history(conn, entity_type="policy", entity_id=agent_id, limit=limit)
+
+    def upsert_skill_tracked(
+        self, skill_id: str, request: SkillUpsert, *, source: str = "api"
+    ) -> ControlPlaneMutationResult:
         _validate_id(skill_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict: dict[str, Any] | None = None
+        try:
+            prior_dict = self._snapshot_record(self._get_skill_raw(skill_id))
+        except KeyError:
+            pass
         with self.connect() as conn:
+            if prior_dict is not None:
+                version = next_history_version(conn, "skill", skill_id)
+                insert_history(
+                    conn,
+                    entity_type="skill",
+                    entity_id=skill_id,
+                    patch_id=patch_id,
+                    version=version,
+                    snapshot=prior_dict,
+                    source=source,
+                )
             conn.execute(
                 """
                 INSERT INTO skills (
@@ -284,7 +335,18 @@ class ControlPlaneStore:
                     int(request.enabled),
                 ),
             )
-        return self._get_skill_raw(skill_id)
+        after = self._get_skill_raw(skill_id)
+        after_dict = self._snapshot_record(after)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, after_dict),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def upsert_skill(self, skill_id: str, request: SkillUpsert) -> SkillRecord:
+        return self.upsert_skill_tracked(skill_id, request).record
 
     def list_skills(self) -> list[SkillRecord]:
         self.apply_sunset()
@@ -308,10 +370,22 @@ class ControlPlaneStore:
             raise KeyError(skill_id)
         return _skill_from_row(row)
 
-    def disable_skill(self, skill_id: str) -> SkillRecord:
+    def disable_skill_tracked(self, skill_id: str, *, source: str = "api") -> ControlPlaneMutationResult:
         _validate_id(skill_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_skill_raw(skill_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "skill", skill_id)
+            insert_history(
+                conn,
+                entity_type="skill",
+                entity_id=skill_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE skills
@@ -322,7 +396,17 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(skill_id)
-        return self._get_skill_raw(skill_id)
+        after = self._get_skill_raw(skill_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def disable_skill(self, skill_id: str) -> SkillRecord:
+        return self.disable_skill_tracked(skill_id).record
 
     def deprecate_skill(
         self,
@@ -331,10 +415,40 @@ class ControlPlaneStore:
         reason: str = "",
         replacement_id: str | None = None,
         sunset_at: str | None = None,
+        source: str = "api",
     ) -> SkillRecord:
+        return self.deprecate_skill_tracked(
+            skill_id,
+            reason=reason,
+            replacement_id=replacement_id,
+            sunset_at=sunset_at,
+            source=source,
+        ).record
+
+    def deprecate_skill_tracked(
+        self,
+        skill_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+        source: str = "api",
+    ) -> ControlPlaneMutationResult:
         _validate_id(skill_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_skill_raw(skill_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "skill", skill_id)
+            insert_history(
+                conn,
+                entity_type="skill",
+                entity_id=skill_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE skills
@@ -350,12 +464,34 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(skill_id)
-        return self._get_skill_raw(skill_id)
+        after = self._get_skill_raw(skill_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
-    def undeprecate_skill(self, skill_id: str) -> SkillRecord:
+    def undeprecate_skill(self, skill_id: str, *, source: str = "api") -> SkillRecord:
+        return self.undeprecate_skill_tracked(skill_id, source=source).record
+
+    def undeprecate_skill_tracked(self, skill_id: str, *, source: str = "api") -> ControlPlaneMutationResult:
         _validate_id(skill_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_skill_raw(skill_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "skill", skill_id)
+            insert_history(
+                conn,
+                entity_type="skill",
+                entity_id=skill_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE skills
@@ -371,16 +507,109 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(skill_id)
-        return self.get_skill(skill_id)
+        after = self.get_skill(skill_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
-    def upsert_mcp_server(self, server_id: str, request: McpServerUpsert) -> McpServerRecord:
+    def rollback_skill(self, skill_id: str, to: str, *, source: str = "api") -> ControlPlaneMutationResult:
+        _validate_id(skill_id)
+        with self.connect() as conn:
+            entry = get_history_entry(conn, entity_type="skill", entity_id=skill_id, patch_id=to)
+            if entry is None:
+                raise LookupError("patch_not_found")
+            if entry.rolled_back_at:
+                raise HistoryConflictError("already_rolled_back")
+        snapshot = json.loads(entry.snapshot_json)
+        result = self._restore_skill_snapshot(skill_id, snapshot, source=source)
+        with self.connect() as conn:
+            mark_history_rolled_back(conn, to)
+        return result
+
+    def _restore_skill_snapshot(
+        self, skill_id: str, snapshot: dict[str, Any], *, source: str
+    ) -> ControlPlaneMutationResult:
+        patch_id = new_patch_id()
+        prior_dict: dict[str, Any] | None = None
+        try:
+            prior_dict = self._snapshot_record(self._get_skill_raw(skill_id))
+        except KeyError:
+            pass
+        with self.connect() as conn:
+            if prior_dict is not None:
+                version = next_history_version(conn, "skill", skill_id)
+                insert_history(
+                    conn,
+                    entity_type="skill",
+                    entity_id=skill_id,
+                    patch_id=patch_id,
+                    version=version,
+                    snapshot=prior_dict,
+                    source=source,
+                )
+            conn.execute(
+                """
+                UPDATE skills
+                SET label = ?, description = ?, source = ?, entrypoint = ?, tags_json = ?,
+                    enabled = ?, deprecated = ?, deprecated_at = ?, deprecation_reason = ?,
+                    replacement_id = ?, sunset_at = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    snapshot["label"],
+                    snapshot.get("description", ""),
+                    snapshot.get("source", "local"),
+                    snapshot.get("entrypoint", ""),
+                    _json_list(list(snapshot.get("tags", []))),
+                    int(snapshot.get("enabled", True)),
+                    int(snapshot.get("deprecated", False)),
+                    snapshot.get("deprecated_at"),
+                    snapshot.get("deprecation_reason", ""),
+                    snapshot.get("replacement_id"),
+                    snapshot.get("sunset_at"),
+                    skill_id,
+                ),
+            )
+        after = self._get_skill_raw(skill_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def upsert_mcp_server_tracked(
+        self, server_id: str, request: McpServerUpsert, *, source: str = "api"
+    ) -> ControlPlaneMutationResult:
         _validate_id(server_id)
         self.apply_sunset()
         _validate_transport(request.transport)
         command_preview = _redact_command_preview(request.command_preview)
         url = _redact_url(request.url) if request.url else None
         env_keys = _normalize_env_keys(request.env_keys)
+        patch_id = new_patch_id()
+        prior_dict: dict[str, Any] | None = None
+        try:
+            prior_dict = self._snapshot_record(self._get_mcp_server_raw(server_id))
+        except KeyError:
+            pass
         with self.connect() as conn:
+            if prior_dict is not None:
+                version = next_history_version(conn, "mcp", server_id)
+                insert_history(
+                    conn,
+                    entity_type="mcp",
+                    entity_id=server_id,
+                    patch_id=patch_id,
+                    version=version,
+                    snapshot=prior_dict,
+                    source=source,
+                )
             conn.execute(
                 """
                 INSERT INTO mcp_servers (
@@ -414,7 +643,18 @@ class ControlPlaneStore:
                     int(request.enabled),
                 ),
             )
-        return self._get_mcp_server_raw(server_id)
+        after = self._get_mcp_server_raw(server_id)
+        after_dict = self._snapshot_record(after)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, after_dict),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def upsert_mcp_server(self, server_id: str, request: McpServerUpsert) -> McpServerRecord:
+        return self.upsert_mcp_server_tracked(server_id, request).record
 
     def list_mcp_servers(self) -> list[McpServerRecord]:
         self.apply_sunset()
@@ -438,10 +678,25 @@ class ControlPlaneStore:
             raise KeyError(server_id)
         return _mcp_from_row(row)
 
-    def disable_mcp_server(self, server_id: str) -> McpServerRecord:
+    def disable_mcp_server(self, server_id: str, *, source: str = "api") -> McpServerRecord:
+        return self._disable_mcp_server_tracked(server_id, source=source).record
+
+    def _disable_mcp_server_tracked(self, server_id: str, *, source: str = "api") -> ControlPlaneMutationResult:
         _validate_id(server_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_mcp_server_raw(server_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "mcp", server_id)
+            insert_history(
+                conn,
+                entity_type="mcp",
+                entity_id=server_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE mcp_servers
@@ -452,7 +707,14 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(server_id)
-        return self._get_mcp_server_raw(server_id)
+        after = self._get_mcp_server_raw(server_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
     def deprecate_mcp_server(
         self,
@@ -461,10 +723,40 @@ class ControlPlaneStore:
         reason: str = "",
         replacement_id: str | None = None,
         sunset_at: str | None = None,
+        source: str = "api",
     ) -> McpServerRecord:
+        return self._deprecate_mcp_server_tracked(
+            server_id,
+            reason=reason,
+            replacement_id=replacement_id,
+            sunset_at=sunset_at,
+            source=source,
+        ).record
+
+    def _deprecate_mcp_server_tracked(
+        self,
+        server_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+        source: str = "api",
+    ) -> ControlPlaneMutationResult:
         _validate_id(server_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_mcp_server_raw(server_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "mcp", server_id)
+            insert_history(
+                conn,
+                entity_type="mcp",
+                entity_id=server_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE mcp_servers
@@ -480,12 +772,34 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(server_id)
-        return self._get_mcp_server_raw(server_id)
+        after = self._get_mcp_server_raw(server_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
-    def undeprecate_mcp_server(self, server_id: str) -> McpServerRecord:
+    def undeprecate_mcp_server(self, server_id: str, *, source: str = "api") -> McpServerRecord:
+        return self._undeprecate_mcp_server_tracked(server_id, source=source).record
+
+    def _undeprecate_mcp_server_tracked(self, server_id: str, *, source: str = "api") -> ControlPlaneMutationResult:
         _validate_id(server_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_mcp_server_raw(server_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "mcp", server_id)
+            insert_history(
+                conn,
+                entity_type="mcp",
+                entity_id=server_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE mcp_servers
@@ -501,12 +815,107 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(server_id)
-        return self.get_mcp_server(server_id)
+        after = self.get_mcp_server(server_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
-    def upsert_policy(self, agent_id: str, request: PolicyUpsert) -> PolicyRecord:
+    def rollback_mcp_server(self, server_id: str, to: str, *, source: str = "api") -> ControlPlaneMutationResult:
+        _validate_id(server_id)
+        with self.connect() as conn:
+            entry = get_history_entry(conn, entity_type="mcp", entity_id=server_id, patch_id=to)
+            if entry is None:
+                raise LookupError("patch_not_found")
+            if entry.rolled_back_at:
+                raise HistoryConflictError("already_rolled_back")
+        snapshot = json.loads(entry.snapshot_json)
+        result = self._restore_mcp_snapshot(server_id, snapshot, source=source)
+        with self.connect() as conn:
+            mark_history_rolled_back(conn, to)
+        return result
+
+    def _restore_mcp_snapshot(
+        self, server_id: str, snapshot: dict[str, Any], *, source: str
+    ) -> ControlPlaneMutationResult:
+        patch_id = new_patch_id()
+        prior_dict: dict[str, Any] | None = None
+        try:
+            prior_dict = self._snapshot_record(self._get_mcp_server_raw(server_id))
+        except KeyError:
+            pass
+        with self.connect() as conn:
+            if prior_dict is not None:
+                version = next_history_version(conn, "mcp", server_id)
+                insert_history(
+                    conn,
+                    entity_type="mcp",
+                    entity_id=server_id,
+                    patch_id=patch_id,
+                    version=version,
+                    snapshot=prior_dict,
+                    source=source,
+                )
+            conn.execute(
+                """
+                UPDATE mcp_servers
+                SET label = ?, description = ?, transport = ?, command_preview_json = ?,
+                    url = ?, env_keys_json = ?, enabled = ?, deprecated = ?,
+                    deprecated_at = ?, deprecation_reason = ?, replacement_id = ?,
+                    sunset_at = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    snapshot["label"],
+                    snapshot.get("description", ""),
+                    snapshot.get("transport", "stdio"),
+                    _json_list(list(snapshot.get("command_preview", []))),
+                    snapshot.get("url"),
+                    _json_list(list(snapshot.get("env_keys", []))),
+                    int(snapshot.get("enabled", True)),
+                    int(snapshot.get("deprecated", False)),
+                    snapshot.get("deprecated_at"),
+                    snapshot.get("deprecation_reason", ""),
+                    snapshot.get("replacement_id"),
+                    snapshot.get("sunset_at"),
+                    server_id,
+                ),
+            )
+        after = self._get_mcp_server_raw(server_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def upsert_policy_tracked(
+        self, agent_id: str, request: PolicyUpsert, *, source: str = "api"
+    ) -> ControlPlaneMutationResult:
         _validate_id(agent_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict: dict[str, Any] | None = None
+        try:
+            prior_dict = self._snapshot_record(self._get_policy_raw(agent_id))
+        except KeyError:
+            pass
         with self.connect() as conn:
+            if prior_dict is not None:
+                version = next_history_version(conn, "policy", agent_id)
+                insert_history(
+                    conn,
+                    entity_type="policy",
+                    entity_id=agent_id,
+                    patch_id=patch_id,
+                    version=version,
+                    snapshot=prior_dict,
+                    source=source,
+                )
             conn.execute(
                 """
                 INSERT INTO agent_policies (
@@ -546,7 +955,18 @@ class ControlPlaneStore:
                     request.rate_limit_per_minute,
                 ),
             )
-        return self._get_policy_raw(agent_id)
+        after = self._get_policy_raw(agent_id)
+        after_dict = self._snapshot_record(after)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, after_dict),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def upsert_policy(self, agent_id: str, request: PolicyUpsert) -> PolicyRecord:
+        return self.upsert_policy_tracked(agent_id, request).record
 
     def list_policies(self) -> list[PolicyRecord]:
         self.apply_sunset()
@@ -583,10 +1003,40 @@ class ControlPlaneStore:
         reason: str = "",
         replacement_id: str | None = None,
         sunset_at: str | None = None,
+        source: str = "api",
     ) -> PolicyRecord:
+        return self.deprecate_policy_tracked(
+            agent_id,
+            reason=reason,
+            replacement_id=replacement_id,
+            sunset_at=sunset_at,
+            source=source,
+        ).record
+
+    def deprecate_policy_tracked(
+        self,
+        agent_id: str,
+        *,
+        reason: str = "",
+        replacement_id: str | None = None,
+        sunset_at: str | None = None,
+        source: str = "api",
+    ) -> ControlPlaneMutationResult:
         _validate_id(agent_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_policy_raw(agent_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "policy", agent_id)
+            insert_history(
+                conn,
+                entity_type="policy",
+                entity_id=agent_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE agent_policies
@@ -602,12 +1052,34 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(agent_id)
-        return self._get_policy_raw(agent_id)
+        after = self._get_policy_raw(agent_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
-    def undeprecate_policy(self, agent_id: str) -> PolicyRecord:
+    def undeprecate_policy(self, agent_id: str, *, source: str = "api") -> PolicyRecord:
+        return self.undeprecate_policy_tracked(agent_id, source=source).record
+
+    def undeprecate_policy_tracked(self, agent_id: str, *, source: str = "api") -> ControlPlaneMutationResult:
         _validate_id(agent_id)
         self.apply_sunset()
+        patch_id = new_patch_id()
+        prior_dict = self._snapshot_record(self._get_policy_raw(agent_id))
         with self.connect() as conn:
+            version = next_history_version(conn, "policy", agent_id)
+            insert_history(
+                conn,
+                entity_type="policy",
+                entity_id=agent_id,
+                patch_id=patch_id,
+                version=version,
+                snapshot=prior_dict,
+                source=source,
+            )
             cursor = conn.execute(
                 """
                 UPDATE agent_policies
@@ -623,7 +1095,87 @@ class ControlPlaneStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(agent_id)
-        return self.get_policy(agent_id)
+        after = self.get_policy(agent_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
+
+    def rollback_policy(self, agent_id: str, to: str, *, source: str = "api") -> ControlPlaneMutationResult:
+        _validate_id(agent_id)
+        with self.connect() as conn:
+            entry = get_history_entry(conn, entity_type="policy", entity_id=agent_id, patch_id=to)
+            if entry is None:
+                raise LookupError("patch_not_found")
+            if entry.rolled_back_at:
+                raise HistoryConflictError("already_rolled_back")
+        snapshot = json.loads(entry.snapshot_json)
+        result = self._restore_policy_snapshot(agent_id, snapshot, source=source)
+        with self.connect() as conn:
+            mark_history_rolled_back(conn, to)
+        return result
+
+    def _restore_policy_snapshot(
+        self, agent_id: str, snapshot: dict[str, Any], *, source: str
+    ) -> ControlPlaneMutationResult:
+        patch_id = new_patch_id()
+        prior_dict: dict[str, Any] | None = None
+        try:
+            prior_dict = self._snapshot_record(self._get_policy_raw(agent_id))
+        except KeyError:
+            pass
+        with self.connect() as conn:
+            if prior_dict is not None:
+                version = next_history_version(conn, "policy", agent_id)
+                insert_history(
+                    conn,
+                    entity_type="policy",
+                    entity_id=agent_id,
+                    patch_id=patch_id,
+                    version=version,
+                    snapshot=prior_dict,
+                    source=source,
+                )
+            conn.execute(
+                """
+                UPDATE agent_policies
+                SET enabled = ?, readonly = ?, allowed_skill_ids_json = ?,
+                    allowed_mcp_server_ids_json = ?, allowed_tool_names_json = ?,
+                    approval_required_tool_names_json = ?, allowed_model_ids_json = ?,
+                    cwd_roots_json = ?, rate_limit_per_minute = ?, deprecated = ?,
+                    deprecated_at = ?, deprecation_reason = ?, replacement_id = ?,
+                    sunset_at = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE agent_id = ?
+                """,
+                (
+                    int(snapshot.get("enabled", True)),
+                    int(snapshot.get("readonly", False)),
+                    _json_list(list(snapshot.get("allowed_skill_ids", []))),
+                    _json_list(list(snapshot.get("allowed_mcp_server_ids", []))),
+                    _json_list(list(snapshot.get("allowed_tool_names", []))),
+                    _json_list(list(snapshot.get("approval_required_tool_names", []))),
+                    _json_list(list(snapshot.get("allowed_model_ids", []))),
+                    _json_list(list(snapshot.get("cwd_roots", []))),
+                    int(snapshot.get("rate_limit_per_minute", 60)),
+                    int(snapshot.get("deprecated", False)),
+                    snapshot.get("deprecated_at"),
+                    snapshot.get("deprecation_reason", ""),
+                    snapshot.get("replacement_id"),
+                    snapshot.get("sunset_at"),
+                    agent_id,
+                ),
+            )
+        after = self._get_policy_raw(agent_id)
+        return ControlPlaneMutationResult(
+            patch_id=patch_id,
+            applied=True,
+            diff=entity_diff(prior_dict, self._snapshot_record(after)),
+            audit_event_id=None,
+            record=after,
+        )
 
     def evaluate_policy(self, request: PolicyEvaluationRequest) -> PolicyEvaluationResult:
         _validate_id(request.agent_id)

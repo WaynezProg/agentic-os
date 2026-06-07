@@ -592,6 +592,67 @@ def test_api_returns_404_for_unknown_control_plane_reads(tmp_path: Path) -> None
     assert policy.status_code == 404
 
 
+def test_api_control_plane_history_and_rollback(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    created = client.post(
+        "/skills/reviewer",
+        json={"label": "Reviewer", "description": "v1"},
+    )
+    assert created.status_code == 200
+
+    updated = client.post(
+        "/skills/reviewer",
+        json={"label": "Reviewer v2", "description": "v2"},
+    )
+    assert updated.status_code == 200
+    patch_id = updated.json()["patch_id"]
+    assert updated.json()["label"] == "Reviewer v2"
+
+    history = client.get("/skills/reviewer/history")
+    assert history.status_code == 200
+    patches = history.json()["patches"]
+    assert len(patches) == 1
+    assert patches[0]["patch_id"] == patch_id
+
+    rolled = client.post(f"/skills/reviewer/rollback?to={patch_id}")
+    assert rolled.status_code == 200
+    assert rolled.json()["label"] == "Reviewer"
+
+
+def test_api_mcp_edit_does_not_persist_redacted_values(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    client.post(
+        "/mcp/figma",
+        json={
+            "label": "Figma",
+            "transport": "http",
+            "command_preview": ["figma-mcp", "--token", "SUPER_SECRET"],
+            "url": "https://user:SECRET@example.invalid/mcp",
+            "env_keys": ["FIGMA_TOKEN"],
+        },
+    )
+    shown = client.get("/mcp/figma")
+    assert shown.status_code == 200
+    raw = json.dumps(shown.json())
+    assert "SUPER_SECRET" not in raw
+    assert "SECRET" not in raw or "[REDACTED]" in raw
+
+    updated = client.post(
+        "/mcp/figma",
+        json={
+            "label": "Figma v2",
+            "transport": "http",
+            "command_preview": ["figma-mcp", "v2"],
+            "url": "https://example.invalid/mcp",
+            "env_keys": ["FIGMA_TOKEN"],
+        },
+    )
+    assert updated.status_code == 200
+    stored = json.dumps(updated.json())
+    assert "SUPER_SECRET" not in stored
+    assert updated.json()["label"] == "Figma v2"
+
+
 def test_api_allows_localhost_cors_preflight(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -1061,6 +1122,52 @@ def test_pending_approval_expires_on_read_when_policy_now_denies(
         and event["metadata"]["reason"] == "policy disabled for shell"
         for event in events
     )
+
+
+def test_approval_workbench_gated_endpoints(tmp_app, tmp_path: Path) -> None:
+    client = TestClient(tmp_app)
+    client.post(
+        "/policy/shell",
+        json={
+            "allowed_tool_names": ["*"],
+            "approval_required_tool_names": ["session.start"],
+            "cwd_roots": [str(tmp_path)],
+        },
+    )
+    blocked = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "workbench"},
+    )
+    assert blocked.status_code == 409
+    approval_id = blocked.json()["approval_id"]
+    source_session_id = blocked.json()["session_id"]
+
+    shown = client.get(f"/approvals/{approval_id}")
+    assert shown.status_code == 200
+    assert shown.json()["argv"]
+    assert shown.json()["cwd"] == str(tmp_path)
+    assert shown.json()["reason"]
+
+    rejected = client.post(
+        f"/approvals/{approval_id}/reject",
+        json={"reason": "workbench reject"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+
+    blocked2 = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "retry path"},
+    )
+    approval_id2 = blocked2.json()["approval_id"]
+    approved = client.post(f"/approvals/{approval_id2}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+
+    retry = client.post(f"/sessions/{source_session_id}/retry")
+    assert retry.status_code in {200, 403, 409}
+    if retry.status_code != 200:
+        assert "decision" in retry.json()
 
 
 def test_retry_uses_approval_request_path_when_policy_requires_approval(
