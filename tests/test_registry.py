@@ -4,6 +4,9 @@ from pathlib import Path
 
 import tomllib
 
+from fastapi.testclient import TestClient
+
+from agentic_os.api import create_app
 from test_api import make_client, write_registry
 
 
@@ -92,6 +95,49 @@ def test_registry_disable_and_rollback(tmp_path: Path) -> None:
     raw = tomllib.loads(registry.read_text(encoding="utf-8"))
     demo_row = next(row for row in raw["agents"] if row["id"] == "demo2")
     assert demo_row["enabled"] is True
+
+
+def test_registry_rollback_reloads_with_noncanonical_registry_path(tmp_path: Path) -> None:
+    # Regression: the in-memory Registry must reload after a /patches rollback even
+    # when --registry was given as a non-canonical path (symlinked or relative). The
+    # rollback guard compared the stored (unresolved) target_path against a resolved
+    # registry_path, so reload silently never fired and list_agents stayed stale while
+    # agents.toml on disk was correctly restored. pytest tmp_path is already canonical
+    # on macOS, which masked it — force a symlinked path so the mismatch is real.
+    real = tmp_path / "real"
+    real.mkdir()
+    registry = real / "agents.toml"
+    write_registry(registry)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    registry_via_link = link / "agents.toml"
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry_via_link)
+    )
+
+    client.post(
+        "/registry/agents",
+        json={
+            "id": "demo3",
+            "label": "Demo Three",
+            "command": ["/usr/bin/printf", "{{message}}"],
+            "cwd_mode": "optional",
+            "health_command": ["/usr/bin/printf", "OK"],
+            "version_command": ["/usr/bin/printf", "1.0.0"],
+            "config_fingerprint_command": ["/usr/bin/printf", "static"],
+            "config_path": "~/.demo3",
+            "default_provider": "demo",
+            "enabled": True,
+        },
+    )
+    patch_id = client.post("/registry/agents/demo3/disable").json()["patch_id"]
+    disabled = next(a for a in client.get("/agents").json()["agents"] if a["id"] == "demo3")
+    assert disabled["enabled"] is False
+
+    assert client.post(f"/patches/{patch_id}/rollback").status_code == 200
+
+    after = next(a for a in client.get("/agents").json()["agents"] if a["id"] == "demo3")
+    assert after["enabled"] is True  # list_agents must reflect the reloaded registry
 
 
 def test_registry_schema_endpoint(tmp_path: Path) -> None:

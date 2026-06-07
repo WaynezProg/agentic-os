@@ -1937,7 +1937,7 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
         except ConflictError as exc:
             raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
-        if entry is not None and entry.target_path == str(registry_path.resolve()):
+        if entry is not None and Path(entry.target_path).resolve() == registry_path.resolve():
             registry.reload()
         return {
             "patch_id": result.patch_id,
