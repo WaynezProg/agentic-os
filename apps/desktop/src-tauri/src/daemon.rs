@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 static BUNDLE_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -70,10 +71,11 @@ pub fn run_script(script: &str, command: &str) -> Result<String, String> {
 }
 
 fn run_script_at(script_path: &Path, working_dir: &Path, command: &str) -> Result<String, String> {
-    let output = Command::new("bash")
+    let output = Command::new("/bin/bash")
         .arg(script_path)
         .arg(command)
         .current_dir(working_dir)
+        .env("PATH", hardened_path())
         .output()
         .map_err(|error| error.to_string())?;
     if !output.status.success() {
@@ -97,6 +99,111 @@ pub fn start_stack() {
 pub fn stop_stack() {
     let _ = run_script("desktop-ui.sh", "stop");
     let _ = run_script("desktop-daemon.sh", "stop");
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DaemonStatus {
+    #[serde(default)]
+    pub running: bool,
+    #[serde(default)]
+    pub managed: bool,
+    #[serde(default)]
+    pub pid: Option<u32>,
+    #[serde(default)]
+    pub api_url: String,
+    #[serde(default)]
+    pub health: String,
+}
+
+impl DaemonStatus {
+    pub fn is_healthy(&self) -> bool {
+        self.health == "ok"
+    }
+}
+
+pub fn parse_status(json: &str) -> Result<DaemonStatus, String> {
+    serde_json::from_str(json).map_err(|error| error.to_string())
+}
+
+pub fn status() -> Result<DaemonStatus, String> {
+    let raw = run_script("desktop-daemon.sh", "status")?;
+    parse_status(&raw)
+}
+
+pub fn start_daemon() -> Result<String, String> {
+    run_script("desktop-daemon.sh", "start")
+}
+
+pub fn restart_daemon() -> Result<String, String> {
+    run_script("desktop-daemon.sh", "restart")
+}
+
+/// PID of the process holding `port` in LISTEN state, best-effort.
+pub fn listener_pid(port: u16) -> Option<u32> {
+    let output = Command::new("/usr/sbin/lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()
+}
+
+fn state_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("AGENTIC_OS_STATE_DIR") {
+        if !dir.is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    let bundle = std::env::var("AGENTIC_OS_BUNDLE_ROOT")
+        .map(|value| !value.is_empty())
+        .unwrap_or(false);
+    if bundle {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(".agentic-os");
+        }
+    }
+    repo_root().join(".agentic-os")
+}
+
+/// Mirrors `desktop-common.sh`'s `desktop_runtime_dir`/daemon log location.
+pub fn daemon_log_path() -> PathBuf {
+    state_dir().join("desktop").join("daemon.log")
+}
+
+fn ensure_path_dirs(current: &str, extra_front: &[PathBuf]) -> String {
+    let required = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+    let mut parts: Vec<String> = Vec::new();
+    for path in extra_front {
+        let value = path.to_string_lossy().to_string();
+        if !value.is_empty() && !parts.iter().any(|existing| existing == &value) {
+            parts.push(value);
+        }
+    }
+    for segment in current.split(':').filter(|segment| !segment.is_empty()) {
+        if !parts.iter().any(|existing| existing == segment) {
+            parts.push(segment.to_string());
+        }
+    }
+    for req in required {
+        if !parts.iter().any(|existing| existing == req) {
+            parts.push(req.to_string());
+        }
+    }
+    parts.join(":")
+}
+
+pub fn hardened_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut extra_front = Vec::new();
+    if let Ok(root) = std::env::var("AGENTIC_OS_BUNDLE_ROOT") {
+        if !root.is_empty() {
+            extra_front.push(PathBuf::from(&root).join("runtime").join(".venv").join("bin"));
+        }
+    }
+    ensure_path_dirs(&current, &extra_front)
 }
 
 #[cfg(test)]
@@ -133,5 +240,45 @@ mod tests {
         );
         std::env::remove_var("AGENTIC_OS_BUNDLE_ROOT");
         let _ = fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn parse_status_reads_health_and_pid() {
+        let status = parse_status(
+            r#"{"running": true, "managed": true, "pid": 4242, "api_url": "http://127.0.0.1:8767", "health": "ok"}"#,
+        )
+        .unwrap();
+        assert!(status.running);
+        assert_eq!(status.pid, Some(4242));
+        assert_eq!(status.api_url, "http://127.0.0.1:8767");
+        assert!(status.is_healthy());
+    }
+
+    #[test]
+    fn parse_status_handles_down_and_null_pid() {
+        let status =
+            parse_status(r#"{"running": false, "managed": false, "pid": null, "health": "down"}"#)
+                .unwrap();
+        assert_eq!(status.pid, None);
+        assert!(!status.is_healthy());
+    }
+
+    #[test]
+    fn ensure_path_dirs_appends_required_and_dedups() {
+        let out = ensure_path_dirs("/opt/homebrew/bin:/usr/bin", &[]);
+        assert!(out.starts_with("/opt/homebrew/bin:/usr/bin"));
+        for req in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
+            assert!(out.split(':').any(|s| s == req), "missing {req}");
+        }
+        assert_eq!(out.split(':').filter(|s| *s == "/usr/bin").count(), 1);
+    }
+
+    #[test]
+    fn ensure_path_dirs_prepends_extra_front() {
+        let out = ensure_path_dirs(
+            "/usr/bin",
+            &[std::path::PathBuf::from("/bundle/runtime/.venv/bin")],
+        );
+        assert!(out.starts_with("/bundle/runtime/.venv/bin:"));
     }
 }
