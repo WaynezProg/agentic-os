@@ -109,6 +109,130 @@ pub fn after_attempt(prev: &SupervisorState, succeeded: bool, now_secs: u64) -> 
     }
 }
 
+#[derive(Serialize, Clone)]
+pub struct ConnectionStatePayload {
+    pub state: String,
+    pub detail: String,
+    pub api_url: String,
+    pub pid: Option<u32>,
+}
+
+/// Owns the supervisor handle managed in Tauri state (manual retry resets it).
+pub struct SupervisorHandle(pub Arc<Mutex<SupervisorState>>);
+
+fn emit(app: &AppHandle, last: &mut Option<String>, payload: ConnectionStatePayload) {
+    let key = format!("{}|{}", payload.state, payload.detail);
+    if last.as_deref() != Some(key.as_str()) {
+        let _ = app.emit(CONNECTION_EVENT, payload);
+        *last = Some(key);
+    }
+}
+
+pub fn run_supervisor(app: AppHandle, shared: Arc<Mutex<SupervisorState>>) {
+    let start = Instant::now();
+    let mut last_emitted: Option<String> = None;
+
+    loop {
+        if SHUTDOWN.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+
+        // Remote mode is out of scope for supervision — only keep the tray title fresh.
+        let mode = settings::load_settings()
+            .map(|settings| settings.connection.mode)
+            .unwrap_or_else(|_| "local".to_string());
+        if mode == "remote" {
+            crate::refresh_tray_title(&app);
+            std::thread::sleep(TICK);
+            continue;
+        }
+
+        let now_secs = start.elapsed().as_secs();
+        let status = daemon::status().ok();
+        let healthy = status.as_ref().map(|s| s.is_healthy()).unwrap_or(false);
+        let api_url = status.as_ref().map(|s| s.api_url.clone()).unwrap_or_default();
+        let pid = status.as_ref().and_then(|s| s.pid);
+        let health = if healthy { Health::Ok } else { Health::Down };
+
+        let (action, snapshot) = {
+            let state = shared.lock().expect("supervisor state poisoned");
+            (
+                next_action(health, state.fail_count, now_secs, state.next_attempt_secs),
+                state.clone(),
+            )
+        };
+
+        let payload = match action {
+            Action::None if healthy => {
+                let mut state = shared.lock().unwrap();
+                *state = SupervisorState {
+                    phase: Phase::Connected,
+                    fail_count: 0,
+                    next_attempt_secs: None,
+                };
+                ConnectionStatePayload {
+                    state: "connected".to_string(),
+                    detail: "ok".to_string(),
+                    api_url: api_url.clone(),
+                    pid,
+                }
+            }
+            Action::None => ConnectionStatePayload {
+                state: phase_str(snapshot.phase).to_string(),
+                detail: "waiting".to_string(),
+                api_url: api_url.clone(),
+                pid: None,
+            },
+            Action::MarkFailed => {
+                let mut state = shared.lock().unwrap();
+                state.phase = Phase::Failed;
+                ConnectionStatePayload {
+                    state: "failed".to_string(),
+                    detail: "daemon failed to start".to_string(),
+                    api_url: api_url.clone(),
+                    pid: None,
+                }
+            }
+            Action::Attempt => {
+                emit(
+                    &app,
+                    &mut last_emitted,
+                    ConnectionStatePayload {
+                        state: "restarting".to_string(),
+                        detail: "starting daemon".to_string(),
+                        api_url: api_url.clone(),
+                        pid: None,
+                    },
+                );
+                let started = daemon::start_daemon().is_ok();
+                let ok = started && daemon::status().map(|s| s.is_healthy()).unwrap_or(false);
+                let next = after_attempt(&snapshot, ok, now_secs);
+                {
+                    let mut state = shared.lock().unwrap();
+                    *state = next.clone();
+                }
+                let detail = if ok {
+                    "ok".to_string()
+                } else if let Some(pid) = daemon::listener_pid(8767) {
+                    format!("port_occupied:{pid}")
+                } else {
+                    "retry scheduled".to_string()
+                };
+                ConnectionStatePayload {
+                    state: phase_str(next.phase).to_string(),
+                    detail,
+                    api_url: api_url.clone(),
+                    pid: None,
+                }
+            }
+        };
+
+        emit(&app, &mut last_emitted, payload);
+        crate::refresh_tray_title(&app);
+        std::thread::sleep(TICK);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

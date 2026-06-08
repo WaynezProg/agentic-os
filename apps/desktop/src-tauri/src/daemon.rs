@@ -134,10 +134,6 @@ pub fn start_daemon() -> Result<String, String> {
     run_script("desktop-daemon.sh", "start")
 }
 
-pub fn restart_daemon() -> Result<String, String> {
-    run_script("desktop-daemon.sh", "restart")
-}
-
 /// PID of the process holding `port` in LISTEN state, best-effort.
 pub fn listener_pid(port: u16) -> Option<u32> {
     let output = Command::new("/usr/sbin/lsof")

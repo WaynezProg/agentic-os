@@ -5,7 +5,11 @@ mod remote;
 mod settings;
 mod supervisor;
 
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
+
 use settings::DesktopSettings;
+use supervisor::{SupervisorHandle, SupervisorState};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent};
@@ -114,6 +118,23 @@ fn probe_remote_connection() -> Result<connection::RemoteProbeResult, String> {
 }
 
 #[tauri::command]
+fn retry_daemon(state: tauri::State<SupervisorHandle>) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|error| error.to_string())?;
+    *guard = SupervisorState::reset();
+    Ok(())
+}
+
+#[tauri::command]
+fn open_daemon_log() -> Result<(), String> {
+    let path = daemon::daemon_log_path();
+    std::process::Command::new("/usr/bin/open")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn revoke_remote_device(device_id: String) -> Result<String, String> {
     let settings = settings::load_settings()?;
     let result = remote::delete_json(&format!("/remote/devices/{device_id}"))?;
@@ -132,7 +153,7 @@ fn tray_title_from_health(health: &str, mode: &str) -> String {
     format!("agentic-os · {mode}: {health}")
 }
 
-fn refresh_tray_title(app: &AppHandle) {
+pub(crate) fn refresh_tray_title(app: &AppHandle) {
     let title = match connection::connection_profile() {
         Ok(profile) if profile.mode == "remote" => {
             match connection::probe_remote_connection() {
@@ -187,6 +208,8 @@ pub fn run() {
             get_connection_profile,
             connection_api_fetch,
             probe_remote_connection,
+            retry_daemon,
+            open_daemon_log,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -230,6 +253,11 @@ pub fn run() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "daemon_start" => {
                         let _ = daemon_start();
+                        if let Some(handle) = app.try_state::<SupervisorHandle>() {
+                            if let Ok(mut guard) = handle.0.lock() {
+                                *guard = SupervisorState::reset();
+                            }
+                        }
                         refresh_tray_title(app);
                     }
                     "daemon_stop" => {
@@ -252,6 +280,7 @@ pub fn run() {
                         }
                     }
                     "quit" => {
+                        supervisor::SHUTDOWN.store(true, Ordering::SeqCst);
                         daemon::stop_stack();
                         app.exit(0);
                     }
@@ -273,13 +302,10 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            let poll_handle = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    refresh_tray_title(&poll_handle);
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                }
-            });
+            let shared = Arc::new(Mutex::new(SupervisorState::reset()));
+            app.manage(SupervisorHandle(shared.clone()));
+            let supervisor_handle = handle.clone();
+            std::thread::spawn(move || supervisor::run_supervisor(supervisor_handle, shared));
 
             refresh_tray_title(app.handle());
             Ok(())
@@ -289,6 +315,7 @@ pub fn run() {
 
     app.run(|_app_handle, event| {
         if let RunEvent::Exit = event {
+            supervisor::SHUTDOWN.store(true, Ordering::SeqCst);
             daemon::stop_stack();
         }
     });
