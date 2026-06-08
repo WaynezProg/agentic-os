@@ -1120,51 +1120,23 @@ git commit -m "feat(web): mount connection gate overlay"
 
 ---
 
-### Task 10: mirror the webview changes into the bundled copy
+### Task 10: confirm the generated bundle picks up the new web assets
 
-**Files:**
-- Create: `apps/desktop/src-tauri/bundle-resources/agentic-os/web/ui/connection-gate.js`
-- Modify: `apps/desktop/src-tauri/bundle-resources/agentic-os/web/index.html`
-- Modify: `apps/desktop/src-tauri/bundle-resources/agentic-os/web/styles.css`
-- Modify: `apps/desktop/src-tauri/bundle-resources/agentic-os/web/app.js`
+**CORRECTION (discovered during execution):** there is **no** second committed copy to edit. `apps/desktop/src-tauri/bundle-resources/` is gitignored (0 tracked files). The bundled `web/` and `scripts/` are **generated** by `scripts/prepare-desktop-bundle.sh`, which `rm -rf`s the staging then copies `scripts/*` (top-level) and `cp -R apps/web/.` fresh. So editing `apps/web/` (Tasks 8–9) is sufficient — the new `ui/connection-gate.js` flows into the bundle automatically. The original "mirror + commit the bundle copy" steps were wrong (they would commit a gitignored artifact).
 
-The packaged app serves its own `web/` copy, so it must match `apps/web/`.
+**Files:** none committed (verification only).
 
-- [ ] **Step 1: Copy the four files**
+- [ ] **Step 1: Confirm the prep script copies the whole web tree**
 
-Run:
+Run: `grep -n 'cp -R .*apps/web' scripts/prepare-desktop-bundle.sh`
+Expected: a line like `cp -R "$REPO_ROOT/apps/web/." "$STAGING/web/"` — confirms `ui/connection-gate.js` is included.
 
-```bash
-cd /Users/waynetu/bootstrap/agentic-os
-BUNDLE=apps/desktop/src-tauri/bundle-resources/agentic-os/web
-cp apps/web/ui/connection-gate.js "$BUNDLE/ui/connection-gate.js"
-cp apps/web/app.js "$BUNDLE/app.js"
-cp apps/web/index.html "$BUNDLE/index.html"
-cp apps/web/styles.css "$BUNDLE/styles.css"
-```
+- [ ] **Step 2: Confirm bundle-resources is untracked (nothing to commit)**
 
-- [ ] **Step 2: Verify the copies are identical**
+Run: `git ls-files apps/desktop/src-tauri/bundle-resources | wc -l`
+Expected: `0`.
 
-Run:
-
-```bash
-cd /Users/waynetu/bootstrap/agentic-os
-BUNDLE=apps/desktop/src-tauri/bundle-resources/agentic-os/web
-for f in ui/connection-gate.js app.js index.html styles.css; do
-  diff -q "apps/web/$f" "$BUNDLE/$f" && echo "OK $f"
-done
-```
-
-Expected: four `OK` lines, no `differ` output.
-
-> If `apps/web/` and the bundled `web/` had pre-existing intentional differences in `app.js`/`index.html`/`styles.css`, do NOT blindly overwrite — instead apply the same three edits from Tasks 8–9 by hand to the bundled copy and re-run the diff on just `ui/connection-gate.js`. Inspect with `diff apps/web/app.js "$BUNDLE/app.js"` before copying.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add apps/desktop/src-tauri/bundle-resources/agentic-os/web
-git commit -m "feat(desktop): mirror connection gate into bundled web assets"
-```
+(No commit in this task. The full `prepare-desktop-bundle.sh` run happens at packaging time and is exercised by the packaged-build e2e in Task 11.)
 
 ---
 

@@ -162,9 +162,9 @@ On each transition, emit Tauri event `connection://state` with payload
 - `apps/desktop/src-tauri/bundle-resources/agentic-os/scripts/desktop-daemon.sh`
 - `apps/desktop/src-tauri/bundle-resources/agentic-os/scripts/desktop-ui.sh`
 - `apps/desktop/src-tauri/bundle-resources/agentic-os/scripts/lib/desktop-common.sh`
-- Web UI — **two copies kept in sync**:
-  - `apps/web/ui/connection-gate.js` (new), `apps/web/app.js`, `apps/web/index.html`
-  - `apps/desktop/src-tauri/bundle-resources/agentic-os/web/ui/connection-gate.js` (new), `.../web/app.js`, `.../web/index.html`
+- Web UI — committed source only:
+  - `apps/web/ui/connection-gate.js` (new), `apps/web/app.js`, `apps/web/index.html`, `apps/web/styles.css`
+  - The packaged `web/` under `bundle-resources/` is **generated** (gitignored): `scripts/prepare-desktop-bundle.sh` does `rm -rf` the staging then `cp -R apps/web/.`, so editing `apps/web` is sufficient — there is no second copy to hand-edit or commit. (Likewise the bundled `scripts/` are copied from top-level `scripts/`.)
 
 ## Testing
 
