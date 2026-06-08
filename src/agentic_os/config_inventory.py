@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +27,7 @@ class ConfigSummary:
 
 
 # Dispatch table: agent_id -> reader function
-_READERS: dict[str, callable] = {}
+_READERS: dict[str, Callable[[str], ConfigSummary]] = {}
 
 
 def _register_reader(agent_id: str):
@@ -67,6 +68,16 @@ def read_config_summary(agent_id: str, config_path: str) -> ConfigSummary:
 def _read_generic_config(config_path: str) -> ConfigSummary:
     """Fallback: try reading config.json or config.toml."""
     path = Path(config_path)
+    if path.is_file():
+        # Direct file path — dispatch by extension
+        if path.suffix == ".json":
+            return _read_generic_json_config(str(path.parent), path.name)
+        if path.suffix == ".toml":
+            return _read_generic_toml_config(str(path.parent), path.name)
+        return ConfigSummary(
+            config_source=config_path,
+            parse_error=f"unsupported file extension: {path.suffix}",
+        )
     if path.is_dir():
         # Try common filenames
         for name in ["config.json", "settings.json", "config.toml"]:
@@ -74,15 +85,14 @@ def _read_generic_config(config_path: str) -> ConfigSummary:
             if candidate.exists():
                 if name.endswith(".json"):
                     return _read_generic_json_config(str(path), name)
-                else:
-                    return _read_generic_toml_config(str(path), name)
+                return _read_generic_toml_config(str(path), name)
         return ConfigSummary(
             config_source=config_path,
             parse_error="no recognized config file found",
         )
     return ConfigSummary(
         config_source=config_path,
-        parse_error="config_path is not a directory",
+        parse_error="config_path does not exist or is not a regular file/directory",
     )
 
 
