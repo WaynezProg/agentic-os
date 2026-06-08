@@ -223,3 +223,25 @@ def test_registry_writes_only_via_engine(tmp_path: Path) -> None:
     patches = client.get("/patches", params={"harness": "agentic_os"})
     kinds = {entry["target_kind"] for entry in patches.json()["patches"]}
     assert "registry" in kinds
+
+
+def test_agents_toml_has_tool_kind() -> None:
+    """All non-shell agents should have tool_kind defined."""
+    registry = Registry(Path("examples/agents.toml"))
+    for agent in registry.list_agents():
+        if agent.id == "shell":
+            continue
+        assert agent.tool_kind is not None, f"{agent.id} missing tool_kind"
+        assert agent.tool_kind in ("vibe_coding", "agentic_runtime")
+
+
+def test_tool_kind_mapping() -> None:
+    """Verify expected tool_kind assignments."""
+    registry = Registry(Path("examples/agents.toml"))
+    agents = {a.id: a for a in registry.list_agents()}
+
+    assert agents["claude"].tool_kind == "vibe_coding"
+    assert agents["codex"].tool_kind == "vibe_coding"
+    assert agents["cursor"].tool_kind == "vibe_coding"
+    assert agents["openclaw"].tool_kind == "agentic_runtime"
+    assert agents["hermes"].tool_kind == "agentic_runtime"
