@@ -3,6 +3,7 @@ mod daemon;
 mod keychain;
 mod remote;
 mod settings;
+mod supervisor;
 
 use settings::DesktopSettings;
 use tauri::menu::{Menu, MenuItem};
