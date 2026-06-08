@@ -6,6 +6,8 @@ from agentic_os.tool_discovery import (
     detect_version,
     detect_tool,
     discover_all,
+    invalidate_cache,
+    _cache,
 )
 from agentic_os.models import AgentDefinition
 
@@ -108,3 +110,24 @@ def test_discover_all_filters_enabled():
     ids = [r.agent_id for r in results]
     assert "enabled_tool" in ids
     assert "disabled_tool" not in ids
+
+
+def test_invalidate_cache():
+    """invalidate_cache should clear the module-level cache."""
+    # Seed the cache with a detect_tool call
+    agent = AgentDefinition(
+        id="cache_tool",
+        label="Cache",
+        command=["python3", "test"],
+        version_command=["python3", "--version"],
+        tool_kind="vibe_coding",
+    )
+    detect_tool(agent)
+    # Populate cache via discover_all
+    mock_registry = MagicMock()
+    mock_registry.list_agents.return_value = [agent]
+    discover_all(mock_registry)
+    assert len(_cache) >= 1
+
+    invalidate_cache()
+    assert len(_cache) == 0
