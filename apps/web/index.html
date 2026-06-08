@@ -27,9 +27,21 @@
     <script src="ui/daily-dashboard.js"></script>
     <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
+    <script src="ui/connection-gate.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
+    <div id="connection-gate" hidden>
+      <div class="connection-gate__card">
+        <div class="connection-gate__spinner" aria-hidden="true"></div>
+        <h2 data-gate-title>連線中…</h2>
+        <p data-gate-detail>正在啟動 / 等待 agentd…</p>
+        <div class="connection-gate__actions" data-gate-actions hidden>
+          <button type="button" data-gate-retry>重試</button>
+          <button type="button" data-gate-log hidden>開啟 log</button>
+        </div>
+      </div>
+    </div>
     <div class="app-shell">
       <aside class="shell-sidebar" aria-label="導覽">
         <div class="sidebar-brand">

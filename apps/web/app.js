@@ -44,7 +44,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindTabs();
   bindControls();
-  refreshAll();
+  const mode = state.connectionProfile?.mode || "local";
+  if (mode === "remote") {
+    refreshAll();
+  } else {
+    Ao.ConnectionGate.init({ onConnected: () => refreshAll() });
+  }
 });
 
 async function initDesktopConnection() {

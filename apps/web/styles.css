@@ -949,3 +949,44 @@ details.subpanel > summary:hover {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+#connection-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 17, 21, 0.92);
+}
+#connection-gate[hidden] {
+  display: none;
+}
+.connection-gate__card {
+  text-align: center;
+  padding: 2rem 2.5rem;
+  color: #f4f5f7;
+}
+.connection-gate__card h2 {
+  margin: 0.75rem 0 0.25rem;
+}
+.connection-gate__spinner {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: connection-gate-spin 0.8s linear infinite;
+}
+.connection-gate__actions {
+  margin-top: 1rem;
+}
+.connection-gate__actions button {
+  margin: 0 0.25rem;
+}
+@keyframes connection-gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
