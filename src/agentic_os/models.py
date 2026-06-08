@@ -18,6 +18,7 @@ class SessionStatus(StrEnum):
 CwdMode = Literal["required", "optional", "ignored"]
 StopPolicy = Literal["process_group"]
 AttachStatus = Literal["none", "available", "attached", "unsupported"]
+ToolKind = Literal["vibe_coding", "agentic_runtime"]
 
 
 class AgentDefinition(BaseModel):
@@ -38,6 +39,7 @@ class AgentDefinition(BaseModel):
     model_arg: list[str] | None = None
     provider_env: str | None = None
     enabled: bool = True
+    tool_kind: ToolKind | None = None
 
 
 class SessionCreate(BaseModel):
