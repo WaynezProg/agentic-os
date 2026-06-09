@@ -63,10 +63,9 @@ window.AgenticOs = window.AgenticOs || {};
     container.innerHTML = '<p class="loading">Loading tools...</p>';
 
     try {
-      const apiBase = Ao.apiBase;
       const [discoveryRes, inventoryRes] = await Promise.all([
-        fetch(`${apiBase}/tools/discovery`).then((r) => r.json()),
-        fetch(`${apiBase}/tools/inventory`).then((r) => r.json()),
+        Ao.apiFetch(Ao.buildEndpoint("toolsDiscovery")),
+        Ao.apiFetch(Ao.buildEndpoint("toolsInventory")),
       ]);
 
       const discovery = discoveryRes.tools || [];
