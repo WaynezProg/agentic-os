@@ -1024,3 +1024,146 @@ details.subpanel > summary:hover {
 .status-ok { color: #22c55e; }
 .status-error { color: #ef4444; }
 .error-text { color: #ef4444; font-size: 0.75rem; }
+
+/* P37 Agentic Inventory */
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1rem;
+}
+.inventory-card {
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  padding: 1rem;
+}
+.inventory-card h4 {
+  margin-top: 0;
+  border-bottom: 1px solid var(--border, #333);
+  padding-bottom: 0.5rem;
+}
+.inventory-section {
+  margin-top: 0.75rem;
+}
+.inventory-section h5 {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #888);
+}
+.inventory-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.inventory-list li {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border-light, #222);
+}
+.inventory-name {
+  font-weight: 500;
+}
+.inventory-source {
+  font-size: 0.75rem;
+  color: var(--text-muted, #666);
+  margin-left: 0.5rem;
+}
+.inventory-error {
+  background: #3b1111;
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin: 0.5rem 0;
+  color: #fca5a5;
+}
+.badge-ok {
+  background: #22c55e;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.badge-off {
+  background: #6b7280;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.badge-warn {
+  background: #eab308;
+  color: black;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.muted {
+  color: var(--text-muted, #666);
+  font-style: italic;
+}
+
+/* P38 Dashboard v2 */
+.dashboard-v2-layout {
+  margin-top: 1rem;
+}
+.dashboard-v2-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 900px) {
+  .dashboard-v2-columns {
+    grid-template-columns: 1fr;
+  }
+}
+.dashboard-column {
+  min-width: 0;
+}
+.dash-card {
+  border: 1px solid var(--border, #333);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.dash-card h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+}
+.dash-card-warn {
+  border-color: #eab308;
+  background: rgba(234, 179, 8, 0.05);
+}
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+.quick-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.inventory-summary-list,
+.session-list,
+.approval-list,
+.template-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem 0;
+}
+.inventory-summary-list li,
+.session-list li,
+.approval-list li,
+.template-list li {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border-light, #222);
+}
+.inventory-stats {
+  font-size: 0.8rem;
+  color: var(--text-muted, #666);
+  margin-left: 0.5rem;
+}
+.inventory-err {
+  display: block;
+  font-size: 0.75rem;
+  color: #ef4444;
+}

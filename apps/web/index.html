@@ -25,6 +25,8 @@
     <script src="ui/provider-switchboard.js"></script>
     <script src="ui/run-template-launcher.js"></script>
     <script src="ui/daily-dashboard.js"></script>
+    <script src="ui/dashboard-v2.js"></script>
+    <script src="ui/agentic-inventory.js"></script>
     <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
     <script src="ui/connection-gate.js"></script>
@@ -135,6 +137,10 @@
           <button id="tab-vibe-coding" class="tab" type="button" role="tab" aria-selected="false" data-tab="vibe-coding">
             <span class="tab-glyph" aria-hidden="true">🪩</span>
             <span class="tab-label">Vibe Coding</span>
+          </button>
+          <button id="tab-agentic" class="tab" type="button" role="tab" aria-selected="false" data-tab="agentic">
+            <span class="tab-glyph" aria-hidden="true">🤖</span>
+            <span class="tab-label">Agentic</span>
           </button>
         </nav>
 
@@ -1198,6 +1204,15 @@
         <div id="tool-discovery-container"></div>
       </section>
 
+      <section id="panel-agentic" class="panel" role="tabpanel" aria-labelledby="tab-agentic" hidden>
+        <div class="panel-head">
+          <h2>Agentic Runtime Inventory</h2>
+          <button id="refresh-agentic" type="button">重新整理</button>
+        </div>
+        <p class="message">OpenClaw / Hermes / n8n 的 skills、MCP、tools、flows 唯讀清單。</p>
+        <div id="agentic-inventory-container"></div>
+      </section>
+
       <section id="panel-vibe-coding" class="panel" role="tabpanel" aria-labelledby="tab-vibe-coding" hidden>
         <div class="panel-head">
           <h2>Vibe Coding 啟動器</h2>
@@ -1250,6 +1265,14 @@
             <dt>harnesses</dt><dd id="dashboard-harnesses">-</dd>
           </dl>
           <div id="dashboard-quick-actions" class="card-body"></div>
+        </section>
+        <section id="dashboard-v2" class="subpanel card">
+          <h3>雙軌操作台</h3>
+          <div class="dashboard-v2-layout" id="dashboard-v2-layout"></div>
+          <div class="dashboard-v2-layout dashboard-v2-columns">
+            <div id="dashboard-v2-left"></div>
+            <div id="dashboard-v2-right"></div>
+          </div>
         </section>
         <div class="overview-grid">
           <div id="overview-health" class="card stat-card">

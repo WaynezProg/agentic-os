@@ -86,6 +86,10 @@ window.AgenticOs = window.AgenticOs || {};
     runTemplates: "/run-templates",
     runTemplateDetail: "/run-templates/{template_id}",
     runTemplatePreview: "/run-templates/{template_id}/preview",
+    toolsDiscovery: "/tools/discovery",
+    toolsInventory: "/tools/inventory",
+    agenticInventory: "/agentic/inventory",
+    agenticInventoryDetail: "/agentic/inventory/{agent_id}",
   });
 
   let connectionProfile = null;

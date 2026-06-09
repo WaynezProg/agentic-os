@@ -61,7 +61,7 @@ def test_static_web_files_exist() -> None:
 def test_five_tabs_are_present() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert html.count('role="tab"') == 13
+    assert html.count('role="tab"') == 14
     for tab in [
         "代理",
         "執行",
@@ -76,6 +76,7 @@ def test_five_tabs_are_present() -> None:
         "總覽",
         "工具",
         "Vibe Coding",
+        "Agentic",
     ]:
         assert re.search(rf">\s*{re.escape(tab)}\s*<", html)
 

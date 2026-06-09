@@ -76,6 +76,11 @@ from agentic_os.adapter_contract import (
     contract_from_agent_v2,
 )
 from agentic_os.config_inventory import read_config_summary
+from agentic_os.agentic_inventory import (
+    build_agentic_inventory,
+    build_all_agentic_inventory,
+    inventory_result_dict,
+)
 from agentic_os.tool_discovery import discover_all
 from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, discover_external_sessions, evaluate_attach
@@ -411,6 +416,27 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
                 }
             )
         return {"tools": summaries}
+
+    @app.get("/agentic/inventory")
+    def agentic_inventory() -> dict[str, object]:
+        """Read agentic runtime inventory (P37). Read-only."""
+        results = build_all_agentic_inventory(registry.list_agents())
+        return {"agents": [inventory_result_dict(result) for result in results]}
+
+    @app.get("/agentic/inventory/{agent_id}")
+    def agentic_inventory_single(agent_id: str) -> dict[str, object]:
+        """Read single agentic runtime agent inventory (P37). Read-only."""
+        try:
+            agent = registry.get(agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if agent.tool_kind != "agentic_runtime":
+            raise HTTPException(
+                status_code=404,
+                detail=f"agent is not agentic_runtime: {agent_id}",
+            )
+        result = build_agentic_inventory(agent_id=agent.id, config_path=agent.config_path)
+        return inventory_result_dict(result)
 
     @app.get("/harness-contracts")
     def list_harness_contracts(version: str = Query(default="v1")) -> dict[str, object]:

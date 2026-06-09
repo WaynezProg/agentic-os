@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.ProviderSwitchboard?.init?.();
   Ao.RunTemplateLauncher?.init?.();
   Ao.DailyDashboard?.init?.();
+  Ao.DashboardV2?.init?.();
   Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindTabs();
@@ -128,6 +129,9 @@ function bindControls() {
   byId("vibe-coding-refresh")?.addEventListener("click", () => {
     Ao.VibeCodingLauncher?.refresh?.();
   });
+  byId("refresh-agentic")?.addEventListener("click", () => {
+    Ao.AgenticInventory?.render?.("agentic-inventory-container");
+  });
   document.body.addEventListener("click", handleActionClick);
 }
 
@@ -183,6 +187,8 @@ function loadActiveTab() {
     Ao.ToolDiscovery?.render?.("tool-discovery-container");
   } else if (state.activeTab === "vibe-coding") {
     Ao.VibeCodingLauncher?.refresh?.();
+  } else if (state.activeTab === "agentic") {
+    Ao.AgenticInventory?.render?.("agentic-inventory-container");
   }
 }
 
