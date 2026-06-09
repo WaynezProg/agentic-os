@@ -125,6 +125,9 @@ function bindControls() {
   byId("refresh-tools")?.addEventListener("click", () => {
     Ao.ToolDiscovery?.render?.("tool-discovery-container");
   });
+  byId("vibe-coding-refresh")?.addEventListener("click", () => {
+    Ao.VibeCodingLauncher?.refresh?.();
+  });
   document.body.addEventListener("click", handleActionClick);
 }
 
@@ -177,6 +180,8 @@ function loadActiveTab() {
     loadOverview();
   } else if (state.activeTab === "tools") {
     Ao.ToolDiscovery?.render?.("tool-discovery-container");
+  } else if (state.activeTab === "vibe-coding") {
+    Ao.VibeCodingLauncher?.refresh?.();
   }
 }
 
