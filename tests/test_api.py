@@ -1,6 +1,9 @@
+import io
 import json
 import sys
+import textwrap
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -120,6 +123,63 @@ def test_api_returns_404_for_unknown_agent_lookup(tmp_path: Path) -> None:
     response = client.get("/agents/missing")
 
     assert response.status_code == 404
+
+
+def test_api_agents_filter_by_tool_kind(tmp_path: Path) -> None:
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        textwrap.dedent(
+            """\
+            [[agents]]
+            id = "shell"
+            label = "Shell"
+            command = ["/usr/bin/printf", "%s", "{{message}}"]
+            cwd_mode = "optional"
+            stop_policy = "process_group"
+            tool_kind = "vibe_coding"
+
+            [[agents]]
+            id = "n8n"
+            label = "n8n"
+            command = ["n8n"]
+            cwd_mode = "optional"
+            stop_policy = "process_group"
+            tool_kind = "agentic_runtime"
+            """
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    )
+
+    response = client.get("/agents?tool_kind=vibe_coding")
+
+    assert response.status_code == 200
+    agents = response.json()["agents"]
+    assert {a["id"] for a in agents} == {"shell"}
+
+
+def test_api_evidence_zip_for_session(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "ZIPME"}
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    # Wait for evidence bundle to be created.
+    wait_for_session_evidence(client, session_id, status="succeeded")
+
+    response = client.get(f"/sessions/{session_id}/evidence.zip")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    names = archive.namelist()
+    assert any(name.endswith("metadata.json") for name in names)
+    assert any(name.endswith("events.jsonl") for name in names)
 
 
 def test_api_runs_session_and_reads_logs(tmp_path: Path) -> None:

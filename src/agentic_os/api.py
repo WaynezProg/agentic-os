@@ -337,8 +337,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/agents")
-    def list_agents() -> dict[str, object]:
-        return {"agents": [agent.model_dump() for agent in registry.list_agents()]}
+    def list_agents(tool_kind: str | None = Query(default=None)) -> dict[str, object]:
+        agents = list(registry.list_agents())
+        if tool_kind is not None:
+            agents = [a for a in agents if a.tool_kind == tool_kind]
+        return {"agents": [agent.model_dump() for agent in agents]}
 
     @app.get("/agents/{agent_id}")
     def show_agent(agent_id: str) -> dict[str, object]:
@@ -855,6 +858,21 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return evidence_store.evidence_index(session)
+
+    @app.get("/sessions/{session_id}/evidence.zip")
+    def session_evidence_zip(session_id: str) -> StreamingResponse:
+        try:
+            session = store.get_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        bundle = evidence_store.zip_for_session(session)
+        return StreamingResponse(
+            io.BytesIO(bundle),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{session_id}-evidence.zip"'
+            },
+        )
 
     @app.get("/sessions/{session_id}/evidence/events")
     def session_evidence_events(

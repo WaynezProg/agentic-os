@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import subprocess
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +100,24 @@ class EvidenceStore:
         }
         self._write_json(paths.metadata, payload)
         return payload
+
+    def zip_for_session(self, session: SessionRecord) -> bytes:
+        """Return a zip bundle with metadata.json, events.jsonl, stdout.log, stderr.log."""
+        paths = self.ensure_bundle(session)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            if paths.metadata.exists():
+                archive.write(paths.metadata, arcname="metadata.json")
+            if paths.events.exists():
+                archive.write(paths.events, arcname="events.jsonl")
+            if paths.stdout.exists():
+                archive.write(paths.stdout, arcname="stdout.log")
+            if paths.stderr.exists():
+                archive.write(paths.stderr, arcname="stderr.log")
+            manifest_path = paths.artifact_dir / "manifest.json"
+            if manifest_path.exists():
+                archive.write(manifest_path, arcname="artifact_manifest.json")
+        return buffer.getvalue()
 
     def append_event(
         self,
