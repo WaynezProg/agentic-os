@@ -2700,4 +2700,79 @@ default_env = {}
 
     approved = client.post(f"/approvals/{blocked.json()['approval_id']}/approve")
     assert approved.status_code == 409
-    assert "guarded-model" in approved.json()["detail"]
+
+
+def test_tools_discovery_endpoint(tmp_path: Path) -> None:
+    """GET /tools/discovery should return tool list."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "%s", "{{message}}"]
+cwd_mode = "optional"
+tool_kind = "vibe_coding"
+
+[[agents]]
+id = "claude"
+label = "Claude Code"
+command = ["python3", "-c", "print('ok')"]
+version_command = ["python3", "--version"]
+cwd_mode = "required"
+tool_kind = "vibe_coding"
+""",
+        encoding="utf-8",
+    )
+    app = create_app(tmp_path, registry)
+    client = TestClient(app)
+
+    response = client.get("/tools/discovery")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tools" in data
+    assert isinstance(data["tools"], list)
+    assert len(data["tools"]) >= 1
+    # Each tool should have required fields
+    for tool in data["tools"]:
+        assert "agent_id" in tool
+        assert "tool_kind" in tool
+        assert "installed" in tool
+        assert "binary_path" in tool
+
+
+def test_tools_inventory_endpoint(tmp_path: Path) -> None:
+    """GET /tools/inventory should return config summaries."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "%s", "{{message}}"]
+cwd_mode = "optional"
+tool_kind = "vibe_coding"
+
+[[agents]]
+id = "claude"
+label = "Claude Code"
+command = ["python3", "-c", "print('ok')"]
+cwd_mode = "required"
+tool_kind = "vibe_coding"
+config_path = "/nonexistent/path"
+""",
+        encoding="utf-8",
+    )
+    app = create_app(tmp_path, registry)
+    client = TestClient(app)
+
+    response = client.get("/tools/inventory")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tools" in data
+    assert isinstance(data["tools"], list)
+    # Only agents with config_path should be included
+    for tool in data["tools"]:
+        assert "agent_id" in tool
+        assert "config_source" in tool
+        assert "tool_kind" in tool

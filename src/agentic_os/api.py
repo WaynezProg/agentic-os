@@ -75,6 +75,8 @@ from agentic_os.adapter_contract import (
     contract_from_agent,
     contract_from_agent_v2,
 )
+from agentic_os.config_inventory import read_config_summary
+from agentic_os.tool_discovery import discover_all
 from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
@@ -360,6 +362,44 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return _harness_profile(registry.get(harness_id))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/tools/discovery")
+    def tools_discovery() -> dict[str, object]:
+        """Discover installed tools and their versions (P34). Read-only."""
+        results = discover_all(registry)
+        return {
+            "tools": [
+                {
+                    "agent_id": r.agent_id,
+                    "tool_kind": r.tool_kind,
+                    "installed": r.installed,
+                    "binary_path": r.binary_path,
+                    "version": r.version,
+                    "version_error": r.version_error,
+                }
+                for r in results
+            ],
+        }
+
+    @app.get("/tools/inventory")
+    def tools_inventory() -> dict[str, object]:
+        """Read non-secret config summaries for installed tools (P34). Read-only."""
+        agents = [a for a in registry.list_agents() if a.enabled and a.config_path]
+        summaries = []
+        for agent in agents:
+            summary = read_config_summary(agent.id, agent.config_path)
+            summaries.append(
+                {
+                    "agent_id": agent.id,
+                    "tool_kind": agent.tool_kind,
+                    "config_source": summary.config_source,
+                    "model": summary.model,
+                    "provider": summary.provider,
+                    "system_prompt_path": summary.system_prompt_path,
+                    "parse_error": summary.parse_error,
+                }
+            )
+        return {"tools": summaries}
 
     @app.get("/harness-contracts")
     def list_harness_contracts(version: str = Query(default="v1")) -> dict[str, object]:
