@@ -55,6 +55,7 @@ class SessionCreate(BaseModel):
     resolved_provider: str | None = None
     resolved_model: str | None = None
     source_template_id: str | None = None
+    workspace_path: str | None = None
 
 
 class SessionRecord(SessionCreate):

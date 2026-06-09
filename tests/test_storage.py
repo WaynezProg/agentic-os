@@ -120,6 +120,44 @@ def _create_current_sessions_db_without_env_json(db_path: Path) -> None:
         )
 
 
+def test_store_persists_session_workspace_path(tmp_path: Path) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+
+    request = _session_create(tmp_path)
+    request = request.model_copy(update={"workspace_path": "/tmp/workspace-alpha"})
+
+    created = store.create_session(request)
+
+    fetched = store.get_session(created.id)
+    assert fetched.workspace_path == "/tmp/workspace-alpha"
+
+
+def test_store_persists_null_workspace_path(tmp_path: Path) -> None:
+    store = Store(tmp_path / "agentic-os.db")
+    store.init()
+
+    request = _session_create(tmp_path)
+
+    created = store.create_session(request)
+
+    fetched = store.get_session(created.id)
+    assert fetched.workspace_path is None
+
+
+def test_init_adds_workspace_path_to_existing_sessions_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "agentic-os.db"
+    _create_current_sessions_db_without_env_json(db_path)
+
+    Store(db_path).init()
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+    assert "workspace_path" in columns
+
+
 def test_store_creates_and_updates_session(tmp_path: Path) -> None:
     store = Store(tmp_path / "agentic-os.db")
     store.init()

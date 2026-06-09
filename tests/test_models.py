@@ -38,3 +38,30 @@ def test_agent_definition_tool_kind_invalid():
             command=["test"],
             tool_kind="invalid_kind",
         )
+
+
+def test_session_create_has_workspace_path():
+    from agentic_os.models import SessionCreate
+    session = SessionCreate(
+        agent_id="claude",
+        cwd="/tmp/project",
+        argv=["claude", "-p", "test"],
+        artifact_dir="/tmp/art",
+        stdout_log="/tmp/out",
+        stderr_log="/tmp/err",
+        workspace_path="/tmp/project",
+    )
+    assert session.workspace_path == "/tmp/project"
+
+
+def test_session_create_workspace_path_optional():
+    from agentic_os.models import SessionCreate
+    session = SessionCreate(
+        agent_id="claude",
+        cwd="/tmp/project",
+        argv=["claude"],
+        artifact_dir="/tmp/art",
+        stdout_log="/tmp/out",
+        stderr_log="/tmp/err",
+    )
+    assert session.workspace_path is None
