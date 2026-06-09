@@ -80,6 +80,18 @@ class SessionAttachRequest(BaseModel):
     mode: Literal["preview", "exec"] = "preview"
 
 
+class SessionDiscoverRequest(BaseModel):
+    workspace_path: str
+
+
+class SessionBindRequest(BaseModel):
+    agent_id: str
+    external_session_id: str
+    workspace_path: str
+    log_path: str
+    started_at: str | None = None
+
+
 class EventRecord(BaseModel):
     id: int
     session_id: str

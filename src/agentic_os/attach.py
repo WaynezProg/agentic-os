@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -10,6 +11,16 @@ from agentic_os.models import AgentDefinition, SessionRecord
 
 AttachDecision = Literal["allow", "deny", "unsupported"]
 AttachStatus = Literal["none", "available", "attached", "unsupported"]
+
+
+@dataclass(frozen=True)
+class DiscoveredSession:
+    """A single external session discovered in a workspace log path."""
+
+    agent_id: str
+    external_session_id: str
+    log_path: str
+    started_at: str | None = None
 
 # Vibe coding agents: developer-driven, short iterations
 _VIBE_CODING = frozenset({"claude", "codex", "cursor", "opencode", "qwen"})
@@ -105,6 +116,67 @@ def evaluate_attach(
         return "deny", "external_session_id required for attach"
 
     return "allow", "attach permitted"
+
+
+def discover_external_sessions(
+    *,
+    workspace_path: str,
+    agents: list[AgentDefinition],
+) -> list[DiscoveredSession]:
+    """Scan agent log_paths for external session files. Read-only; no secret contents returned."""
+    results: list[DiscoveredSession] = []
+    for agent in agents:
+        if agent.id not in _SUPPORTED:
+            continue
+        for raw_path in agent.log_paths:
+            try:
+                root = Path(raw_path).expanduser()
+            except (TypeError, ValueError):
+                continue
+            if not root.exists() or not root.is_dir():
+                continue
+            for jsonl in sorted(root.rglob("*.jsonl")):
+                if not jsonl.is_file():
+                    continue
+                try:
+                    external_id = parse_external_session_id(agent.id, jsonl)
+                except Exception:  # parser must never crash the discover flow
+                    continue
+                if not external_id:
+                    continue
+                started_at = _read_started_at(jsonl)
+                results.append(
+                    DiscoveredSession(
+                        agent_id=agent.id,
+                        external_session_id=external_id,
+                        log_path=str(jsonl),
+                        started_at=started_at,
+                    )
+                )
+    return results
+
+
+def _read_started_at(jsonl: Path) -> str | None:
+    """Best-effort: read the first JSONL line's ts/startedAt if present."""
+    try:
+        with jsonl.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                stripped = line.strip()
+                if not stripped.startswith("{"):
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                for key in ("startedAt", "started_at", "ts", "timestamp"):
+                    value = payload.get(key)
+                    if isinstance(value, str) and value:
+                        return value
+    except OSError:
+        return None
+    return None
 
 
 def capture_external_session_after_run(

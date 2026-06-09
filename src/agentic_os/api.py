@@ -78,7 +78,7 @@ from agentic_os.adapter_contract import (
 from agentic_os.config_inventory import read_config_summary
 from agentic_os.tool_discovery import discover_all
 from agentic_os import profiles as profiles_module
-from agentic_os.attach import build_attach_command, evaluate_attach
+from agentic_os.attach import build_attach_command, discover_external_sessions, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
@@ -86,7 +86,15 @@ from agentic_os.health_prober import HealthProber
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
-from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
+from agentic_os.models import (
+    AgentDefinition,
+    SessionAttachRequest,
+    SessionBindRequest,
+    SessionCreate,
+    SessionDiscoverRequest,
+    SessionRecord,
+    SessionStatus,
+)
 from agentic_os.registry import (
     Registry,
     RenderedRun,
@@ -1050,6 +1058,74 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             "entries": [entry.model_dump() for entry in result.entries],
             "truncated": result.truncated,
         }
+
+    @app.post("/sessions/discover")
+    def sessions_discover(request: SessionDiscoverRequest) -> dict[str, object]:
+        try:
+            workspace = Path(request.workspace_path).expanduser()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not workspace.exists() or not workspace.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"workspace_path is not a directory: {request.workspace_path}",
+            )
+        discovered = discover_external_sessions(
+            workspace_path=str(workspace),
+            agents=list(registry.list_agents()),
+        )
+        return {
+            "discovered": [
+                {
+                    "agent_id": d.agent_id,
+                    "external_session_id": d.external_session_id,
+                    "log_path": d.log_path,
+                    "started_at": d.started_at,
+                }
+                for d in discovered
+            ],
+        }
+
+    @app.post("/sessions/bind")
+    def sessions_bind(request: SessionBindRequest) -> dict[str, object]:
+        try:
+            agent = registry.get(request.agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        session_create = SessionCreate(
+            agent_id=agent.id,
+            cwd=request.workspace_path,
+            argv=[agent.id, "--resume", request.external_session_id],
+            artifact_dir=str(
+                Path(request.workspace_path)
+                / ".agentic-os-bound"
+                / request.external_session_id
+            ),
+            stdout_log=request.log_path,
+            stderr_log=request.log_path,
+            summary_one_liner=f"bound to {agent.id} session {request.external_session_id}",
+            workspace_path=request.workspace_path,
+        )
+        session = store.create_session(session_create)
+        bound = store.update_session_attach(
+            session.id,
+            external_session_id=request.external_session_id,
+            attachable=True,
+            attach_status="available",
+        )
+        audit_store.record(
+            "session",
+            bound.id,
+            "bind_external",
+            f"bound to {agent.id} external session {request.external_session_id}",
+            metadata={
+                "agent_id": agent.id,
+                "external_session_id": request.external_session_id,
+                "log_path": request.log_path,
+            },
+        )
+        return bound.model_dump()
 
     @app.post("/sessions/{session_id}/stop")
     def stop_session(session_id: str) -> dict[str, object]:

@@ -1,5 +1,6 @@
 """Tests for vibe coding agent attach support (P35 Task 8)."""
 import tempfile
+import textwrap
 from pathlib import Path
 
 from agentic_os.attach import (
@@ -191,3 +192,261 @@ def test_evaluate_attach_denied_without_external_id():
     decision, reason = evaluate_attach(agent, session)
     assert decision == "deny"
     assert "external_session_id" in reason.lower()
+
+
+# ─── P36 discover / bind ─────────────────────────────────────────────
+
+
+def test_discover_finds_external_claude_session_in_workspace(tmp_path: Path) -> None:
+    """discover should return Claude sessions found in workspace log dirs."""
+    from agentic_os.attach import discover_external_sessions
+
+    log_dir = tmp_path / ".claude" / "projects" / "demo"
+    log_dir.mkdir(parents=True)
+    log_file = log_dir / "abc-123.jsonl"
+    log_file.write_text('{"type":"init","session_id":"abc-123"}\n{"type":"msg"}\n', encoding="utf-8")
+
+    claude_agent = AgentDefinition(
+        id="claude",
+        label="Claude Code",
+        command=["claude"],
+        cwd_mode="required",
+        stop_policy="process_group",
+        log_paths=[str(tmp_path / ".claude" / "projects")],
+        tool_kind="vibe_coding",
+    )
+
+    results = discover_external_sessions(
+        workspace_path=str(tmp_path),
+        agents=[claude_agent],
+    )
+
+    assert len(results) == 1
+    assert results[0].agent_id == "claude"
+    assert results[0].external_session_id == "abc-123"
+    assert results[0].log_path == str(log_file)
+
+
+def test_discover_returns_empty_when_no_sessions(tmp_path: Path) -> None:
+    from agentic_os.attach import discover_external_sessions
+
+    claude_agent = AgentDefinition(
+        id="claude",
+        label="Claude Code",
+        command=["claude"],
+        cwd_mode="required",
+        stop_policy="process_group",
+        log_paths=[str(tmp_path / "missing")],
+        tool_kind="vibe_coding",
+    )
+
+    results = discover_external_sessions(
+        workspace_path=str(tmp_path),
+        agents=[claude_agent],
+    )
+
+    assert results == []
+
+
+def test_discover_ignores_unsupported_agents(tmp_path: Path) -> None:
+    from agentic_os.attach import discover_external_sessions
+
+    # shell is not in _SUPPORTED; even with sessions, should be skipped.
+    log_dir = tmp_path / "shell-logs"
+    log_dir.mkdir()
+    (log_dir / "x.jsonl").write_text('{"sessionId":"x1"}\n', encoding="utf-8")
+
+    shell_agent = AgentDefinition(
+        id="shell",
+        label="Shell",
+        command=["/bin/echo"],
+        cwd_mode="optional",
+        stop_policy="process_group",
+        log_paths=[str(log_dir)],
+        tool_kind=None,
+    )
+
+    results = discover_external_sessions(
+        workspace_path=str(tmp_path),
+        agents=[shell_agent],
+    )
+
+    assert results == []
+
+
+def test_discover_does_not_read_secrets(tmp_path: Path) -> None:
+    """discover must not include session log contents (no API keys leaked)."""
+    from agentic_os.attach import discover_external_sessions
+
+    log_dir = tmp_path / ".codex"
+    log_dir.mkdir()
+    log_file = log_dir / "s1.jsonl"
+    log_file.write_text(
+        '{"sessionId":"s1","env":{"OPENAI_API_KEY":"sk-REDACTED"}}\n',
+        encoding="utf-8",
+    )
+
+    codex_agent = AgentDefinition(
+        id="codex",
+        label="Codex",
+        command=["codex"],
+        cwd_mode="required",
+        stop_policy="process_group",
+        log_paths=[str(log_dir)],
+        tool_kind="vibe_coding",
+    )
+
+    results = discover_external_sessions(
+        workspace_path=str(tmp_path),
+        agents=[codex_agent],
+    )
+
+    assert len(results) == 1
+    # None of the result fields should contain the secret value.
+    dumped = str(results[0].__dict__)
+    assert "sk-REDACTED" not in dumped
+    assert "OPENAI_API_KEY" not in dumped
+
+
+# ─── P36 bind (API-level) ────────────────────────────────────────────
+
+
+def test_api_discover_endpoint_returns_external_sessions(tmp_path: Path) -> None:
+    """POST /sessions/discover should return matches with external_session_id + agent_id."""
+    from fastapi.testclient import TestClient
+
+    from agentic_os.api import create_app
+
+    log_dir = tmp_path / ".claude" / "projects" / "demo"
+    log_dir.mkdir(parents=True)
+    (log_dir / "abc.jsonl").write_text(
+        '{"type":"init","session_id":"abc-xyz"}\n', encoding="utf-8"
+    )
+
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        textwrap.dedent(
+            f"""\
+            [[agents]]
+            id = "claude"
+            label = "Claude Code"
+            command = ["claude"]
+            cwd_mode = "required"
+            stop_policy = "process_group"
+            tool_kind = "vibe_coding"
+            log_paths = ["{log_dir}"]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    )
+
+    response = client.post(
+        "/sessions/discover",
+        json={"workspace_path": str(tmp_path)},
+    )
+
+    assert response.status_code == 200
+    discovered = response.json()["discovered"]
+    assert len(discovered) == 1
+    assert discovered[0]["agent_id"] == "claude"
+    assert discovered[0]["external_session_id"] == "abc-xyz"
+
+
+def test_api_bind_creates_session_with_external_id(tmp_path: Path) -> None:
+    """POST /sessions/bind should create a session record bound to external session."""
+    from fastapi.testclient import TestClient
+
+    from agentic_os.api import create_app
+
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        textwrap.dedent(
+            """\
+            [[agents]]
+            id = "claude"
+            label = "Claude Code"
+            command = ["claude"]
+            cwd_mode = "required"
+            stop_policy = "process_group"
+            tool_kind = "vibe_coding"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    )
+
+    response = client.post(
+        "/sessions/bind",
+        json={
+            "agent_id": "claude",
+            "external_session_id": "ext-abc-123",
+            "workspace_path": str(tmp_path),
+            "log_path": str(tmp_path / "claude.jsonl"),
+        },
+    )
+
+    assert response.status_code == 200
+    session = response.json()
+    assert session["external_session_id"] == "ext-abc-123"
+    assert session["attachable"] is True
+    assert session["attach_status"] == "available"
+
+    # Should appear in /sessions list.
+    listed = client.get("/sessions").json()["sessions"]
+    assert any(s["id"] == session["id"] for s in listed)
+
+
+def test_api_attach_preview_vibe_coding(tmp_path: Path) -> None:
+    """POST /sessions/{id}/attach mode=preview returns command without executing."""
+    from fastapi.testclient import TestClient
+
+    from agentic_os.api import create_app
+
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        textwrap.dedent(
+            """\
+            [[agents]]
+            id = "claude"
+            label = "Claude Code"
+            command = ["claude"]
+            cwd_mode = "required"
+            stop_policy = "process_group"
+            tool_kind = "vibe_coding"
+            attach_command = ["claude", "--resume"]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    )
+
+    bind = client.post(
+        "/sessions/bind",
+        json={
+            "agent_id": "claude",
+            "external_session_id": "ext-preview-1",
+            "workspace_path": str(tmp_path),
+            "log_path": str(tmp_path / "claude.jsonl"),
+        },
+    )
+    assert bind.status_code == 200
+    session_id = bind.json()["id"]
+
+    response = client.post(
+        f"/sessions/{session_id}/attach", json={"mode": "preview"}
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["decision"] == "allow"
+    assert payload["attach_command"] == ["claude", "--resume", "ext-preview-1"]
