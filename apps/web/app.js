@@ -122,6 +122,9 @@ function bindControls() {
   byId("harness-config-load").addEventListener("click", loadHarnessNativeConfig);
   byId("approval-load").addEventListener("click", loadApprovalsTab);
   byId("load-audit").addEventListener("click", loadAuditStandalone);
+  byId("refresh-tools")?.addEventListener("click", () => {
+    Ao.ToolDiscovery?.render?.("tool-discovery-container");
+  });
   document.body.addEventListener("click", handleActionClick);
 }
 
@@ -172,6 +175,8 @@ function loadActiveTab() {
     // Audit is manually loaded
   } else if (state.activeTab === "overview") {
     loadOverview();
+  } else if (state.activeTab === "tools") {
+    Ao.ToolDiscovery?.render?.("tool-discovery-container");
   }
 }
 

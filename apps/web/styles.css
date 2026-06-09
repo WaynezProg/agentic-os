@@ -990,3 +990,37 @@ details.subpanel > summary:hover {
     transform: rotate(360deg);
   }
 }
+
+/* P34 Tool Discovery */
+.tool-discovery-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tool-discovery-table th,
+.tool-discovery-table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #333);
+}
+.tool-discovery-table .section-header td {
+  padding-top: 1rem;
+  font-weight: bold;
+  background: var(--bg-secondary, #1a1a1a);
+}
+.badge-vibe {
+  background: #2563eb;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.badge-agentic {
+  background: #7c3aed;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+.status-ok { color: #22c55e; }
+.status-error { color: #ef4444; }
+.error-text { color: #ef4444; font-size: 0.75rem; }

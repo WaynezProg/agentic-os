@@ -28,6 +28,7 @@
     <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
     <script src="ui/connection-gate.js"></script>
+    <script src="ui/tool-discovery.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -124,6 +125,10 @@
           <button id="tab-overview" class="tab" type="button" role="tab" aria-selected="false" data-tab="overview">
             <span class="tab-glyph" aria-hidden="true">☀️</span>
             <span class="tab-label">總覽</span>
+          </button>
+          <button id="tab-tools" class="tab" type="button" role="tab" aria-selected="false" data-tab="tools">
+            <span class="tab-glyph" aria-hidden="true">🔧</span>
+            <span class="tab-label">工具</span>
           </button>
         </nav>
 
@@ -1149,6 +1154,15 @@
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section id="panel-tools" class="panel" role="tabpanel" aria-labelledby="tab-tools" hidden>
+        <div class="panel-head">
+          <h2>工具探索</h2>
+          <button id="refresh-tools" type="button">重新整理工具</button>
+        </div>
+        <p class="message">已安裝工具的唯讀清單，合併 registry discovery 與本機 inventory。</p>
+        <div id="tool-discovery-container"></div>
       </section>
 
       <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
