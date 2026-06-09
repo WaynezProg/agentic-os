@@ -156,6 +156,7 @@ function loadActiveTab() {
     Ao.ProviderSwitchboard?.refresh?.();
   } else if (state.activeTab === "sessions") {
     loadSessions();
+    Ao.DiscoverBind?.init?.();
     const selectedSession = byId("log-session-id").value.trim();
     if (selectedSession) {
       loadSessionTimeline(selectedSession);

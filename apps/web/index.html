@@ -30,6 +30,7 @@
     <script src="ui/connection-gate.js"></script>
     <script src="ui/tool-discovery.js"></script>
 <script src="ui/vibe-coding-launcher.js" defer></script>
+<script src="ui/discover-bind.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -502,6 +503,33 @@
             <pre id="attach-preview-output" class="summary-output" hidden aria-live="polite"></pre>
           </aside>
         </div>
+        <section id="discover-section" class="subpanel card">
+          <h3>Discover &amp; Bind 外部 Session</h3>
+          <p id="discover-message" class="message" aria-live="polite"></p>
+          <div id="discover-controls" class="control-row">
+            <span class="message">Workspace 跟隨上方選擇。</span>
+            <button id="discover-run" type="button" class="btn-primary">掃描外部 session</button>
+            <button id="discover-refresh" type="button">重新掃描</button>
+          </div>
+          <div class="table-shell">
+            <table id="discover-results-table" class="table-compact">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>External Session ID</th>
+                  <th>Started At</th>
+                  <th>Log Path</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="discover-results-body">
+                <tr>
+                  <td colspan="5">按「掃描外部 session」開始。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="panel-logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
