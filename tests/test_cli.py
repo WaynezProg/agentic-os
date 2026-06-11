@@ -105,6 +105,25 @@ class FakeClient:
         self.calls.append(("list_sessions", (), {}))
         return {"sessions": [{"id": "s_1", "agent_id": "shell", "status": "succeeded"}]}
 
+    def list_live_sessions(self, within_hours: int = 72, limit: int = 50) -> dict[str, object]:
+        self.calls.append(
+            ("list_live_sessions", (), {"within_hours": within_hours, "limit": limit})
+        )
+        return {
+            "sessions": [
+                {
+                    "tool": "claude",
+                    "session_id": "abc-123",
+                    "workspace": "/Users/w/proj",
+                    "title": "fix the bug",
+                    "last_activity_at": "2026-06-12T10:00:00+00:00",
+                    "active": True,
+                    "resume_command": "cd /Users/w/proj && claude --resume abc-123",
+                }
+            ],
+            "errors": [],
+        }
+
     def show_session(self, session_id: str) -> dict[str, object]:
         self.calls.append(("show_session", (session_id,), {}))
         return {"id": session_id, "agent_id": "shell", "status": "succeeded"}
@@ -2245,3 +2264,16 @@ def test_deprecated_status_shown_in_skills_list(monkeypatch: Any) -> None:
     result = CliRunner().invoke(cli.app, ["skills", "list"])
     assert result.exit_code == 0
     assert "deprecated" in result.output
+
+
+def test_sessions_live_lists_external_sessions(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["sessions", "live"])
+
+    assert result.exit_code == 0
+    assert "claude" in result.output
+    assert "abc-123" in result.output
+    assert "ACTIVE" in result.output
+    assert ("list_live_sessions", (), {"within_hours": 72, "limit": 50}) in fake.calls

@@ -5,8 +5,10 @@ import io
 import json
 import sqlite3
 import subprocess
+import sys
 import time
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -88,6 +90,11 @@ from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
+from agentic_os.live_sessions import (
+    live_session_dict,
+    open_terminal,
+    scan_live_sessions,
+)
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
@@ -245,6 +252,12 @@ class PolicyEvaluateRequest(BaseModel):
     cwd: str | None = None
 
 
+class LiveOpenTerminalRequest(BaseModel):
+    tool: str
+    session_id: str
+    workspace: str
+
+
 class ApprovalRejectRequest(BaseModel):
     reason: str = ""
 
@@ -255,7 +268,11 @@ class DeprecationRequest(BaseModel):
     sunset_at: str | None = None
 
 
-def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
+def create_app(
+    state_dir: Path,
+    registry_path: Path,
+    live_session_roots: dict[str, Path] | None = None,
+) -> FastAPI:
     state_dir.mkdir(parents=True, exist_ok=True)
     registry = Registry(registry_path)
     store = Store(state_dir / "agentic-os.db")
@@ -868,6 +885,35 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     @app.get("/sessions")
     def list_sessions() -> dict[str, object]:
         return {"sessions": [session.model_dump() for session in store.list_sessions()]}
+
+    # Registered before /sessions/{session_id} so "live" is not captured
+    # as a session id by the dynamic route.
+    @app.get("/sessions/live")
+    def list_live_sessions(within_hours: int = 72, limit: int = 50) -> dict[str, object]:
+        """Scan real external session stores (P39). Read-only."""
+        within_hours = max(1, min(within_hours, 720))
+        limit = max(1, min(limit, 200))
+        live, errors = scan_live_sessions(
+            live_session_roots, within_hours=within_hours, limit=limit
+        )
+        return {
+            "sessions": [live_session_dict(s) for s in live],
+            "errors": errors,
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+
+    @app.post("/sessions/live/open-terminal")
+    def live_open_terminal(payload: LiveOpenTerminalRequest) -> dict[str, object]:
+        """Open Terminal.app resuming a discovered session (P39, macOS only)."""
+        if sys.platform != "darwin":
+            raise HTTPException(status_code=501, detail="open-terminal is macOS-only")
+        try:
+            open_terminal(payload.tool, payload.session_id, payload.workspace)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"ok": True, "tool": payload.tool, "session_id": payload.session_id}
 
     @app.get("/sessions/{session_id}")
     def show_session(session_id: str) -> dict[str, object]:

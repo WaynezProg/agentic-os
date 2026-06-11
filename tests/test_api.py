@@ -2836,3 +2836,91 @@ config_path = "/nonexistent/path"
         assert "agent_id" in tool
         assert "config_source" in tool
         assert "tool_kind" in tool
+
+
+# --- P39 live session radar ---
+
+
+def _make_live_client(tmp_path: Path) -> TestClient:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    claude_root = tmp_path / "claude-projects"
+    codex_root = tmp_path / "codex-sessions"
+    project_dir = claude_root / "-Users-w-proj"
+    project_dir.mkdir(parents=True)
+    (project_dir / "abc-123.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "sessionId": "abc-123",
+                "cwd": "/Users/w/proj",
+                "timestamp": "2026-06-12T10:00:00Z",
+                "message": {"role": "user", "content": "fix the bug"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return TestClient(
+        create_app(
+            state_dir=tmp_path / ".agentic-os",
+            registry_path=registry,
+            live_session_roots={"claude": claude_root, "codex": codex_root},
+        )
+    )
+
+
+def test_live_sessions_endpoint(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    response = client.get("/sessions/live")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["errors"] == []
+    assert len(body["sessions"]) == 1
+    session = body["sessions"][0]
+    assert session["tool"] == "claude"
+    assert session["session_id"] == "abc-123"
+    assert session["resume_command"].endswith("claude --resume abc-123")
+    assert "generated_at" in body
+
+
+def test_live_sessions_endpoint_clamps_params(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    response = client.get("/sessions/live", params={"within_hours": 999999, "limit": 0})
+    assert response.status_code == 200
+
+
+def test_live_open_terminal_rejects_bad_tool(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    response = client.post(
+        "/sessions/live/open-terminal",
+        json={"tool": "rm-rf", "session_id": "abc-123", "workspace": str(tmp_path)},
+    )
+    assert response.status_code in {400, 501}
+    if sys.platform == "darwin":
+        assert response.status_code == 400
+
+
+def test_live_open_terminal_runs_osascript(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _make_live_client(tmp_path)
+    calls: list[list[str]] = []
+
+    class FakeCompleted:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return FakeCompleted()
+
+    monkeypatch.setattr("agentic_os.live_sessions.subprocess.run", fake_run)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    response = client.post(
+        "/sessions/live/open-terminal",
+        json={"tool": "claude", "session_id": "abc-123", "workspace": str(tmp_path)},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert calls and calls[0][0] == "osascript"

@@ -314,6 +314,24 @@ def sessions_list(api: str | None = _api_option()) -> None:
         typer.echo(f"{session['id']}\t{session['agent_id']}\t{session['status']}")
 
 
+@sessions.command("live")
+def sessions_live(
+    within_hours: int = typer.Option(72, "--within-hours", help="Scan window in hours."),
+    limit: int = typer.Option(50, "--limit", help="Maximum sessions returned."),
+    api: str | None = _api_option(),
+) -> None:
+    """List real external tool sessions discovered on this machine (P39)."""
+    data = _run_api_call(
+        lambda: make_client(api).list_live_sessions(within_hours=within_hours, limit=limit)
+    )
+    for session in data.get("sessions", []):
+        marker = "ACTIVE" if session.get("active") else "idle"
+        typer.echo(
+            f"{marker}\t{session['tool']}\t{session['workspace']}\t"
+            f"{session.get('title', '')}\t{session['last_activity_at']}\t{session['session_id']}"
+        )
+
+
 @sessions.command("show")
 def sessions_show(session_id: str, api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).show_session(session_id))

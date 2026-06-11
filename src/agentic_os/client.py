@@ -39,6 +39,11 @@ class AgenticClient:
     def list_sessions(self) -> dict[str, Any]:
         return self._get("/sessions")
 
+    def list_live_sessions(self, within_hours: int = 72, limit: int = 50) -> dict[str, Any]:
+        return self._get(
+            "/sessions/live", params={"within_hours": within_hours, "limit": limit}
+        )
+
     def show_session(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}")
 
