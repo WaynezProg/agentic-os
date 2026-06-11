@@ -101,7 +101,7 @@ cmd_start() {
         --state-dir "$STATE_DIR" \
         --registry "$REGISTRY" >>"$LOG_FILE" 2>&1 &
     else
-      nohup rtk uv run agentd serve \
+      nohup uv run agentd serve \
         --host "$API_HOST" \
         --port "$API_PORT" \
         --state-dir "$STATE_DIR" \

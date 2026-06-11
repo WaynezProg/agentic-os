@@ -170,7 +170,17 @@ pub fn daemon_log_path() -> PathBuf {
 }
 
 fn ensure_path_dirs(current: &str, extra_front: &[PathBuf]) -> String {
-    let required = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+    // GUI launches (Finder/Dock) inherit the launchd PATH, which lacks
+    // Homebrew dirs — without them `uv` is unresolvable and the
+    // dev-mode daemon start fails before the supervisor can help.
+    let required = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ];
     let mut parts: Vec<String> = Vec::new();
     for path in extra_front {
         let value = path.to_string_lossy().to_string();
@@ -206,6 +216,14 @@ pub fn hardened_path() -> String {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn ensure_path_includes_homebrew_dirs() {
+        let result = ensure_path_dirs("/usr/bin:/bin", &[]);
+        assert!(result.contains("/opt/homebrew/bin"));
+        assert!(result.contains("/usr/local/bin"));
+        assert!(result.contains("/usr/sbin"));
+    }
 
     #[test]
     fn runtime_root_prefers_bundle_env() {
