@@ -56,6 +56,56 @@ window.AgenticOs = window.AgenticOs || {};
     `;
   }
 
+  function nameChips(names, max) {
+    const shown = names.slice(0, max);
+    let html = shown
+      .map((name) => `<span class="cap-chip">${escapeHtml(name)}</span>`)
+      .join("");
+    if (names.length > max) {
+      html += `<span class="cap-chip cap-chip-more">+${names.length - max}</span>`;
+    }
+    return html || '<span class="muted">—</span>';
+  }
+
+  function renderCapabilityCard(entry) {
+    if (!entry.present) {
+      return `<div class="capability-card capability-card-missing">
+        <h4>${escapeHtml(entry.tool)}</h4>
+        <p class="muted">未安裝</p>
+      </div>`;
+    }
+    const memory = (entry.memory_files || [])
+      .map(
+        (file) =>
+          `<div class="cap-memory" title="${escapeHtml(file.path)}">
+            <code>${escapeHtml(file.path.split("/").pop())}</code>
+            <span class="muted">${(file.size_bytes / 1024).toFixed(1)}KB · ${escapeHtml(
+              (file.modified_at || "").slice(0, 10),
+            )}</span>
+          </div>`,
+      )
+      .join("");
+    const error = entry.error
+      ? `<div class="error-text" title="${escapeHtml(entry.error)}">⚠ 部分讀取失敗</div>`
+      : "";
+    return `<div class="capability-card">
+      <h4>${escapeHtml(entry.tool)}</h4>
+      <div class="cap-row"><span class="cap-label">skills ${entry.skills.length}</span>${nameChips(entry.skills, 8)}</div>
+      <div class="cap-row"><span class="cap-label">MCP ${entry.mcp_servers.length}</span>${nameChips(entry.mcp_servers, 8)}</div>
+      <div class="cap-row"><span class="cap-label">plugins ${entry.plugins.length}</span>${nameChips(entry.plugins, 8)}</div>
+      <div class="cap-row"><span class="cap-label">記憶</span>${memory || '<span class="muted">—</span>'}</div>
+      ${error}
+    </div>`;
+  }
+
+  function renderCapabilities(tools) {
+    let html = '<h3 class="capability-heading">Capabilities（真實設定）</h3>';
+    html += '<div class="capability-grid">';
+    html += tools.map(renderCapabilityCard).join("");
+    html += "</div>";
+    return html;
+  }
+
   async function render(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -63,9 +113,10 @@ window.AgenticOs = window.AgenticOs || {};
     container.innerHTML = '<p class="loading">Loading tools...</p>';
 
     try {
-      const [discoveryRes, inventoryRes] = await Promise.all([
+      const [discoveryRes, inventoryRes, capabilitiesRes] = await Promise.all([
         Ao.apiFetch(Ao.buildEndpoint("toolsDiscovery")),
         Ao.apiFetch(Ao.buildEndpoint("toolsInventory")),
+        Ao.apiFetch(Ao.buildEndpoint("toolCapabilities")).catch(() => null),
       ]);
 
       const discovery = discoveryRes.tools || [];
@@ -117,6 +168,9 @@ window.AgenticOs = window.AgenticOs || {};
       }
 
       html += "</tbody></table>";
+      if (capabilitiesRes?.tools?.length) {
+        html += renderCapabilities(capabilitiesRes.tools);
+      }
       container.innerHTML = html;
     } catch (err) {
       container.innerHTML = `<p class="error-text">Failed to load tools: ${err.message}</p>`;

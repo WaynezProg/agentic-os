@@ -11,6 +11,8 @@ window.AgenticOs = window.AgenticOs || {};
     sessions: "/sessions",
     liveSessions: "/sessions/live",
     liveOpenTerminal: "/sessions/live/open-terminal",
+    liveTranscript: "/sessions/live/transcript",
+    toolCapabilities: "/tools/capabilities",
     sessionDetail: "/sessions/{session_id}",
     sessionLogs: "/sessions/{session_id}/logs",
     sessionStop: "/sessions/{session_id}/stop",

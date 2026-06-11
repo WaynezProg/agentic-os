@@ -66,11 +66,11 @@ window.AgenticOs = window.AgenticOs || {};
   function renderLiveSessionRow(session) {
     const wsParts = String(session.workspace || "").split("/").filter(Boolean);
     const wsName = wsParts.length ? wsParts[wsParts.length - 1] : session.workspace;
-    return `<tr>
+    return `<tr class="live-session-row" data-log-path="${escapeHtml(session.log_path)}" data-row-tool="${escapeHtml(session.tool)}">
       <td><span class="live-dot ${session.active ? "live-dot-active" : "live-dot-idle"}"></span></td>
       <td><span class="tool-badge tool-badge-${escapeHtml(session.tool)}">${escapeHtml(session.tool)}</span></td>
       <td title="${escapeHtml(session.workspace)}">${escapeHtml(wsName)}</td>
-      <td class="live-title" title="${escapeHtml(session.title)}">${escapeHtml(session.title)}</td>
+      <td class="live-title" data-transcript-toggle title="點擊預覽對話：${escapeHtml(session.title)}">${escapeHtml(session.title)}</td>
       <td>${escapeHtml(relativeTime(session.last_activity_at))}</td>
       <td class="live-actions">
         <button type="button" class="btn-sm" data-resume-command="${escapeHtml(session.resume_command)}">Copy resume</button>
@@ -78,6 +78,50 @@ window.AgenticOs = window.AgenticOs || {};
           data-session-id="${escapeHtml(session.session_id)}" data-workspace="${escapeHtml(session.workspace)}">Terminal</button>
       </td>
     </tr>`;
+  }
+
+  async function loadTranscript(tool, logPath) {
+    const params = new URLSearchParams({ tool, log_path: logPath, limit: "20" });
+    return Ao.apiFetch(`${Ao.buildEndpoint("liveTranscript")}?${params.toString()}`);
+  }
+
+  function renderTranscriptMessages(data) {
+    const messages = data?.messages || [];
+    if (messages.length === 0) {
+      return '<p class="muted">這個 session 沒有可預覽的對話。</p>';
+    }
+    return messages
+      .map(
+        (message) => `<div class="transcript-msg transcript-msg-${escapeHtml(message.role)}">
+          <span class="transcript-role">${message.role === "user" ? "你" : "AI"}</span>
+          <span class="transcript-text">${escapeHtml(message.text)}</span>
+        </div>`,
+      )
+      .join("");
+  }
+
+  function bindTranscriptToggles(container) {
+    container.querySelectorAll("[data-transcript-toggle]").forEach((cell) => {
+      cell.addEventListener("click", async () => {
+        const row = cell.closest("tr");
+        if (!row) return;
+        const existing = row.nextElementSibling;
+        if (existing && existing.classList.contains("transcript-row")) {
+          existing.remove();
+          return;
+        }
+        const panel = document.createElement("tr");
+        panel.className = "transcript-row";
+        panel.innerHTML = '<td colspan="6"><div class="transcript-panel loading">載入對話中…</div></td>';
+        row.insertAdjacentElement("afterend", panel);
+        try {
+          const data = await loadTranscript(row.dataset.rowTool, row.dataset.logPath);
+          panel.innerHTML = `<td colspan="6"><div class="transcript-panel">${renderTranscriptMessages(data)}</div></td>`;
+        } catch (error) {
+          panel.innerHTML = `<td colspan="6"><div class="transcript-panel error-text">對話載入失敗：${escapeHtml(error.message)}</div></td>`;
+        }
+      });
+    });
   }
 
   function renderLiveSessionsCard(live) {
@@ -334,6 +378,7 @@ window.AgenticOs = window.AgenticOs || {};
     bindQuickActions(leftContainer);
     bindQuickActions(rightContainer);
     bindLiveSessionActions(leftContainer);
+    bindTranscriptToggles(leftContainer);
   }
 
   function init() {
