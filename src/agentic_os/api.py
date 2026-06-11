@@ -92,8 +92,10 @@ from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
 from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
 from agentic_os.live_sessions import (
+    default_roots,
     live_session_dict,
     open_terminal,
+    read_transcript_tail,
     scan_live_sessions,
 )
 from agentic_os.logs import JsonlLogStore, StreamName
@@ -911,6 +913,33 @@ def create_app(
             "errors": errors,
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         }
+
+    @app.get("/sessions/live/transcript")
+    def live_session_transcript(
+        tool: str, log_path: str, limit: int = 50
+    ) -> dict[str, object]:
+        """Preview the tail of a discovered session transcript (P41). Read-only."""
+        limit = max(1, min(limit, 200))
+        roots = dict(default_roots())
+        if live_session_roots:
+            roots.update(live_session_roots)
+        try:
+            resolved = Path(log_path).expanduser().resolve()
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if resolved.suffix != ".jsonl":
+            raise HTTPException(status_code=400, detail="log_path must be a .jsonl file")
+        allowed = any(
+            resolved.is_relative_to(root.resolve())
+            for root in roots.values()
+            if root.exists()
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=400, detail="log_path outside known session roots"
+            )
+        messages = read_transcript_tail(resolved, tool, limit=limit)
+        return {"messages": messages, "count": len(messages), "tool": tool}
 
     @app.post("/sessions/live/open-terminal")
     def live_open_terminal(payload: LiveOpenTerminalRequest) -> dict[str, object]:

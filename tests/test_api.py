@@ -2960,3 +2960,40 @@ def test_tools_capabilities_endpoint(tmp_path: Path) -> None:
     assert tools["claude"]["mcp_servers"] == ["github"]
     assert tools["codex"]["present"] is False
     assert "sk-HIDE" not in response.text
+
+
+def test_live_transcript_endpoint(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    log_path = tmp_path / "claude-projects" / "-Users-w-proj" / "abc-123.jsonl"
+    response = client.get(
+        "/sessions/live/transcript",
+        params={"tool": "claude", "log_path": str(log_path)},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["messages"] == [
+        {"role": "user", "text": "fix the bug", "timestamp": "2026-06-12T10:00:00Z"}
+    ]
+    assert body["count"] == 1
+
+
+def test_live_transcript_rejects_path_outside_roots(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}\n", encoding="utf-8")
+    response = client.get(
+        "/sessions/live/transcript",
+        params={"tool": "claude", "log_path": str(outside)},
+    )
+    assert response.status_code == 400
+
+
+def test_live_transcript_rejects_non_jsonl(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    sneaky = tmp_path / "claude-projects" / "x.txt"
+    sneaky.write_text("hi", encoding="utf-8")
+    response = client.get(
+        "/sessions/live/transcript",
+        params={"tool": "claude", "log_path": str(sneaky)},
+    )
+    assert response.status_code == 400

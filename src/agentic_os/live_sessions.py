@@ -335,6 +335,116 @@ def scan_live_sessions(
     return sessions[:limit], errors
 
 
+# --- Transcript tail preview (P41) ---
+
+_TAIL_BYTES = 256 * 1024
+_TRANSCRIPT_TEXT_MAX = 2000
+
+
+def _clip(text: str) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= _TRANSCRIPT_TEXT_MAX:
+        return cleaned
+    return cleaned[: _TRANSCRIPT_TEXT_MAX - 1] + "…"
+
+
+def _read_tail_objects(path: Path) -> list[dict[str, object]]:
+    try:
+        size = path.stat().st_size
+        offset = max(0, size - _TAIL_BYTES)
+        with path.open("rb") as fh:
+            fh.seek(offset)
+            data = fh.read(_TAIL_BYTES)
+    except OSError:
+        return []
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    if offset > 0 and lines:
+        lines = lines[1:]  # drop the line cut by the seek offset
+    objs: list[dict[str, object]] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            continue
+        try:
+            payload = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            objs.append(payload)
+    return objs
+
+
+def _message_text(content: object) -> str | None:
+    if isinstance(content, str) and content.strip():
+        return content
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                return text
+    return None
+
+
+def _claude_transcript(objs: list[dict[str, object]]) -> list[dict[str, object]]:
+    messages: list[dict[str, object]] = []
+    for obj in objs:
+        role = obj.get("type")
+        if role not in {"user", "assistant"}:
+            continue
+        message = obj.get("message")
+        if not isinstance(message, dict):
+            continue
+        text = _message_text(message.get("content"))
+        if text is None:
+            continue
+        if role == "user" and not _is_real_prompt(text):
+            continue
+        messages.append(
+            {"role": role, "text": _clip(text), "timestamp": obj.get("timestamp")}
+        )
+    return messages
+
+
+def _codex_transcript(objs: list[dict[str, object]]) -> list[dict[str, object]]:
+    # event_msg carries both sides; response_item duplicates them, so it
+    # is intentionally ignored here to avoid double entries.
+    messages: list[dict[str, object]] = []
+    for obj in objs:
+        if obj.get("type") != "event_msg":
+            continue
+        payload = obj.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        kind = payload.get("type")
+        text = payload.get("message")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        if kind == "user_message" and _is_real_prompt(text):
+            role = "user"
+        elif kind == "agent_message":
+            role = "assistant"
+        else:
+            continue
+        messages.append(
+            {"role": role, "text": _clip(text), "timestamp": obj.get("timestamp")}
+        )
+    return messages
+
+
+def read_transcript_tail(path: Path, tool: str, limit: int = 50) -> list[dict[str, object]]:
+    """Parse the last messages of a session transcript. Read-only, tail-bounded."""
+    objs = _read_tail_objects(path)
+    if tool == "claude":
+        messages = _claude_transcript(objs)
+    elif tool == "codex":
+        messages = _codex_transcript(objs)
+    else:
+        return []
+    return messages[-limit:]
+
+
 # --- Open-in-Terminal (macOS) ---
 
 

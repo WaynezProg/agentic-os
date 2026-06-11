@@ -405,3 +405,107 @@ def test_codex_title_skips_agents_md_injection(tmp_path: Path) -> None:
     _touch(path, hours_ago=0.01)
     sessions = scan_codex_sessions(tmp_path, within_hours=72, now=NOW)
     assert sessions[0].title == "actual ask"
+
+
+def test_read_transcript_tail_claude(tmp_path: Path) -> None:
+    from agentic_os.live_sessions import read_transcript_tail
+
+    path = tmp_path / "abc.jsonl"
+    lines = [
+        json.dumps({"type": "queue-operation", "operation": "enqueue"}),
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": "2026-06-12T10:00:00Z",
+                "message": {"role": "user", "content": "fix the bug"},
+            }
+        ),
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-06-12T10:00:05Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "done, bug fixed"}],
+                },
+            }
+        ),
+        json.dumps({"type": "progress", "noise": True}),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    messages = read_transcript_tail(path, "claude", limit=10)
+    assert [(m["role"], m["text"]) for m in messages] == [
+        ("user", "fix the bug"),
+        ("assistant", "done, bug fixed"),
+    ]
+    assert messages[0]["timestamp"] == "2026-06-12T10:00:00Z"
+
+
+def test_read_transcript_tail_codex(tmp_path: Path) -> None:
+    from agentic_os.live_sessions import read_transcript_tail
+
+    path = tmp_path / "rollout.jsonl"
+    lines = [
+        json.dumps({"type": "session_meta", "payload": {"id": "x"}}),
+        json.dumps(
+            {
+                "timestamp": "2026-06-12T10:00:00Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "do the thing"},
+            }
+        ),
+        json.dumps(
+            {
+                "timestamp": "2026-06-12T10:00:09Z",
+                "type": "event_msg",
+                "payload": {"type": "agent_message", "message": "thing done"},
+            }
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    messages = read_transcript_tail(path, "codex", limit=10)
+    assert [(m["role"], m["text"]) for m in messages] == [
+        ("user", "do the thing"),
+        ("assistant", "thing done"),
+    ]
+
+
+def test_read_transcript_tail_respects_limit_keeps_latest(tmp_path: Path) -> None:
+    from agentic_os.live_sessions import read_transcript_tail
+
+    path = tmp_path / "abc.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "type": "user",
+                "timestamp": f"2026-06-12T10:00:{i:02d}Z",
+                "message": {"role": "user", "content": f"msg {i}"},
+            }
+        )
+        for i in range(10)
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    messages = read_transcript_tail(path, "claude", limit=3)
+    assert [m["text"] for m in messages] == ["msg 7", "msg 8", "msg 9"]
+
+
+def test_read_transcript_tail_reads_only_tail_of_huge_file(tmp_path: Path) -> None:
+    from agentic_os.live_sessions import read_transcript_tail
+
+    path = tmp_path / "abc.jsonl"
+    junk = json.dumps({"type": "assistant", "noise": "x" * 1000})
+    with path.open("w", encoding="utf-8") as fh:
+        for _ in range(2000):
+            fh.write(junk + "\n")
+        fh.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "timestamp": "2026-06-12T10:00:00Z",
+                    "message": {"role": "user", "content": "the last word"},
+                }
+            )
+            + "\n"
+        )
+    messages = read_transcript_tail(path, "claude", limit=5)
+    assert messages[-1]["text"] == "the last word"
