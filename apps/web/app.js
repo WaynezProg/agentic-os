@@ -14,7 +14,7 @@ const HTML_ENTITIES = Object.freeze({
 });
 
 const state = {
-  activeTab: "agents",
+  activeTab: "overview",
   agentsById: {},
   logEntries: [],
   logSessionId: "",
@@ -197,6 +197,9 @@ async function refreshAll() {
   await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp(), loadFleet(), loadHarnesses()]);
   if (state.activeTab === "logs" && byId("log-session-id").value.trim()) {
     await loadLogs();
+  }
+  if (state.activeTab === "overview") {
+    await loadOverview();
   }
 }
 

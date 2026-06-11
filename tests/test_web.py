@@ -804,3 +804,14 @@ def test_live_session_radar_wired() -> None:
     styles = STYLES_CSS.read_text(encoding="utf-8")
     assert ".live-dot-active" in styles
     assert ".tool-badge" in styles
+
+
+def test_overview_is_default_landing_tab() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert (
+        '<button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true"'
+        in html
+    )
+    assert '<section id="panel-overview" class="panel is-active"' in html
+    app_js = APP_JS.read_text(encoding="utf-8")
+    assert 'activeTab: "overview"' in app_js

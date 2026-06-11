@@ -60,10 +60,10 @@
         <nav class="sidebar-nav tabs" role="tablist" aria-label="控制面板區塊">
           <button
             id="tab-agents"
-            class="tab is-active"
+            class="tab"
             type="button"
             role="tab"
-            aria-selected="true"
+            aria-selected="false"
             data-tab="agents"
           >
             <span class="tab-glyph" aria-hidden="true">🎛️</span>
@@ -126,7 +126,7 @@
             <span class="tab-glyph" aria-hidden="true">📋</span>
             <span class="tab-label">稽核</span>
           </button>
-          <button id="tab-overview" class="tab" type="button" role="tab" aria-selected="false" data-tab="overview">
+          <button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="overview">
             <span class="tab-glyph" aria-hidden="true">☀️</span>
             <span class="tab-label">總覽</span>
           </button>
@@ -182,7 +182,7 @@
         </header>
 
         <main class="workspace">
-      <section id="panel-agents" class="panel is-active" role="tabpanel" aria-labelledby="tab-agents">
+      <section id="panel-agents" class="panel" role="tabpanel" aria-labelledby="tab-agents">
         <div class="panel-head">
           <h2>代理</h2>
           <button id="refresh-agents" type="button">重新整理代理</button>
@@ -1245,7 +1245,7 @@
         </div>
       </section>
 
-      <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
+      <section id="panel-overview" class="panel is-active" role="tabpanel" aria-labelledby="tab-overview">
         <div class="panel-head">
           <h2>總覽</h2>
           <button id="dashboard-refresh" type="button">重新整理儀表板</button>
