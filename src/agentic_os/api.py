@@ -90,6 +90,7 @@ from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
+from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
 from agentic_os.live_sessions import (
     live_session_dict,
     open_terminal,
@@ -272,6 +273,7 @@ def create_app(
     state_dir: Path,
     registry_path: Path,
     live_session_roots: dict[str, Path] | None = None,
+    capability_home: Path | None = None,
 ) -> FastAPI:
     state_dir.mkdir(parents=True, exist_ok=True)
     registry = Registry(registry_path)
@@ -433,6 +435,14 @@ def create_app(
                 }
             )
         return {"tools": summaries}
+
+    @app.get("/tools/capabilities")
+    def tools_capabilities() -> dict[str, object]:
+        """Read real skills/MCP/plugin/memory names per tool (P40). Read-only."""
+        return {
+            "tools": [capabilities_dict(c) for c in read_all_capabilities(capability_home)],
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
 
     @app.get("/agentic/inventory")
     def agentic_inventory() -> dict[str, object]:

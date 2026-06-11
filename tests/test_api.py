@@ -2924,3 +2924,39 @@ def test_live_open_terminal_runs_osascript(
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert calls and calls[0][0] == "osascript"
+
+
+# --- P40 capability inventory ---
+
+
+def _make_capability_client(tmp_path: Path) -> TestClient:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    home = tmp_path / "home"
+    (home / ".claude" / "skills" / "browse").mkdir(parents=True)
+    (home / ".claude" / "CLAUDE.md").write_text("# memory\n", encoding="utf-8")
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"github": {"command": "gh", "env": {"T": "sk-HIDE"}}}}),
+        encoding="utf-8",
+    )
+    return TestClient(
+        create_app(
+            state_dir=tmp_path / ".agentic-os",
+            registry_path=registry,
+            capability_home=home,
+        )
+    )
+
+
+def test_tools_capabilities_endpoint(tmp_path: Path) -> None:
+    client = _make_capability_client(tmp_path)
+    response = client.get("/tools/capabilities")
+    assert response.status_code == 200
+    body = response.json()
+    assert "generated_at" in body
+    tools = {entry["tool"]: entry for entry in body["tools"]}
+    assert tools["claude"]["present"] is True
+    assert tools["claude"]["skills"] == ["browse"]
+    assert tools["claude"]["mcp_servers"] == ["github"]
+    assert tools["codex"]["present"] is False
+    assert "sk-HIDE" not in response.text

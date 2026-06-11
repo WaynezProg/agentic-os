@@ -26,6 +26,8 @@ skills = typer.Typer(help="Inspect and manage local skill registry records.")
 mcp = typer.Typer(help="Inspect and manage local MCP registry records.")
 policy = typer.Typer(help="Inspect and evaluate local capability policy.")
 bench = typer.Typer(help="Run local benchmark checks.")
+tools_cmd = typer.Typer(help="Inspect real installed tools and their capabilities.")
+app.add_typer(tools_cmd, name="tools")
 app.add_typer(agents, name="agents")
 harnesses_cmd = typer.Typer(help="Inspect harness instances and activity.")
 app.add_typer(harnesses_cmd, name="harnesses")
@@ -312,6 +314,24 @@ def sessions_list(api: str | None = _api_option()) -> None:
     data = _run_api_call(lambda: make_client(api).list_sessions())
     for session in data["sessions"]:
         typer.echo(f"{session['id']}\t{session['agent_id']}\t{session['status']}")
+
+
+@tools_cmd.command("capabilities")
+def tools_capabilities(api: str | None = _api_option()) -> None:
+    """List real skills/MCP/plugins/memory per installed tool (P40)."""
+    data = _run_api_call(lambda: make_client(api).tools_capabilities())
+    for entry in data.get("tools", []):
+        if not entry.get("present"):
+            typer.echo(f"{entry['tool']}\t(not installed)")
+            continue
+        memory = ", ".join(m["path"] for m in entry.get("memory_files", []))
+        error = f"\terror={entry['error']}" if entry.get("error") else ""
+        typer.echo(
+            f"{entry['tool']}\tskills={len(entry.get('skills', []))}\t"
+            f"mcp={len(entry.get('mcp_servers', []))}\t"
+            f"plugins={len(entry.get('plugins', []))}\t"
+            f"memory={memory or '-'}{error}"
+        )
 
 
 @sessions.command("live")

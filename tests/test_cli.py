@@ -105,6 +105,24 @@ class FakeClient:
         self.calls.append(("list_sessions", (), {}))
         return {"sessions": [{"id": "s_1", "agent_id": "shell", "status": "succeeded"}]}
 
+    def tools_capabilities(self) -> dict[str, object]:
+        self.calls.append(("tools_capabilities", (), {}))
+        return {
+            "tools": [
+                {
+                    "tool": "claude",
+                    "present": True,
+                    "skills": ["browse", "tdd"],
+                    "mcp_servers": ["github"],
+                    "plugins": [],
+                    "memory_files": [
+                        {"path": "/h/.claude/CLAUDE.md", "size_bytes": 10, "modified_at": "2026-06-12T00:00:00+00:00"}
+                    ],
+                    "error": None,
+                }
+            ],
+        }
+
     def list_live_sessions(self, within_hours: int = 72, limit: int = 50) -> dict[str, object]:
         self.calls.append(
             ("list_live_sessions", (), {"within_hours": within_hours, "limit": limit})
@@ -2277,3 +2295,15 @@ def test_sessions_live_lists_external_sessions(monkeypatch: Any) -> None:
     assert "abc-123" in result.output
     assert "ACTIVE" in result.output
     assert ("list_live_sessions", (), {"within_hours": 72, "limit": 50}) in fake.calls
+
+
+def test_tools_capabilities_lists_per_tool(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["tools", "capabilities"])
+
+    assert result.exit_code == 0
+    assert "claude" in result.output
+    assert "skills=2" in result.output
+    assert ("tools_capabilities", (), {}) in fake.calls

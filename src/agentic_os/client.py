@@ -44,6 +44,9 @@ class AgenticClient:
             "/sessions/live", params={"within_hours": within_hours, "limit": limit}
         )
 
+    def tools_capabilities(self) -> dict[str, Any]:
+        return self._get("/tools/capabilities")
+
     def show_session(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}")
 
