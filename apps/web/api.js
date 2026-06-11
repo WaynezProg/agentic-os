@@ -9,6 +9,8 @@ window.AgenticOs = window.AgenticOs || {};
     health: "/health",
     agents: "/agents",
     sessions: "/sessions",
+    liveSessions: "/sessions/live",
+    liveOpenTerminal: "/sessions/live/open-terminal",
     sessionDetail: "/sessions/{session_id}",
     sessionLogs: "/sessions/{session_id}/logs",
     sessionStop: "/sessions/{session_id}/stop",

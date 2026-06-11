@@ -790,3 +790,17 @@ def test_product_polish_modules_exist() -> None:
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     assert "ProductPolish?.bind" in app_js
     assert "profile-cwd-input" in PROFILE_EDITOR_JS.read_text(encoding="utf-8")
+
+
+def test_live_session_radar_wired() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    assert 'liveSessions: "/sessions/live"' in api_js
+    assert 'liveOpenTerminal: "/sessions/live/open-terminal"' in api_js
+    dashboard = (WEB_DIR / "ui" / "dashboard-v2.js").read_text(encoding="utf-8")
+    assert "loadLiveSessions" in dashboard
+    assert "data-resume-command" in dashboard
+    assert "data-open-terminal" in dashboard
+    assert "Managed Runs" in dashboard
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".live-dot-active" in styles
+    assert ".tool-badge" in styles

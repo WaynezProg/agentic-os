@@ -1167,3 +1167,44 @@ details.subpanel > summary:hover {
   font-size: 0.75rem;
   color: #ef4444;
 }
+
+/* P39 live session radar */
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.live-dot-active {
+  background: #22c55e;
+  box-shadow: 0 0 4px #22c55e;
+}
+.live-dot-idle {
+  background: #94a3b8;
+}
+.tool-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.tool-badge-claude {
+  background: rgba(124, 58, 237, 0.16);
+  color: #a78bfa;
+}
+.tool-badge-codex {
+  background: rgba(14, 165, 233, 0.16);
+  color: #38bdf8;
+}
+.live-title {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-session-table td {
+  vertical-align: middle;
+}
+.live-actions {
+  white-space: nowrap;
+}

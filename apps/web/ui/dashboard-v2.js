@@ -47,6 +47,96 @@ window.AgenticOs = window.AgenticOs || {};
     `;
   }
 
+  async function loadLiveSessions() {
+    const data = await fetchJson(`${Ao.buildEndpoint("liveSessions")}?within_hours=24&limit=20`);
+    return { sessions: data?.sessions || [], errors: data?.errors || [] };
+  }
+
+  function relativeTime(iso) {
+    const then = Date.parse(iso);
+    if (Number.isNaN(then)) return iso || "-";
+    const minutes = Math.round((Date.now() - then) / 60000);
+    if (minutes < 1) return "now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+  }
+
+  function renderLiveSessionRow(session) {
+    const wsParts = String(session.workspace || "").split("/").filter(Boolean);
+    const wsName = wsParts.length ? wsParts[wsParts.length - 1] : session.workspace;
+    return `<tr>
+      <td><span class="live-dot ${session.active ? "live-dot-active" : "live-dot-idle"}"></span></td>
+      <td><span class="tool-badge tool-badge-${escapeHtml(session.tool)}">${escapeHtml(session.tool)}</span></td>
+      <td title="${escapeHtml(session.workspace)}">${escapeHtml(wsName)}</td>
+      <td class="live-title" title="${escapeHtml(session.title)}">${escapeHtml(session.title)}</td>
+      <td>${escapeHtml(relativeTime(session.last_activity_at))}</td>
+      <td class="live-actions">
+        <button type="button" class="btn-sm" data-resume-command="${escapeHtml(session.resume_command)}">Copy resume</button>
+        <button type="button" class="btn-sm" data-open-terminal data-tool="${escapeHtml(session.tool)}"
+          data-session-id="${escapeHtml(session.session_id)}" data-workspace="${escapeHtml(session.workspace)}">Terminal</button>
+      </td>
+    </tr>`;
+  }
+
+  function renderLiveSessionsCard(live) {
+    const activeCount = live.sessions.filter((session) => session.active).length;
+    let html = '<div class="dash-card" id="live-sessions-card">';
+    html += `<h4>Live Sessions <span class="muted">(real · ${activeCount} active)</span>
+      <button type="button" class="btn-sm" id="live-sessions-refresh" title="Refresh">↻</button></h4>`;
+    if (live.sessions.length === 0) {
+      html += '<p class="muted">No claude/codex sessions in the last 24h.</p>';
+    } else {
+      html += '<table class="session-table live-session-table"><tbody>';
+      html += live.sessions.map(renderLiveSessionRow).join("");
+      html += "</tbody></table>";
+    }
+    if (live.errors.length > 0) {
+      html += `<p class="inventory-err">⚠ ${escapeHtml(
+        live.errors.map((entry) => `${entry.tool}: ${entry.error}`).join("; "),
+      )}</p>`;
+    }
+    html += "</div>";
+    return html;
+  }
+
+  function bindLiveSessionActions(container) {
+    container.querySelectorAll("[data-resume-command]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(button.dataset.resumeCommand);
+          button.textContent = "Copied ✓";
+        } catch {
+          window.prompt("Copy resume command:", button.dataset.resumeCommand);
+        }
+        setTimeout(() => {
+          button.textContent = "Copy resume";
+        }, 1500);
+      });
+    });
+    container.querySelectorAll("[data-open-terminal]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        try {
+          await Ao.postJson(Ao.buildEndpoint("liveOpenTerminal"), {
+            tool: button.dataset.tool,
+            session_id: button.dataset.sessionId,
+            workspace: button.dataset.workspace,
+          });
+          button.textContent = "Opened ✓";
+        } catch (error) {
+          button.textContent = "Failed";
+          console.error("open-terminal failed", error);
+        }
+        setTimeout(() => {
+          button.textContent = "Terminal";
+        }, 1500);
+      });
+    });
+    const refresh = container.querySelector("#live-sessions-refresh");
+    if (refresh) refresh.addEventListener("click", () => loadDashboardV2());
+  }
+
   async function loadVibeCodingColumn() {
     const [sessionsData, templatesData, agentsData] = await Promise.all([
       fetchJson(Ao.buildEndpoint("sessions")),
@@ -97,14 +187,16 @@ window.AgenticOs = window.AgenticOs || {};
     </tr>`;
   }
 
-  function renderVibeCodingColumn(data) {
+  function renderVibeCodingColumn(data, live) {
     const { recentSessions, failedSessions, templates } = data;
 
     let html = '<div class="dashboard-column" id="vibe-column">';
     html += "<h3>Vibe Coding</h3>";
 
+    html += renderLiveSessionsCard(live);
+
     html += '<div class="dash-card">';
-    html += "<h4>Recent Sessions</h4>";
+    html += "<h4>Managed Runs</h4>";
     if (recentSessions.length === 0) {
       html += '<p class="muted">No sessions yet</p>';
     } else {
@@ -230,16 +322,18 @@ window.AgenticOs = window.AgenticOs || {};
     leftContainer.innerHTML = '<p class="loading">Loading...</p>';
     rightContainer.innerHTML = '<p class="loading">Loading...</p>';
 
-    const [vibeData, agenticData] = await Promise.all([
+    const [vibeData, agenticData, liveData] = await Promise.all([
       loadVibeCodingColumn(),
       loadAgenticColumn(),
+      loadLiveSessions(),
     ]);
 
-    leftContainer.innerHTML = renderVibeCodingColumn(vibeData);
+    leftContainer.innerHTML = renderVibeCodingColumn(vibeData, liveData);
     rightContainer.innerHTML = renderAgenticColumn(agenticData);
     bindQuickActions(layout);
     bindQuickActions(leftContainer);
     bindQuickActions(rightContainer);
+    bindLiveSessionActions(leftContainer);
   }
 
   function init() {
