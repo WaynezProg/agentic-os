@@ -911,7 +911,7 @@ def create_app(
             open_terminal(payload.tool, payload.session_id, payload.workspace)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        except RuntimeError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return {"ok": True, "tool": payload.tool, "session_id": payload.session_id}
 

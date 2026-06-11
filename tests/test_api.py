@@ -2907,15 +2907,15 @@ def test_live_open_terminal_runs_osascript(
     client = _make_live_client(tmp_path)
     calls: list[list[str]] = []
 
-    class FakeCompleted:
-        returncode = 0
-        stderr = ""
+    class FakeProc:
+        def wait(self, timeout=None):
+            return 0
 
-    def fake_run(argv, **kwargs):
+    def fake_popen(argv, **kwargs):
         calls.append(argv)
-        return FakeCompleted()
+        return FakeProc()
 
-    monkeypatch.setattr("agentic_os.live_sessions.subprocess.run", fake_run)
+    monkeypatch.setattr("agentic_os.live_sessions.subprocess.Popen", fake_popen)
     monkeypatch.setattr(sys, "platform", "darwin")
     response = client.post(
         "/sessions/live/open-terminal",

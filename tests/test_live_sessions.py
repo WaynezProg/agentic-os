@@ -305,3 +305,103 @@ def test_build_open_terminal_rejects_bad_session_id(tmp_path: Path) -> None:
 def test_build_open_terminal_rejects_missing_workspace(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         build_open_terminal_command("claude", "abc-123", str(tmp_path / "missing"))
+
+
+def test_scan_claude_skips_hidden_dir_workspaces(tmp_path: Path) -> None:
+    _write_claude_session(
+        tmp_path,
+        project="-Users-w--claude-mem-observer-sessions",
+        cwd="/Users/w/.claude-mem/observer-sessions",
+    )
+    assert scan_claude_sessions(tmp_path, within_hours=72, now=NOW) == []
+
+
+def test_scan_codex_skips_hidden_dir_workspaces(tmp_path: Path) -> None:
+    _write_codex_session(tmp_path, cwd="/Users/w/.hidden/infra")
+    assert scan_codex_sessions(tmp_path, within_hours=72, now=NOW) == []
+
+
+def test_decode_claude_project_dir_double_dash_is_hidden_dir(tmp_path: Path) -> None:
+    # "/Users/w/.claude-mem/observer-sessions" encodes to
+    # "-Users-w--claude-mem-observer-sessions"; without a cwd key the
+    # fallback decode must still mark it hidden and exclude it.
+    project_dir = tmp_path / "-Users-w--claude-mem-observer-sessions"
+    project_dir.mkdir(parents=True)
+    path = project_dir / "obs-1.jsonl"
+    path.write_text(
+        json.dumps({"type": "user", "sessionId": "obs-1"}) + "\n",
+        encoding="utf-8",
+    )
+    _touch(path, hours_ago=0.01)
+    assert scan_claude_sessions(tmp_path, within_hours=72, now=NOW) == []
+
+
+def test_scan_codex_finds_title_after_giant_session_meta(tmp_path: Path) -> None:
+    day_dir = tmp_path / "2026" / "06" / "12"
+    day_dir.mkdir(parents=True)
+    path = day_dir / "rollout-2026-06-12T10-00-00-big-meta-1.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "timestamp": "2026-06-12T10:00:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "big-meta-1",
+                    "cwd": "/Users/w/proj",
+                    "originator": "vscode",
+                    "base_instructions": {"text": "x" * 120_000},
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "timestamp": "2026-06-12T10:00:02Z",
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "the real prompt"},
+            }
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _touch(path, hours_ago=0.01)
+    sessions = scan_codex_sessions(tmp_path, within_hours=72, now=NOW)
+    assert len(sessions) == 1
+    assert sessions[0].title == "the real prompt"
+
+
+def test_codex_title_skips_agents_md_injection(tmp_path: Path) -> None:
+    day_dir = tmp_path / "2026" / "06" / "12"
+    day_dir.mkdir(parents=True)
+    path = day_dir / "rollout-2026-06-12T10-00-00-inj-1.jsonl"
+    lines = [
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {"id": "inj-1", "cwd": "/Users/w/proj"},
+            }
+        ),
+        json.dumps(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "# AGENTS.md instructions for /Users/w/proj\nblah",
+                        }
+                    ],
+                },
+            }
+        ),
+        json.dumps(
+            {
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "actual ask"},
+            }
+        ),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _touch(path, hours_ago=0.01)
+    sessions = scan_codex_sessions(tmp_path, within_hours=72, now=NOW)
+    assert sessions[0].title == "actual ask"
