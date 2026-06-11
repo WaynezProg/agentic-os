@@ -20,7 +20,7 @@ The interface labels in code (`/agents`, `/sessions`, `/skills`, `/mcp`, `/polic
 
 ```bash
 uv sync                                 # install deps
-uv run pytest -q                        # run full test suite (target ~200 tests)
+uv run pytest -q                        # run full test suite (~700 tests)
 uv run pytest tests/test_api.py -q      # run a single test file
 uv run pytest tests/test_api.py::test_health -q   # run a single test
 uv run ruff check .                     # lint
@@ -40,14 +40,16 @@ CI gate before commit: `uv run pytest -q && uv run ruff check .` (both must pass
 Single-process FastAPI daemon (`agentd`) owns all state. The CLI (`agentctl`) and static web UI (`apps/web/`) are thin HTTP clients. There is no background worker, no message bus, no remote DB.
 
 ```
-agentctl / web UI  --HTTP-->  agentd (FastAPI)
-                                 │
-                                 ├── Registry   (examples/agents.toml → harness instances)
-                                 ├── Store      (SQLite: sessions, events)
-                                 ├── JsonlLogStore (.agentic-os/sessions/<id>/{stdout,stderr}.jsonl)
-                                 ├── ProcessSupervisor (subprocess.Popen + pgid stop)
-                                 ├── MemoryStore       (SQLite: summaries, review, memories)
-                                 └── ControlPlaneStore (SQLite: skills, mcp, policy)
+agentctl / web UI / desktop  --HTTP-->  agentd (FastAPI)
+                                            │
+                                            ├── Registry        (agents.toml → harness instances)
+                                            ├── Store           (SQLite: sessions, events)
+                                            ├── JsonlLogStore   (.agentic-os/sessions/<id>/{stdout,stderr}.jsonl)
+                                            ├── ProcessSupervisor (subprocess.Popen + pgid stop)
+                                            ├── MemoryStore     (SQLite: summaries, review, memories)
+                                            ├── ControlPlaneStore (SQLite: skills, mcp, policy)
+                                            ├── WorkspacesStore / RunTemplatesStore (SQLite)
+                                            └── RemoteStore     (SQLite: remote devices/tokens; localhost-only admin)
 ```
 
 State lives entirely under `--state-dir` (default `.agentic-os/`). Each SQLite DB and the JSONL log files are written directly by the daemon process; there is no concurrent writer.
@@ -65,6 +67,17 @@ State lives entirely under `--state-dir` (default `.agentic-os/`). Each SQLite D
 - `logs.py` — Append-only JSONL log writer/reader, keyed by session id and stream name.
 - `memory.py` + `memory_store.py` — Deterministic session→summary→review→approved memory pipeline. No LLMs, no embeddings.
 - `control_plane.py` — Skills/MCP/Policy registries and the **policy evaluator**. Secret redaction lives here (`_redact_*`, `_SECRET_*` patterns). Policy decisions: `allow | deny | approval_required`.
+- `safe_edit.py` + `patch_engine.py` + `surface_ops.py` + `harness_config.py` — P10 safe native config editing (dry-run, backup, rollback).
+- `catalog.py` + `config_scope.py` — workflow surface catalog and multi-scope config read/merge.
+- `profiles.py` + `registry.py` — harness instance profiles and `agents.toml` load/render.
+- `workspaces.py` + `run_templates.py` — workspace registry and saved launch templates (P29–P32).
+- `tool_discovery.py` + `config_inventory.py` — read-only tool presence and non-secret config summary (P34).
+- `attach.py` — discover/bind/attach external sessions (P36).
+- `agentic_inventory.py` — read-only OpenClaw/Hermes/n8n capability inventory (P37).
+- `live_sessions.py` — read-only scanners over real claude/codex session stores + open-terminal action (P39).
+- `import_export.py` — portable setup bundle export/import (P26).
+- `remote_store.py` + `remote_access.py` + `remote_gateway.py` + `remote_affordances.py` — remote operator console (P12–P15, P25).
+- `evidence.py` + `audit.py` + `fleet.py` + `approvals.py` — session evidence, governance audit, fleet health, approval workflow.
 
 ### Two-stage policy gate (P3.5/P3.6)
 
@@ -81,7 +94,19 @@ Strictly deterministic. `agentctl memory summarize <session>` builds a summary f
 
 ### Static UI (`apps/web/`)
 
-No build step. `index.html` + `styles.css` + plain `app.js`. The UI is a thin view over the daemon API; the daemon remains the only process owner. Default API URL is `http://127.0.0.1:8767`, editable in the UI.
+No build step. `index.html` + `styles.css` + `api.js` (endpoint registry) + `app.js` (shell) + `ui/*.js` feature modules. The UI is a thin view over the daemon API; the daemon remains the only process owner. Default API URL is `http://127.0.0.1:8767`, editable in the UI. Remote desktop mode proxies writes through Tauri `connection_api_fetch` and gates admin actions via `remote_affordances`.
+
+Notable `ui/` modules: `catalog-editor`, `config-editor`, `profile-editor`, `registry-editor`, `control-plane-editor`, `approval-workbench`, `remote-console`, `workspace-manager`, `provider-switchboard`, `run-template-launcher`, `daily-dashboard`, `dashboard-v2`, `tool-discovery`, `vibe-coding-launcher`, `agentic-inventory`, `discover-bind`, `product-polish`.
+
+Dual-track operator surfaces (P34–P39): **工具** tab (`tool-discovery.js`), **Vibe Coding** tab (`vibe-coding-launcher.js`), **Agentic** tab (`agentic-inventory.js` + `discover-bind.js`), **總覽** tab (`daily-dashboard.js` + `dashboard-v2.js` two-column layout, with the P39 Live Sessions radar card fed by `GET /sessions/live`).
+
+### Desktop app (`apps/desktop/`)
+
+Tauri shell (P11+): tray, embedded static UI, local `agentd` lifecycle. Packaged `.app` in P11.5. iOS companion in P12.5. See README “Desktop app” for `pnpm desktop:dev` / `desktop:build`.
+
+### CodeGraph
+
+This repo is indexed (`.codegraph/`). Prefer `codegraph_*` MCP tools for structural questions (symbols, callers, routes, impact). Use grep/read only for literal strings, copy, or files flagged stale in the codegraph banner. Full tool-selection rules: `.cursor/rules/codegraph.mdc`.
 
 ## Test layout
 
@@ -96,8 +121,8 @@ When fixing a bug: write the failing test first against the relevant module's te
 - **No new daemons, supervisors, or process owners.** The single `agentd` process owns subprocesses, logs, DB, and state dir.
 - **No LLM calls, no embeddings, no vector DB, no cloud sync.** P1-P9 are intentionally deterministic; see "Limitations" in README.md before proposing additions.
 - **`stop` only applies to `running` sessions.** The `shell` smoke exits immediately and cannot be stopped — use the `sleep` registry pattern in README.md for stop demos.
-- **Specs are authoritative for scope.** `specs/001-016*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
-- **README phase table is the canonical positioning.** When adding a phase or capability, update both the README phase table and the relevant spec — tests in `test_web.py` assert against this wording.
+- **Specs are authoritative for scope.** `specs/001-058*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
+- **README phase table is the canonical positioning for P0–P33.** When adding a phase or capability, update both the README phase table and the relevant spec — tests in `test_web.py` assert against this wording. P34–P39 (dual-track product) specs: `054`–`059`.
 
 ## Reference: phase scope (P0-P9)
 
@@ -116,3 +141,16 @@ When fixing a bug: write the failing test first against the relevant module's te
 | P7 | approval requests, approve/reject API/CLI/UI, audit links | RBAC, notifications, live in-harness tool approval |
 | P8 | SLO benchmark command, diagnostics resource snapshot, JSON reports | hosted telemetry, continuous monitoring, automatic tuning |
 | P9 | deprecation reason/replacement/sunset metadata, un-deprecate, auto-disable | package management, delete/purge workflow, scheduler |
+
+P10–P33 (remote access, safe editing, editors, approval workbench, workspace/templates, daily dashboard) are **complete** — see README phase table for per-phase owns/does-not-own. Do not duplicate that table here.
+
+### Dual-track product (P34–P39, on `feat/p34-p38-dual-track-product`)
+
+| Phase | Owns | Does not own |
+|-------|------|--------------|
+| P34 | `tool_discovery` + `config_inventory`, `GET /tools/discovery`, `GET /tools/inventory`, `tool_kind` on registry agents | bidirectional config sync, secret reads, launching tools |
+| P35 | Vibe Coding UI launch/stop/retry/logs/evidence for Codex/Claude Code | chat UI, agentic runtime launch |
+| P36 | `attach.py`, `POST /sessions/discover`, `POST /sessions/bind`, `POST /sessions/{id}/attach` | filesystem session sniffing, modifying external runtimes |
+| P37 | `agentic_inventory.py`, `GET /agentic/inventory`, Agentic tab inventory UI | starting/stopping OpenClaw/Hermes/n8n |
+| P38 | `dashboard-v2.js` two-column 總覽 (Vibe Coding left, Agentic Runtime right); frontend aggregation of existing APIs | new backend `/dashboard/v2` aggregator (spec prefers client-side compose) |
+| P39 | `live_sessions.py` read-only scanners over `~/.claude/projects` + `~/.codex/sessions`, `GET /sessions/live`, `POST /sessions/live/open-terminal` (macOS), dashboard Live Sessions card, `agentctl sessions live` | writing to external stores, gemini/qwen/opencode scanners, file watching, cross-machine |
