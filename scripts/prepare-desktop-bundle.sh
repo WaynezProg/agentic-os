@@ -23,14 +23,33 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-UV_PROJECT_ENVIRONMENT="${STAGING}/runtime/.venv" uv sync \
-  --directory "$REPO_ROOT" \
-  --python 3.12 \
-  --frozen
+# Build a wheel and install it non-editable so the bundle is fully
+# self-contained — `uv sync` installs the project editable, leaving a
+# .pth that points back into the repo checkout (app breaks if the repo
+# moves, and the bundled daemon would run repo working-tree code).
+VENV="${STAGING}/runtime/.venv"
+DIST_DIR="$(mktemp -d)"
+trap 'rm -rf "$DIST_DIR"' EXIT
 
-AGENTD="${STAGING}/runtime/.venv/bin/agentd"
+uv build --wheel --directory "$REPO_ROOT" --out-dir "$DIST_DIR" >/dev/null
+uv export --directory "$REPO_ROOT" --frozen --no-emit-project --no-dev \
+  --format requirements.txt -o "$DIST_DIR/requirements.txt" >/dev/null
+uv venv --python 3.12 "$VENV" >/dev/null
+uv pip install --python "$VENV/bin/python" -r "$DIST_DIR/requirements.txt" >/dev/null
+uv pip install --python "$VENV/bin/python" --no-deps "$DIST_DIR"/agentic_os-*.whl >/dev/null
+
+AGENTD="${VENV}/bin/agentd"
 if [[ ! -x "$AGENTD" ]]; then
   echo "prepare-desktop-bundle: agentd missing in staged venv: ${AGENTD}" >&2
+  exit 1
+fi
+
+if grep -rq "$REPO_ROOT/src" "$VENV/lib"/python*/site-packages/*.pth 2>/dev/null; then
+  echo "prepare-desktop-bundle: staged venv still references the repo (editable leak)" >&2
+  exit 1
+fi
+if [[ ! -f "$VENV/lib/python3.12/site-packages/agentic_os/api.py" ]]; then
+  echo "prepare-desktop-bundle: agentic_os package not materialized in venv" >&2
   exit 1
 fi
 
