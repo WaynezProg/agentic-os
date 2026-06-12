@@ -20,18 +20,22 @@ const I18N = Object.freeze({
   statusOffline: "無法連線",
 
   emptyNoAgents: "沒有代理資料。",
-  emptyNoSessions: "沒有執行紀錄。",
-  emptyNoReview: "審核佇列是空的。",
-  emptyNoMemory: "沒有已核准的記憶。",
-  emptyNoSkills: "沒有技能。",
-  emptyNoMcp: "沒有 MCP 伺服器。",
+  emptyNoSessions:
+    "還沒有從 agentic-os 啟動的 managed run，所以這裡是空的。你在終端機／Cursor 跑的真實 sessions 在「總覽」的 Live Sessions 雷達。",
+  emptyNoReview: "審核佇列是空的 — 記憶審核來自 managed run 的 summarize 流程。",
+  emptyNoMemory:
+    "沒有已核准的記憶。記憶來自 managed run：summarize → review → approve；目前還沒有 managed run。",
+  emptyNoSkills:
+    "這裡是 agentic-os 自家的 capability catalog（受 policy 管控），需要手動登錄。六個工具「真實安裝」的 skills 在「工具」分頁會自動抓。",
+  emptyNoMcp:
+    "這裡是自家 catalog 的 MCP 登錄，不會自動同步。真實的跨工具 MCP 矩陣在「工具」分頁（自動抓、可對齊）。",
   emptyNoApprovals: "沒有待處理核准。",
   emptyNoPolicies: "沒有政策。",
   emptyNoEvents: "這個 session 沒有事件。",
   emptyLoadSessionEvents: "先選一個 session 才能看事件。",
   emptyNoTimeline: "時間軸還是空的。",
   emptySelectSession: "從左邊列表選一個 session。",
-  emptyNoFleetHealth: "還沒有機群健康資料，按「立即探測」。",
+  emptyNoFleetHealth: "還沒有機群健康資料 — 機群探測針對 managed run 的 harness 實例，按「立即探測」開始。",
   emptyNoFleetEvents: "沒有機群事件。",
   emptyNoAudit: "沒有稽核事件。",
   emptyNoHarnesses: "尚未設定 Harness。",

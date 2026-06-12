@@ -855,3 +855,12 @@ def test_mcp_alignment_matrix_wired() -> None:
     styles = STYLES_CSS.read_text(encoding="utf-8")
     assert ".mcp-matrix-table" in styles
     assert ".mcp-drift" in styles
+
+
+def test_empty_states_explain_and_redirect() -> None:
+    i18n = (WEB_DIR / "i18n.js").read_text(encoding="utf-8")
+    # Own-DB tabs must explain what they manage and point at where the
+    # real data lives, instead of looking broken-empty.
+    assert "Live Sessions" in i18n  # sessions empty state points at the radar
+    assert "「工具」" in i18n  # skills/mcp empty states point at the tools tab
+    assert "managed run" in i18n
