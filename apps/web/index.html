@@ -58,90 +58,114 @@
         </div>
 
         <nav class="sidebar-nav tabs" role="tablist" aria-label="控制面板區塊">
-          <button
-            id="tab-agents"
-            class="tab"
-            type="button"
-            role="tab"
-            aria-selected="false"
-            data-tab="agents"
-          >
-            <span class="tab-glyph" aria-hidden="true">🎛️</span>
-            <span class="tab-label">代理</span>
-          </button>
-          <button
-            id="tab-sessions"
-            class="tab"
-            type="button"
-            role="tab"
-            aria-selected="false"
-            data-tab="sessions"
-          >
-            <span class="tab-glyph" aria-hidden="true">🚀</span>
-            <span class="tab-label">執行</span>
-          </button>
-          <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
-            <span class="tab-glyph" aria-hidden="true">📜</span>
-            <span class="tab-label">日誌</span>
-          </button>
-          <button id="tab-memory" class="tab" type="button" role="tab" aria-selected="false" data-tab="memory">
-            <span class="tab-glyph" aria-hidden="true">💭</span>
-            <span class="tab-label">記憶</span>
-          </button>
-          <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
-            <span class="tab-glyph" aria-hidden="true">✨</span>
-            <span class="tab-label">技能 / MCP</span>
-          </button>
-          <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
-            <span class="tab-glyph" aria-hidden="true">🌿</span>
-            <span class="tab-label">機群</span>
-          </button>
-          <button
-            id="tab-harnesses"
-            class="tab"
-            type="button"
-            role="tab"
-            aria-selected="false"
-            data-tab="harnesses"
-          >
-            <span class="tab-glyph" aria-hidden="true">🔌</span>
-            <span class="tab-label">Harness</span>
-          </button>
-          <button id="tab-catalog" class="tab" type="button" role="tab" aria-selected="false" data-tab="catalog">
-            <span class="tab-glyph" aria-hidden="true">🧩</span>
-            <span class="tab-label">介面</span>
-          </button>
-          <button
-            id="tab-approvals"
-            class="tab"
-            type="button"
-            role="tab"
-            aria-selected="false"
-            data-tab="approvals"
-          >
-            <span class="tab-glyph" aria-hidden="true">👋</span>
-            <span class="tab-label">核准</span>
-          </button>
-          <button id="tab-audit" class="tab" type="button" role="tab" aria-selected="false" data-tab="audit">
-            <span class="tab-glyph" aria-hidden="true">📋</span>
-            <span class="tab-label">稽核</span>
-          </button>
-          <button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="overview">
-            <span class="tab-glyph" aria-hidden="true">☀️</span>
-            <span class="tab-label">總覽</span>
-          </button>
-          <button id="tab-tools" class="tab" type="button" role="tab" aria-selected="false" data-tab="tools">
-            <span class="tab-glyph" aria-hidden="true">🔧</span>
-            <span class="tab-label">工具</span>
-          </button>
-          <button id="tab-vibe-coding" class="tab" type="button" role="tab" aria-selected="false" data-tab="vibe-coding">
-            <span class="tab-glyph" aria-hidden="true">🪩</span>
-            <span class="tab-label">Vibe Coding</span>
-          </button>
-          <button id="tab-agentic" class="tab" type="button" role="tab" aria-selected="false" data-tab="agentic">
-            <span class="tab-glyph" aria-hidden="true">🤖</span>
-            <span class="tab-label">Agentic</span>
-          </button>
+          <div class="nav-group" role="presentation">
+            <p class="nav-group-label">日常使用</p>
+            <div class="nav-group-items" role="presentation">
+              <button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="overview">
+                <span class="tab-glyph" aria-hidden="true">☀️</span>
+                <span class="tab-label">總覽</span>
+              </button>
+              <button id="tab-vibe-coding" class="tab" type="button" role="tab" aria-selected="false" data-tab="vibe-coding">
+                <span class="tab-glyph" aria-hidden="true">🪩</span>
+                <span class="tab-label">Vibe Coding</span>
+              </button>
+              <button id="tab-agentic" class="tab" type="button" role="tab" aria-selected="false" data-tab="agentic">
+                <span class="tab-glyph" aria-hidden="true">🤖</span>
+                <span class="tab-label">Agentic</span>
+              </button>
+              <button id="tab-tools" class="tab" type="button" role="tab" aria-selected="false" data-tab="tools">
+                <span class="tab-glyph" aria-hidden="true">🔧</span>
+                <span class="tab-label">工具</span>
+              </button>
+            </div>
+          </div>
+          <div class="nav-group" role="presentation">
+            <p class="nav-group-label">執行管理</p>
+            <div class="nav-group-items" role="presentation">
+              <button
+                id="tab-agents"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="agents"
+              >
+                <span class="tab-glyph" aria-hidden="true">🎛️</span>
+                <span class="tab-label">代理</span>
+              </button>
+              <button
+                id="tab-sessions"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="sessions"
+              >
+                <span class="tab-glyph" aria-hidden="true">🚀</span>
+                <span class="tab-label">執行</span>
+              </button>
+              <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
+                <span class="tab-glyph" aria-hidden="true">📜</span>
+                <span class="tab-label">日誌</span>
+              </button>
+              <button id="tab-memory" class="tab" type="button" role="tab" aria-selected="false" data-tab="memory">
+                <span class="tab-glyph" aria-hidden="true">💭</span>
+                <span class="tab-label">記憶</span>
+              </button>
+            </div>
+          </div>
+          <div class="nav-group nav-group--advanced is-collapsed" id="nav-advanced" role="presentation">
+            <button
+              id="nav-advanced-toggle"
+              class="nav-group-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="nav-advanced-items"
+            >
+              <span class="nav-group-label">治理與進階</span>
+              <span class="nav-group-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="nav-group-items" id="nav-advanced-items" role="presentation">
+              <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
+                <span class="tab-glyph" aria-hidden="true">✨</span>
+                <span class="tab-label">技能 / MCP</span>
+              </button>
+              <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
+                <span class="tab-glyph" aria-hidden="true">🌿</span>
+                <span class="tab-label">機群</span>
+              </button>
+              <button
+                id="tab-harnesses"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="harnesses"
+              >
+                <span class="tab-glyph" aria-hidden="true">🔌</span>
+                <span class="tab-label">Harness</span>
+              </button>
+              <button id="tab-catalog" class="tab" type="button" role="tab" aria-selected="false" data-tab="catalog">
+                <span class="tab-glyph" aria-hidden="true">🧩</span>
+                <span class="tab-label">介面</span>
+              </button>
+              <button
+                id="tab-approvals"
+                class="tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="approvals"
+              >
+                <span class="tab-glyph" aria-hidden="true">👋</span>
+                <span class="tab-label">核准</span>
+              </button>
+              <button id="tab-audit" class="tab" type="button" role="tab" aria-selected="false" data-tab="audit">
+                <span class="tab-glyph" aria-hidden="true">📋</span>
+                <span class="tab-label">稽核</span>
+              </button>
+            </div>
+          </div>
         </nav>
 
       </aside>
@@ -151,11 +175,9 @@
           <div class="topbar-workspace" id="workspace-topbar">
             <label for="workspace-select">工作區</label>
             <select id="workspace-select" aria-label="工作區選擇"></select>
-            <input id="workspace-path-input" type="text" placeholder="新增工作區路徑" spellcheck="false" />
-            <button id="workspace-add" type="button">新增</button>
             <span id="workspace-status" class="message" aria-live="polite"></span>
           </div>
-          <div id="provider-switchboard-topbar" class="topbar-switchboard" title="Provider / Model">
+          <div id="provider-switchboard-topbar" class="topbar-switchboard" title="Provider / Model" hidden>
             <span id="switchboard-topbar-profile">-</span>
             <span id="switchboard-topbar-provider">-</span>
             <span id="switchboard-topbar-model">-</span>
@@ -178,6 +200,11 @@
                 spellcheck="false"
               />
             </div>
+            <div class="api-controls" aria-label="新增工作區">
+              <label for="workspace-path-input">新增工作區</label>
+              <input id="workspace-path-input" type="text" placeholder="工作區路徑" spellcheck="false" />
+              <button id="workspace-add" type="button">新增</button>
+            </div>
           </details>
         </header>
 
@@ -188,8 +215,49 @@
           <button id="refresh-agents" type="button">重新整理代理</button>
         </div>
         <p id="agents-message" class="message" aria-live="polite"></p>
-        <section id="registry-editor-section" class="subpanel">
-          <h3>Harness Instance Registry</h3>
+        <div class="table-shell">
+          <table id="agents-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>名稱</th>
+                <th>啟用</th>
+                <th>工作目錄模式</th>
+                <th>停止策略</th>
+                <th>啟動範本</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="agents-body">
+              <tr>
+                <td colspan="7">尚無資料。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <section id="run-form-section" class="subpanel" hidden>
+          <h3>執行 session</h3>
+          <div class="eval-grid">
+            <label for="run-agent-id">代理</label>
+            <input id="run-agent-id" type="text" spellcheck="false" readonly />
+            <label for="run-cwd">工作目錄</label>
+            <input id="run-cwd" type="text" spellcheck="false" />
+            <label for="run-message">訊息</label>
+            <textarea id="run-message" rows="3" spellcheck="false"></textarea>
+            <label for="run-command-preview">將執行的指令</label>
+            <pre id="run-command-preview" class="command-preview" aria-live="polite">—</pre>
+          </div>
+          <div class="actions" style="margin-top:0.5rem">
+            <button id="run-submit" type="button">執行</button>
+            <button id="run-cancel" type="button">取消</button>
+          </div>
+          <pre id="run-result" class="summary-output" aria-live="polite"></pre>
+        </section>
+        <details id="registry-editor-section" class="subpanel subpanel-fold">
+          <summary>
+            <h3>Harness Instance Registry</h3>
+            <span class="fold-hint">instance 設定編輯器</span>
+          </summary>
           <div class="row">
             <button id="registry-load" type="button">載入編輯器</button>
           </div>
@@ -240,30 +308,13 @@
               </table>
             </div>
           </section>
-        </section>
-        <div class="table-shell">
-          <table id="agents-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>名稱</th>
-                <th>啟用</th>
-                <th>工作目錄模式</th>
-                <th>停止策略</th>
-                <th>啟動範本</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="agents-body">
-              <tr>
-                <td colspan="7">尚無資料。</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <section id="provider-switchboard-section" class="subpanel">
-          <div class="subpanel-head">
+        </details>
+        <details id="provider-switchboard-section" class="subpanel subpanel-fold">
+          <summary>
             <h3>Provider / Model 切換</h3>
+            <span class="fold-hint">檢視與切換 active profile</span>
+          </summary>
+          <div class="row">
             <button id="provider-switchboard-refresh" type="button">重新整理</button>
           </div>
           <dl class="detail-grid">
@@ -288,9 +339,12 @@
             </div>
           </div>
           <p id="provider-switchboard-message" class="message" aria-live="polite"></p>
-        </section>
-        <section id="profile-editor-section" class="subpanel">
-          <h3>Run Profile</h3>
+        </details>
+        <details id="profile-editor-section" class="subpanel subpanel-fold">
+          <summary>
+            <h3>Run Profile</h3>
+            <span class="fold-hint">profile 編輯與 project 綁定</span>
+          </summary>
           <div class="row">
             <label for="profile-cwd-input">project cwd</label>
             <input id="profile-cwd-input" type="text" placeholder="留空使用 daemon cwd" spellcheck="false" />
@@ -380,14 +434,15 @@
               </table>
             </div>
           </section>
-        </section>
-        <section id="run-template-section" class="subpanel">
-          <div class="subpanel-head">
+        </details>
+        <details id="run-template-section" class="subpanel subpanel-fold">
+          <summary>
             <h3>Run Template</h3>
-            <div class="actions">
-              <button id="run-template-load" type="button">載入範本</button>
-              <button id="run-template-new" type="button">新增</button>
-            </div>
+            <span class="fold-hint">儲存的啟動範本</span>
+          </summary>
+          <div class="row">
+            <button id="run-template-load" type="button">載入範本</button>
+            <button id="run-template-new" type="button">新增</button>
           </div>
           <div class="table-shell">
             <table aria-label="Run templates">
@@ -426,25 +481,7 @@
             <pre id="run-template-preview" class="log-preview">選擇範本後預覽或啟動。</pre>
             <p id="run-template-message" class="message" aria-live="polite"></p>
           </div>
-        </section>
-        <section id="run-form-section" class="subpanel" hidden>
-          <h3>執行 session</h3>
-          <div class="eval-grid">
-            <label for="run-agent-id">代理</label>
-            <input id="run-agent-id" type="text" spellcheck="false" readonly />
-            <label for="run-cwd">工作目錄</label>
-            <input id="run-cwd" type="text" spellcheck="false" />
-            <label for="run-message">訊息</label>
-            <textarea id="run-message" rows="3" spellcheck="false"></textarea>
-            <label for="run-command-preview">將執行的指令</label>
-            <pre id="run-command-preview" class="command-preview" aria-live="polite">—</pre>
-          </div>
-          <div class="actions" style="margin-top:0.5rem">
-            <button id="run-submit" type="button">執行</button>
-            <button id="run-cancel" type="button">取消</button>
-          </div>
-          <pre id="run-result" class="summary-output" aria-live="polite"></pre>
-        </section>
+        </details>
       </section>
 
       <section id="panel-sessions" class="panel" role="tabpanel" aria-labelledby="tab-sessions" hidden>
@@ -509,8 +546,11 @@
             <pre id="attach-preview-output" class="summary-output" hidden aria-live="polite"></pre>
           </aside>
         </div>
-        <section id="discover-section" class="subpanel card">
-          <h3>Discover &amp; Bind 外部 Session</h3>
+        <details id="discover-section" class="subpanel card subpanel-fold">
+          <summary>
+            <h3>Discover &amp; Bind 外部 Session</h3>
+            <span class="fold-hint">匯入外部工具的 session</span>
+          </summary>
           <p id="discover-message" class="message" aria-live="polite"></p>
           <div id="discover-controls" class="control-row">
             <span class="message">Workspace 跟隨上方選擇。</span>
@@ -535,7 +575,7 @@
               </tbody>
             </table>
           </div>
-        </section>
+        </details>
       </section>
 
       <section id="panel-logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>

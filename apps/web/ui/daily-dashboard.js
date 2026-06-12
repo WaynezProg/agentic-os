@@ -148,10 +148,21 @@ window.AgenticOs = window.AgenticOs || {};
     }
   }
 
+  function revealSection(id) {
+    const section = document.getElementById(id);
+    if (!section) {
+      return;
+    }
+    if (section.tagName === "DETAILS") {
+      section.open = true;
+    }
+    section.scrollIntoView({ behavior: "smooth" });
+  }
+
   function handleQuickAction(action) {
     if (action === "switch-profile") {
       Ao.showTab("agents");
-      document.getElementById("profile-editor-section")?.scrollIntoView({ behavior: "smooth" });
+      revealSection("profile-editor-section");
       return;
     }
     if (action === "open-repair") {
@@ -170,7 +181,7 @@ window.AgenticOs = window.AgenticOs || {};
     }
     if (action === "start-template") {
       Ao.showTab("agents");
-      document.getElementById("run-template-section")?.scrollIntoView({ behavior: "smooth" });
+      revealSection("run-template-section");
       Ao.RunTemplateLauncher?.loadTemplates?.();
     }
   }

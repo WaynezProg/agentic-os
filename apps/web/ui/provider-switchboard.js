@@ -77,6 +77,10 @@ window.AgenticOs = window.AgenticOs || {};
       setText("switchboard-topbar-profile", profile);
       setText("switchboard-topbar-provider", provider);
       setText("switchboard-topbar-model", model);
+      const topbarChips = byId("provider-switchboard-topbar");
+      if (topbarChips) {
+        topbarChips.hidden = [profile, provider, model].every((value) => !value || value === "-");
+      }
       setText("switchboard-harness", dashboard.harness_id || "-");
     } catch (error) {
       setMessage(error.message, true);

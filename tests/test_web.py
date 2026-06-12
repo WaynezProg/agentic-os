@@ -864,3 +864,48 @@ def test_empty_states_explain_and_redirect() -> None:
     assert "Live Sessions" in i18n  # sessions empty state points at the radar
     assert "「工具」" in i18n  # skills/mcp empty states point at the tools tab
     assert "managed run" in i18n
+
+
+def test_sidebar_nav_groups_orient_the_user() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    # Three labelled groups split daily-use, run management, and governance.
+    for label in ["日常使用", "執行管理", "治理與進階"]:
+        assert label in html
+    # 總覽 (default landing) leads the nav; governance tabs come last.
+    assert html.index('id="tab-overview"') < html.index('id="tab-agents"')
+    assert html.index('id="tab-agents"') < html.index('id="tab-skills"')
+    # Governance group collapses by default behind an expandable toggle.
+    assert 'class="nav-group nav-group--advanced is-collapsed" id="nav-advanced"' in html
+    assert 'id="nav-advanced-toggle"' in html
+    assert 'aria-expanded="false"' in html
+    app_js = APP_JS.read_text(encoding="utf-8")
+    # Activating a governance tab programmatically must expand the group.
+    assert "revealNavGroupFor" in app_js
+
+
+def test_agents_panel_leads_with_table_and_folds_editors() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    panel = html[html.index('id="panel-agents"') : html.index('id="panel-sessions"')]
+    # Primary content (instance table, run form) sits above advanced editors.
+    assert panel.index('id="agents-table"') < panel.index('id="registry-editor-section"')
+    assert panel.index('id="run-form-section"') < panel.index('id="registry-editor-section"')
+    for section in [
+        "registry-editor-section",
+        "provider-switchboard-section",
+        "profile-editor-section",
+        "run-template-section",
+    ]:
+        assert f'<details id="{section}" class="subpanel subpanel-fold"' in panel
+    # Sessions tab folds the external discover/bind workflow the same way.
+    assert '<details id="discover-section"' in html
+
+
+def test_topbar_keeps_only_daily_controls() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    topbar = html[html.index('class="shell-topbar"') : html.index('<main class="workspace">')]
+    advanced = topbar[topbar.index('class="topbar-advanced"') :]
+    # Workspace add lives behind 進階; only select + status stay permanent.
+    assert 'id="workspace-path-input"' in advanced
+    assert 'id="workspace-add"' in advanced
+    # Switchboard chips stay hidden until they carry real data.
+    assert 'title="Provider / Model" hidden' in topbar

@@ -91,6 +91,25 @@ function bindTabs() {
       showTab(button.dataset.tab);
     });
   });
+  const advancedToggle = document.getElementById("nav-advanced-toggle");
+  advancedToggle?.addEventListener("click", () => {
+    const group = document.getElementById("nav-advanced");
+    if (!group) {
+      return;
+    }
+    const collapsed = group.classList.toggle("is-collapsed");
+    advancedToggle.setAttribute("aria-expanded", String(!collapsed));
+  });
+}
+
+function revealNavGroupFor(tabName) {
+  const button = document.querySelector(`[data-tab="${tabName}"]`);
+  const group = button?.closest("#nav-advanced");
+  if (!group) {
+    return;
+  }
+  group.classList.remove("is-collapsed");
+  document.getElementById("nav-advanced-toggle")?.setAttribute("aria-expanded", "true");
 }
 
 function bindControls() {
@@ -137,6 +156,7 @@ function bindControls() {
 
 function showTab(tabName, options = {}) {
   state.activeTab = tabName;
+  revealNavGroupFor(tabName);
   document.querySelectorAll("[data-tab]").forEach((button) => {
     const isActive = button.dataset.tab === tabName;
     button.classList.toggle("is-active", isActive);
