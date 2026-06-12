@@ -5,8 +5,10 @@ import io
 import json
 import sqlite3
 import subprocess
+import sys
 import time
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
@@ -75,16 +77,40 @@ from agentic_os.adapter_contract import (
     contract_from_agent,
     contract_from_agent_v2,
 )
+from agentic_os.config_inventory import read_config_summary
+from agentic_os.agentic_inventory import (
+    build_agentic_inventory,
+    build_all_agentic_inventory,
+    inventory_result_dict,
+)
+from agentic_os.tool_discovery import discover_all
 from agentic_os import profiles as profiles_module
-from agentic_os.attach import build_attach_command, evaluate_attach
+from agentic_os.attach import build_attach_command, discover_external_sessions, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
+from agentic_os import mcp_alignment
+from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
+from agentic_os.live_sessions import (
+    default_roots,
+    live_session_dict,
+    open_terminal,
+    read_transcript_tail,
+    scan_live_sessions,
+)
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
-from agentic_os.models import AgentDefinition, SessionAttachRequest, SessionRecord, SessionStatus
+from agentic_os.models import (
+    AgentDefinition,
+    SessionAttachRequest,
+    SessionBindRequest,
+    SessionCreate,
+    SessionDiscoverRequest,
+    SessionRecord,
+    SessionStatus,
+)
 from agentic_os.registry import (
     Registry,
     RenderedRun,
@@ -230,6 +256,25 @@ class PolicyEvaluateRequest(BaseModel):
     cwd: str | None = None
 
 
+class LiveOpenTerminalRequest(BaseModel):
+    tool: str
+    session_id: str
+    workspace: str
+
+
+class McpCopyRequest(BaseModel):
+    server: str
+    from_tool: str
+    to_tool: str
+    dry_run: bool = True
+
+
+class McpRemoveRequest(BaseModel):
+    tool: str
+    server: str
+    dry_run: bool = True
+
+
 class ApprovalRejectRequest(BaseModel):
     reason: str = ""
 
@@ -240,7 +285,12 @@ class DeprecationRequest(BaseModel):
     sunset_at: str | None = None
 
 
-def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
+def create_app(
+    state_dir: Path,
+    registry_path: Path,
+    live_session_roots: dict[str, Path] | None = None,
+    capability_home: Path | None = None,
+) -> FastAPI:
     state_dir.mkdir(parents=True, exist_ok=True)
     registry = Registry(registry_path)
     store = Store(state_dir / "agentic-os.db")
@@ -335,8 +385,11 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/agents")
-    def list_agents() -> dict[str, object]:
-        return {"agents": [agent.model_dump() for agent in registry.list_agents()]}
+    def list_agents(tool_kind: str | None = Query(default=None)) -> dict[str, object]:
+        agents = list(registry.list_agents())
+        if tool_kind is not None:
+            agents = [a for a in agents if a.tool_kind == tool_kind]
+        return {"agents": [agent.model_dump() for agent in agents]}
 
     @app.get("/agents/{agent_id}")
     def show_agent(agent_id: str) -> dict[str, object]:
@@ -360,6 +413,197 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             return _harness_profile(registry.get(harness_id))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/tools/discovery")
+    def tools_discovery() -> dict[str, object]:
+        """Discover installed tools and their versions (P34). Read-only."""
+        results = discover_all(registry)
+        return {
+            "tools": [
+                {
+                    "agent_id": r.agent_id,
+                    "tool_kind": r.tool_kind,
+                    "installed": r.installed,
+                    "binary_path": r.binary_path,
+                    "version": r.version,
+                    "version_error": r.version_error,
+                }
+                for r in results
+            ],
+        }
+
+    @app.get("/tools/inventory")
+    def tools_inventory() -> dict[str, object]:
+        """Read non-secret config summaries for installed tools (P34). Read-only."""
+        agents = [a for a in registry.list_agents() if a.enabled and a.config_path]
+        summaries = []
+        for agent in agents:
+            summary = read_config_summary(agent.id, agent.config_path)
+            summaries.append(
+                {
+                    "agent_id": agent.id,
+                    "tool_kind": agent.tool_kind,
+                    "config_source": summary.config_source,
+                    "model": summary.model,
+                    "provider": summary.provider,
+                    "system_prompt_path": summary.system_prompt_path,
+                    "parse_error": summary.parse_error,
+                }
+            )
+        return {"tools": summaries}
+
+    @app.get("/tools/capabilities")
+    def tools_capabilities() -> dict[str, object]:
+        """Read real skills/MCP/plugin/memory names per tool (P40). Read-only."""
+        return {
+            "tools": [capabilities_dict(c) for c in read_all_capabilities(capability_home)],
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+
+    def _alignment_home() -> Path:
+        return capability_home or Path.home()
+
+    def _require_alignment_tool(tool: str) -> None:
+        if tool not in mcp_alignment.SUPPORTED_TOOLS:
+            raise HTTPException(status_code=400, detail=f"unsupported tool: {tool}")
+
+    def _apply_alignment_patch(
+        target: object,
+        ops: list[object],
+        summary: dict[str, object],
+        *,
+        dry_run: bool,
+        action: str,
+        server: str,
+    ) -> dict[str, object]:
+        try:
+            result = safe_edit_engine.apply(
+                target,  # type: ignore[arg-type]
+                ops,  # type: ignore[arg-type]
+                source="mcp_alignment",
+                dry_run=dry_run,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=400, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        backup = result.backup or {}
+        return {
+            "action": action,
+            "server": server,
+            "applied": result.applied,
+            "patch_id": result.patch_id,
+            "summary": summary,
+            "validation": result.validation,
+            "backup_path": backup.get("path"),
+        }
+
+    @app.get("/tools/mcp/matrix")
+    def mcp_matrix() -> dict[str, object]:
+        """Cross-tool MCP server presence matrix (P42). Read-only, names only."""
+        home = _alignment_home()
+        names_by_tool = {
+            tool: set(mcp_alignment.read_server_names(tool, home))
+            for tool in mcp_alignment.SUPPORTED_TOOLS
+        }
+        all_names = sorted(set().union(*names_by_tool.values()))
+        servers = [
+            {
+                "name": name,
+                "tools": {tool: name in names_by_tool[tool] for tool in names_by_tool},
+            }
+            for name in all_names
+        ]
+        servers.sort(key=lambda s: (-sum(s["tools"].values()), s["name"]))
+        return {
+            "servers": servers,
+            "tools": list(mcp_alignment.SUPPORTED_TOOLS),
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+
+    @app.post("/tools/mcp/copy")
+    def mcp_copy(payload: McpCopyRequest) -> dict[str, object]:
+        """Copy an MCP server definition between tools (P42). Dry-run by default."""
+        _require_alignment_tool(payload.from_tool)
+        _require_alignment_tool(payload.to_tool)
+        home = _alignment_home()
+        if payload.server in mcp_alignment.read_server_names(payload.to_tool, home):
+            raise HTTPException(
+                status_code=409,
+                detail=f"server already configured in {payload.to_tool}: {payload.server}",
+            )
+        parse_error = mcp_alignment.target_config_parse_error(payload.to_tool, home)
+        if parse_error:
+            raise HTTPException(status_code=400, detail=parse_error)
+        try:
+            target, ops, summary = mcp_alignment.build_copy_patch(
+                payload.from_tool, payload.to_tool, payload.server, home
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        response = _apply_alignment_patch(
+            target,
+            ops,
+            summary,
+            dry_run=payload.dry_run,
+            action="copy",
+            server=payload.server,
+        )
+        response["from_tool"] = payload.from_tool
+        response["to_tool"] = payload.to_tool
+        return response
+
+    @app.post("/tools/mcp/remove")
+    def mcp_remove(payload: McpRemoveRequest) -> dict[str, object]:
+        """Remove an MCP server from a tool config (P42). Dry-run by default."""
+        _require_alignment_tool(payload.tool)
+        home = _alignment_home()
+        parse_error = mcp_alignment.target_config_parse_error(payload.tool, home)
+        if parse_error:
+            raise HTTPException(status_code=400, detail=parse_error)
+        try:
+            target, ops, summary = mcp_alignment.build_remove_patch(
+                payload.tool, payload.server, home
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        response = _apply_alignment_patch(
+            target,
+            ops,
+            summary,
+            dry_run=payload.dry_run,
+            action="remove",
+            server=payload.server,
+        )
+        response["tool"] = payload.tool
+        return response
+
+    @app.get("/agentic/inventory")
+    def agentic_inventory() -> dict[str, object]:
+        """Read agentic runtime inventory (P37). Read-only."""
+        results = build_all_agentic_inventory(registry.list_agents())
+        return {"agents": [inventory_result_dict(result) for result in results]}
+
+    @app.get("/agentic/inventory/{agent_id}")
+    def agentic_inventory_single(agent_id: str) -> dict[str, object]:
+        """Read single agentic runtime agent inventory (P37). Read-only."""
+        try:
+            agent = registry.get(agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if agent.tool_kind != "agentic_runtime":
+            raise HTTPException(
+                status_code=404,
+                detail=f"agent is not agentic_runtime: {agent_id}",
+            )
+        result = build_agentic_inventory(agent_id=agent.id, config_path=agent.config_path)
+        return inventory_result_dict(result)
 
     @app.get("/harness-contracts")
     def list_harness_contracts(version: str = Query(default="v1")) -> dict[str, object]:
@@ -792,6 +1036,62 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
     def list_sessions() -> dict[str, object]:
         return {"sessions": [session.model_dump() for session in store.list_sessions()]}
 
+    # Registered before /sessions/{session_id} so "live" is not captured
+    # as a session id by the dynamic route.
+    @app.get("/sessions/live")
+    def list_live_sessions(within_hours: int = 72, limit: int = 50) -> dict[str, object]:
+        """Scan real external session stores (P39). Read-only."""
+        within_hours = max(1, min(within_hours, 720))
+        limit = max(1, min(limit, 200))
+        live, errors = scan_live_sessions(
+            live_session_roots, within_hours=within_hours, limit=limit
+        )
+        return {
+            "sessions": [live_session_dict(s) for s in live],
+            "errors": errors,
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+
+    @app.get("/sessions/live/transcript")
+    def live_session_transcript(
+        tool: str, log_path: str, limit: int = 50
+    ) -> dict[str, object]:
+        """Preview the tail of a discovered session transcript (P41). Read-only."""
+        limit = max(1, min(limit, 200))
+        roots = dict(default_roots())
+        if live_session_roots:
+            roots.update(live_session_roots)
+        try:
+            resolved = Path(log_path).expanduser().resolve()
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if resolved.suffix != ".jsonl":
+            raise HTTPException(status_code=400, detail="log_path must be a .jsonl file")
+        allowed = any(
+            resolved.is_relative_to(root.resolve())
+            for root in roots.values()
+            if root.exists()
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=400, detail="log_path outside known session roots"
+            )
+        messages = read_transcript_tail(resolved, tool, limit=limit)
+        return {"messages": messages, "count": len(messages), "tool": tool}
+
+    @app.post("/sessions/live/open-terminal")
+    def live_open_terminal(payload: LiveOpenTerminalRequest) -> dict[str, object]:
+        """Open Terminal.app resuming a discovered session (P39, macOS only)."""
+        if sys.platform != "darwin":
+            raise HTTPException(status_code=501, detail="open-terminal is macOS-only")
+        try:
+            open_terminal(payload.tool, payload.session_id, payload.workspace)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"ok": True, "tool": payload.tool, "session_id": payload.session_id}
+
     @app.get("/sessions/{session_id}")
     def show_session(session_id: str) -> dict[str, object]:
         try:
@@ -815,6 +1115,21 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return evidence_store.evidence_index(session)
+
+    @app.get("/sessions/{session_id}/evidence.zip")
+    def session_evidence_zip(session_id: str) -> StreamingResponse:
+        try:
+            session = store.get_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        bundle = evidence_store.zip_for_session(session)
+        return StreamingResponse(
+            io.BytesIO(bundle),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{session_id}-evidence.zip"'
+            },
+        )
 
     @app.get("/sessions/{session_id}/evidence/events")
     def session_evidence_events(
@@ -992,6 +1307,74 @@ def create_app(state_dir: Path, registry_path: Path) -> FastAPI:
             "entries": [entry.model_dump() for entry in result.entries],
             "truncated": result.truncated,
         }
+
+    @app.post("/sessions/discover")
+    def sessions_discover(request: SessionDiscoverRequest) -> dict[str, object]:
+        try:
+            workspace = Path(request.workspace_path).expanduser()
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not workspace.exists() or not workspace.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"workspace_path is not a directory: {request.workspace_path}",
+            )
+        discovered = discover_external_sessions(
+            workspace_path=str(workspace),
+            agents=list(registry.list_agents()),
+        )
+        return {
+            "discovered": [
+                {
+                    "agent_id": d.agent_id,
+                    "external_session_id": d.external_session_id,
+                    "log_path": d.log_path,
+                    "started_at": d.started_at,
+                }
+                for d in discovered
+            ],
+        }
+
+    @app.post("/sessions/bind")
+    def sessions_bind(request: SessionBindRequest) -> dict[str, object]:
+        try:
+            agent = registry.get(request.agent_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        session_create = SessionCreate(
+            agent_id=agent.id,
+            cwd=request.workspace_path,
+            argv=[agent.id, "--resume", request.external_session_id],
+            artifact_dir=str(
+                Path(request.workspace_path)
+                / ".agentic-os-bound"
+                / request.external_session_id
+            ),
+            stdout_log=request.log_path,
+            stderr_log=request.log_path,
+            summary_one_liner=f"bound to {agent.id} session {request.external_session_id}",
+            workspace_path=request.workspace_path,
+        )
+        session = store.create_session(session_create)
+        bound = store.update_session_attach(
+            session.id,
+            external_session_id=request.external_session_id,
+            attachable=True,
+            attach_status="available",
+        )
+        audit_store.record(
+            "session",
+            bound.id,
+            "bind_external",
+            f"bound to {agent.id} external session {request.external_session_id}",
+            metadata={
+                "agent_id": agent.id,
+                "external_session_id": request.external_session_id,
+                "log_path": request.log_path,
+            },
+        )
+        return bound.model_dump()
 
     @app.post("/sessions/{session_id}/stop")
     def stop_session(session_id: str) -> dict[str, object]:

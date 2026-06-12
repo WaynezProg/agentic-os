@@ -39,6 +39,36 @@ class AgenticClient:
     def list_sessions(self) -> dict[str, Any]:
         return self._get("/sessions")
 
+    def list_live_sessions(self, within_hours: int = 72, limit: int = 50) -> dict[str, Any]:
+        return self._get(
+            "/sessions/live", params={"within_hours": within_hours, "limit": limit}
+        )
+
+    def tools_capabilities(self) -> dict[str, Any]:
+        return self._get("/tools/capabilities")
+
+    def mcp_matrix(self) -> dict[str, Any]:
+        return self._get("/tools/mcp/matrix")
+
+    def mcp_copy(
+        self, server: str, from_tool: str, to_tool: str, apply: bool = False
+    ) -> dict[str, Any]:
+        return self._post(
+            "/tools/mcp/copy",
+            {
+                "server": server,
+                "from_tool": from_tool,
+                "to_tool": to_tool,
+                "dry_run": not apply,
+            },
+        )
+
+    def mcp_remove(self, tool: str, server: str, apply: bool = False) -> dict[str, Any]:
+        return self._post(
+            "/tools/mcp/remove",
+            {"tool": tool, "server": server, "dry_run": not apply},
+        )
+
     def show_session(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}")
 

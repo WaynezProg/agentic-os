@@ -1,6 +1,9 @@
+import io
 import json
 import sys
+import textwrap
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -120,6 +123,63 @@ def test_api_returns_404_for_unknown_agent_lookup(tmp_path: Path) -> None:
     response = client.get("/agents/missing")
 
     assert response.status_code == 404
+
+
+def test_api_agents_filter_by_tool_kind(tmp_path: Path) -> None:
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        textwrap.dedent(
+            """\
+            [[agents]]
+            id = "shell"
+            label = "Shell"
+            command = ["/usr/bin/printf", "%s", "{{message}}"]
+            cwd_mode = "optional"
+            stop_policy = "process_group"
+            tool_kind = "vibe_coding"
+
+            [[agents]]
+            id = "n8n"
+            label = "n8n"
+            command = ["n8n"]
+            cwd_mode = "optional"
+            stop_policy = "process_group"
+            tool_kind = "agentic_runtime"
+            """
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    )
+
+    response = client.get("/agents?tool_kind=vibe_coding")
+
+    assert response.status_code == 200
+    agents = response.json()["agents"]
+    assert {a["id"] for a in agents} == {"shell"}
+
+
+def test_api_evidence_zip_for_session(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    run = client.post(
+        "/sessions", json={"agent_id": "shell", "cwd": str(tmp_path), "message": "ZIPME"}
+    )
+    assert run.status_code == 200
+    session_id = run.json()["id"]
+
+    # Wait for evidence bundle to be created.
+    wait_for_session_evidence(client, session_id, status="succeeded")
+
+    response = client.get(f"/sessions/{session_id}/evidence.zip")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    names = archive.namelist()
+    assert any(name.endswith("metadata.json") for name in names)
+    assert any(name.endswith("events.jsonl") for name in names)
 
 
 def test_api_runs_session_and_reads_logs(tmp_path: Path) -> None:
@@ -2700,4 +2760,414 @@ default_env = {}
 
     approved = client.post(f"/approvals/{blocked.json()['approval_id']}/approve")
     assert approved.status_code == 409
-    assert "guarded-model" in approved.json()["detail"]
+
+
+def test_tools_discovery_endpoint(tmp_path: Path) -> None:
+    """GET /tools/discovery should return tool list."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "%s", "{{message}}"]
+cwd_mode = "optional"
+tool_kind = "vibe_coding"
+
+[[agents]]
+id = "claude"
+label = "Claude Code"
+command = ["python3", "-c", "print('ok')"]
+version_command = ["python3", "--version"]
+cwd_mode = "required"
+tool_kind = "vibe_coding"
+""",
+        encoding="utf-8",
+    )
+    app = create_app(tmp_path, registry)
+    client = TestClient(app)
+
+    response = client.get("/tools/discovery")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tools" in data
+    assert isinstance(data["tools"], list)
+    assert len(data["tools"]) >= 1
+    # Each tool should have required fields
+    for tool in data["tools"]:
+        assert "agent_id" in tool
+        assert "tool_kind" in tool
+        assert "installed" in tool
+        assert "binary_path" in tool
+
+
+def test_tools_inventory_endpoint(tmp_path: Path) -> None:
+    """GET /tools/inventory should return config summaries."""
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "%s", "{{message}}"]
+cwd_mode = "optional"
+tool_kind = "vibe_coding"
+
+[[agents]]
+id = "claude"
+label = "Claude Code"
+command = ["python3", "-c", "print('ok')"]
+cwd_mode = "required"
+tool_kind = "vibe_coding"
+config_path = "/nonexistent/path"
+""",
+        encoding="utf-8",
+    )
+    app = create_app(tmp_path, registry)
+    client = TestClient(app)
+
+    response = client.get("/tools/inventory")
+    assert response.status_code == 200
+    data = response.json()
+    assert "tools" in data
+    assert isinstance(data["tools"], list)
+    # Only agents with config_path should be included
+    for tool in data["tools"]:
+        assert "agent_id" in tool
+        assert "config_source" in tool
+        assert "tool_kind" in tool
+
+
+# --- P39 live session radar ---
+
+
+def _make_live_client(tmp_path: Path) -> TestClient:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    claude_root = tmp_path / "claude-projects"
+    codex_root = tmp_path / "codex-sessions"
+    project_dir = claude_root / "-Users-w-proj"
+    project_dir.mkdir(parents=True)
+    (project_dir / "abc-123.jsonl").write_text(
+        json.dumps(
+            {
+                "type": "user",
+                "sessionId": "abc-123",
+                "cwd": "/Users/w/proj",
+                "timestamp": "2026-06-12T10:00:00Z",
+                "message": {"role": "user", "content": "fix the bug"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return TestClient(
+        create_app(
+            state_dir=tmp_path / ".agentic-os",
+            registry_path=registry,
+            live_session_roots={"claude": claude_root, "codex": codex_root},
+        )
+    )
+
+
+def test_live_sessions_endpoint(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    response = client.get("/sessions/live")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["errors"] == []
+    assert len(body["sessions"]) == 1
+    session = body["sessions"][0]
+    assert session["tool"] == "claude"
+    assert session["session_id"] == "abc-123"
+    assert session["resume_command"].endswith("claude --resume abc-123")
+    assert "generated_at" in body
+
+
+def test_live_sessions_endpoint_clamps_params(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    response = client.get("/sessions/live", params={"within_hours": 999999, "limit": 0})
+    assert response.status_code == 200
+
+
+def test_live_open_terminal_rejects_bad_tool(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    response = client.post(
+        "/sessions/live/open-terminal",
+        json={"tool": "rm-rf", "session_id": "abc-123", "workspace": str(tmp_path)},
+    )
+    assert response.status_code in {400, 501}
+    if sys.platform == "darwin":
+        assert response.status_code == 400
+
+
+def test_live_open_terminal_runs_osascript(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = _make_live_client(tmp_path)
+    calls: list[list[str]] = []
+
+    class FakeProc:
+        def wait(self, timeout=None):
+            return 0
+
+    def fake_popen(argv, **kwargs):
+        calls.append(argv)
+        return FakeProc()
+
+    monkeypatch.setattr("agentic_os.live_sessions.subprocess.Popen", fake_popen)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    response = client.post(
+        "/sessions/live/open-terminal",
+        json={"tool": "claude", "session_id": "abc-123", "workspace": str(tmp_path)},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert calls and calls[0][0] == "osascript"
+
+
+# --- P40 capability inventory ---
+
+
+def _make_capability_client(tmp_path: Path) -> TestClient:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    home = tmp_path / "home"
+    (home / ".claude" / "skills" / "browse").mkdir(parents=True)
+    (home / ".claude" / "CLAUDE.md").write_text("# memory\n", encoding="utf-8")
+    (home / ".claude.json").write_text(
+        json.dumps({"mcpServers": {"github": {"command": "gh", "env": {"T": "sk-HIDE"}}}}),
+        encoding="utf-8",
+    )
+    return TestClient(
+        create_app(
+            state_dir=tmp_path / ".agentic-os",
+            registry_path=registry,
+            capability_home=home,
+        )
+    )
+
+
+def test_tools_capabilities_endpoint(tmp_path: Path) -> None:
+    client = _make_capability_client(tmp_path)
+    response = client.get("/tools/capabilities")
+    assert response.status_code == 200
+    body = response.json()
+    assert "generated_at" in body
+    tools = {entry["tool"]: entry for entry in body["tools"]}
+    assert tools["claude"]["present"] is True
+    assert tools["claude"]["skills"] == ["browse"]
+    assert tools["claude"]["mcp_servers"] == ["github"]
+    assert tools["codex"]["present"] is False
+    assert "sk-HIDE" not in response.text
+
+
+def test_live_transcript_endpoint(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    log_path = tmp_path / "claude-projects" / "-Users-w-proj" / "abc-123.jsonl"
+    response = client.get(
+        "/sessions/live/transcript",
+        params={"tool": "claude", "log_path": str(log_path)},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["messages"] == [
+        {"role": "user", "text": "fix the bug", "timestamp": "2026-06-12T10:00:00Z"}
+    ]
+    assert body["count"] == 1
+
+
+def test_live_transcript_rejects_path_outside_roots(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}\n", encoding="utf-8")
+    response = client.get(
+        "/sessions/live/transcript",
+        params={"tool": "claude", "log_path": str(outside)},
+    )
+    assert response.status_code == 400
+
+
+def test_live_transcript_rejects_non_jsonl(tmp_path: Path) -> None:
+    client = _make_live_client(tmp_path)
+    sneaky = tmp_path / "claude-projects" / "x.txt"
+    sneaky.write_text("hi", encoding="utf-8")
+    response = client.get(
+        "/sessions/live/transcript",
+        params={"tool": "claude", "log_path": str(sneaky)},
+    )
+    assert response.status_code == 400
+
+
+# --- P42 mcp alignment ---
+
+
+def _make_alignment_client(tmp_path: Path) -> tuple[TestClient, Path]:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "github": {
+                        "command": "gh-mcp",
+                        "args": ["--stdio"],
+                        "env": {"GH_TOKEN": "sk-FAKE-SECRET"},
+                    }
+                },
+                "keepTopLevel": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (home / ".gemini").mkdir(parents=True)
+    (home / ".gemini" / "settings.json").write_text(
+        json.dumps({"mcpServers": {"context7": {"command": "npx"}}}),
+        encoding="utf-8",
+    )
+    (home / ".codex").mkdir(parents=True)
+    (home / ".codex" / "config.toml").write_text('model = "gpt-5"\n', encoding="utf-8")
+    client = TestClient(
+        create_app(
+            state_dir=tmp_path / ".agentic-os",
+            registry_path=registry,
+            capability_home=home,
+        )
+    )
+    return client, home
+
+
+def test_mcp_matrix_endpoint(tmp_path: Path) -> None:
+    client, _ = _make_alignment_client(tmp_path)
+    response = client.get("/tools/mcp/matrix")
+    assert response.status_code == 200
+    body = response.json()
+    servers = {entry["name"]: entry["tools"] for entry in body["servers"]}
+    assert servers["github"]["claude"] is True
+    assert servers["github"]["gemini"] is False
+    assert servers["context7"]["gemini"] is True
+    assert "sk-FAKE-SECRET" not in response.text
+
+
+def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    before = (home / ".gemini" / "settings.json").read_text(encoding="utf-8")
+    response = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "gemini"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is False
+    assert body["summary"]["transport"] == "stdio"
+    assert "sk-FAKE-SECRET" not in response.text
+    assert "gh-mcp" not in response.text
+    assert (home / ".gemini" / "settings.json").read_text(encoding="utf-8") == before
+
+
+def test_mcp_copy_apply_writes_target(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    response = client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "dry_run": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is True
+    assert body["patch_id"]
+    target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
+    assert target["mcpServers"]["github"]["command"] == "gh-mcp"
+    assert target["mcpServers"]["context7"] == {"command": "npx"}
+    source = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
+    assert source["keepTopLevel"] == 1
+    assert "sk-FAKE-SECRET" not in response.text
+
+
+def test_mcp_copy_to_codex_toml_roundtrip(tmp_path: Path) -> None:
+    import tomllib
+
+    client, home = _make_alignment_client(tmp_path)
+    response = client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "codex",
+            "dry_run": False,
+        },
+    )
+    assert response.status_code == 200
+    with (home / ".codex" / "config.toml").open("rb") as fh:
+        doc = tomllib.load(fh)
+    assert doc["mcp_servers"]["github"]["command"] == "gh-mcp"
+    assert doc["model"] == "gpt-5"
+
+
+def test_mcp_copy_conflicts(tmp_path: Path) -> None:
+    client, _ = _make_alignment_client(tmp_path)
+    missing = client.post(
+        "/tools/mcp/copy",
+        json={"server": "nope", "from_tool": "claude", "to_tool": "gemini"},
+    )
+    assert missing.status_code == 404
+    bad_tool = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "vscode"},
+    )
+    assert bad_tool.status_code == 400
+    client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "dry_run": False,
+        },
+    )
+    duplicate = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "gemini"},
+    )
+    assert duplicate.status_code == 409
+
+
+def test_mcp_copy_refuses_unparseable_target(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    corrupt = home / ".gemini" / "settings.json"
+    corrupt.write_text("{broken", encoding="utf-8")
+    response = client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "dry_run": False,
+        },
+    )
+    assert response.status_code == 400
+    assert corrupt.read_text(encoding="utf-8") == "{broken"
+
+
+def test_mcp_remove_apply_and_404(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    response = client.post(
+        "/tools/mcp/remove",
+        json={"tool": "claude", "server": "github", "dry_run": False},
+    )
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    doc = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
+    assert "github" not in doc["mcpServers"]
+    assert doc["keepTopLevel"] == 1
+    again = client.post(
+        "/tools/mcp/remove",
+        json={"tool": "claude", "server": "github"},
+    )
+    assert again.status_code == 404

@@ -14,7 +14,7 @@ const HTML_ENTITIES = Object.freeze({
 });
 
 const state = {
-  activeTab: "agents",
+  activeTab: "overview",
   agentsById: {},
   logEntries: [],
   logSessionId: "",
@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.ProviderSwitchboard?.init?.();
   Ao.RunTemplateLauncher?.init?.();
   Ao.DailyDashboard?.init?.();
+  Ao.DashboardV2?.init?.();
   Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindTabs();
@@ -122,6 +123,15 @@ function bindControls() {
   byId("harness-config-load").addEventListener("click", loadHarnessNativeConfig);
   byId("approval-load").addEventListener("click", loadApprovalsTab);
   byId("load-audit").addEventListener("click", loadAuditStandalone);
+  byId("refresh-tools")?.addEventListener("click", () => {
+    Ao.ToolDiscovery?.render?.("tool-discovery-container");
+  });
+  byId("vibe-coding-refresh")?.addEventListener("click", () => {
+    Ao.VibeCodingLauncher?.refresh?.();
+  });
+  byId("refresh-agentic")?.addEventListener("click", () => {
+    Ao.AgenticInventory?.render?.("agentic-inventory-container");
+  });
   document.body.addEventListener("click", handleActionClick);
 }
 
@@ -150,6 +160,7 @@ function loadActiveTab() {
     Ao.ProviderSwitchboard?.refresh?.();
   } else if (state.activeTab === "sessions") {
     loadSessions();
+    Ao.DiscoverBind?.init?.();
     const selectedSession = byId("log-session-id").value.trim();
     if (selectedSession) {
       loadSessionTimeline(selectedSession);
@@ -172,6 +183,12 @@ function loadActiveTab() {
     // Audit is manually loaded
   } else if (state.activeTab === "overview") {
     loadOverview();
+  } else if (state.activeTab === "tools") {
+    Ao.ToolDiscovery?.render?.("tool-discovery-container");
+  } else if (state.activeTab === "vibe-coding") {
+    Ao.VibeCodingLauncher?.refresh?.();
+  } else if (state.activeTab === "agentic") {
+    Ao.AgenticInventory?.render?.("agentic-inventory-container");
   }
 }
 
@@ -180,6 +197,9 @@ async function refreshAll() {
   await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp(), loadFleet(), loadHarnesses()]);
   if (state.activeTab === "logs" && byId("log-session-id").value.trim()) {
     await loadLogs();
+  }
+  if (state.activeTab === "overview") {
+    await loadOverview();
   }
 }
 

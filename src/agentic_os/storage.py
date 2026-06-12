@@ -135,6 +135,7 @@ class Store:
             self._migrate_sessions_attach_fields(conn)
             self._migrate_sessions_resolved_fields(conn)
             self._migrate_sessions_source_template_id(conn)
+            self._migrate_sessions_workspace_path(conn)
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
@@ -151,9 +152,9 @@ class Store:
                   id, agent_id, cwd, argv_json, env_json, status, artifact_dir,
                   stdout_log, stderr_log, summary_one_liner,
                   resolved_profile, resolved_provider, resolved_model,
-                  source_template_id, updated_at
+                  source_template_id, workspace_path, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     session_id,
@@ -170,6 +171,7 @@ class Store:
                     request.resolved_provider,
                     request.resolved_model,
                     request.source_template_id,
+                    request.workspace_path,
                 ),
             )
         return self.get_session(session_id)
@@ -488,6 +490,11 @@ class Store:
             return
         conn.execute("ALTER TABLE sessions ADD COLUMN source_template_id TEXT")
 
+    def _migrate_sessions_workspace_path(self, conn: sqlite3.Connection) -> None:
+        if _table_has_column(conn, "sessions", "workspace_path"):
+            return
+        conn.execute("ALTER TABLE sessions ADD COLUMN workspace_path TEXT")
+
     def _migrate_events_foreign_key(self, conn: sqlite3.Connection) -> None:
         if _events_has_session_foreign_key(conn):
             return
@@ -540,6 +547,7 @@ def _session_from_row(row: sqlite3.Row) -> SessionRecord:
         resolved_provider=row["resolved_provider"],
         resolved_model=row["resolved_model"],
         source_template_id=row["source_template_id"],
+        workspace_path=row["workspace_path"],
     )
 
 

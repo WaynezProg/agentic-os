@@ -2,7 +2,11 @@
 
 ## Project Structure & Module Organization
 
-`agentic-os` is a local Harness Manager substrate. Core Python code lives in `src/agentic_os/`: `api.py` owns FastAPI routes, `cli.py` owns Typer commands, `storage.py` and `memory_store.py` own SQLite persistence, and `supervisor.py` owns subprocess lifecycle. Tests live in `tests/` and mirror module names, with end-to-end coverage in `test_end_to_end.py`. The static no-build UI is `apps/web/index.html`, `apps/web/app.js`, and `apps/web/styles.css`. Phase contracts live in `specs/`; implementation plans live in `docs/superpowers/plans/`. Example harness registry data is in `examples/agents.toml`.
+`agentic-os` is a local Harness Manager substrate. Core Python code lives in `src/agentic_os/`: `api.py` owns FastAPI routes, `cli.py` owns Typer commands, `storage.py` and `memory_store.py` own SQLite persistence, and `supervisor.py` owns subprocess lifecycle. Extension modules include `safe_edit`/`patch_engine` (config writes), `workspaces`/`run_templates`, `tool_discovery`/`config_inventory` (P34), `attach` (P36), `agentic_inventory` (P37), `live_sessions` (P39 radar), and `remote_*` (remote operator console). Tests live in `tests/` (~700 cases) and mirror module names, with end-to-end coverage in `test_end_to_end.py`.
+
+The static no-build UI is `apps/web/index.html`, `apps/web/styles.css`, `apps/web/api.js` (endpoint map), `apps/web/app.js` (shell), and `apps/web/ui/*.js` feature modules (editors, dashboard, dual-track P34–P42 surfaces). Desktop shell: `apps/desktop/` (Tauri). Phase contracts live in `specs/` (001–062); implementation plans live in `docs/superpowers/plans/`. Example harness registry data is in `examples/agents.toml`. README phase table is canonical for P0–P33; P34–P42 dual-track specs are `054`–`062`.
+
+**CodeGraph:** `.codegraph/` indexes Python (`src/agentic_os/`), JS (`apps/web/`), Rust/Swift (`apps/desktop/`). Use `codegraph_*` MCP tools for symbols, callers, and FastAPI routes; grep for literals only. Rules: `.cursor/rules/codegraph.mdc`.
 
 ## Build, Test, and Development Commands
 

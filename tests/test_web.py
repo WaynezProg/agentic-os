@@ -61,7 +61,7 @@ def test_static_web_files_exist() -> None:
 def test_five_tabs_are_present() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert html.count('role="tab"') == 11
+    assert html.count('role="tab"') == 14
     for tab in [
         "代理",
         "執行",
@@ -74,6 +74,9 @@ def test_five_tabs_are_present() -> None:
         "核准",
         "稽核",
         "總覽",
+        "工具",
+        "Vibe Coding",
+        "Agentic",
     ]:
         assert re.search(rf">\s*{re.escape(tab)}\s*<", html)
 
@@ -787,3 +790,68 @@ def test_product_polish_modules_exist() -> None:
     app_js = (WEB_DIR / "app.js").read_text(encoding="utf-8")
     assert "ProductPolish?.bind" in app_js
     assert "profile-cwd-input" in PROFILE_EDITOR_JS.read_text(encoding="utf-8")
+
+
+def test_live_session_radar_wired() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    assert 'liveSessions: "/sessions/live"' in api_js
+    assert 'liveOpenTerminal: "/sessions/live/open-terminal"' in api_js
+    dashboard = (WEB_DIR / "ui" / "dashboard-v2.js").read_text(encoding="utf-8")
+    assert "loadLiveSessions" in dashboard
+    assert "data-resume-command" in dashboard
+    assert "data-open-terminal" in dashboard
+    assert "Managed Runs" in dashboard
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".live-dot-active" in styles
+    assert ".tool-badge" in styles
+
+
+def test_overview_is_default_landing_tab() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert (
+        '<button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true"'
+        in html
+    )
+    assert '<section id="panel-overview" class="panel is-active"' in html
+    app_js = APP_JS.read_text(encoding="utf-8")
+    assert 'activeTab: "overview"' in app_js
+
+
+def test_capability_radar_wired() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    assert 'toolCapabilities: "/tools/capabilities"' in api_js
+    assert 'liveTranscript: "/sessions/live/transcript"' in api_js
+    tool_discovery = (WEB_DIR / "ui" / "tool-discovery.js").read_text(encoding="utf-8")
+    assert "renderCapabilities" in tool_discovery
+    assert "capability-card" in tool_discovery
+    dashboard = (WEB_DIR / "ui" / "dashboard-v2.js").read_text(encoding="utf-8")
+    assert "transcript-row" in dashboard
+    assert "loadTranscript" in dashboard
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".capability-card" in styles
+    assert ".transcript-row" in styles
+
+
+def test_overview_panel_puts_radar_first() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    panel_start = html.index('id="panel-overview"')
+    panel_chunk = html[panel_start:]
+    assert panel_chunk.index('id="dashboard-v2"') < panel_chunk.index(
+        'id="dashboard-workspace"'
+    )
+
+
+def test_mcp_alignment_matrix_wired() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    assert 'mcpMatrix: "/tools/mcp/matrix"' in api_js
+    assert 'mcpCopy: "/tools/mcp/copy"' in api_js
+    assert 'mcpRemove: "/tools/mcp/remove"' in api_js
+    tool_discovery = (WEB_DIR / "ui" / "tool-discovery.js").read_text(encoding="utf-8")
+    assert "renderMcpMatrix" in tool_discovery
+    assert "mcp-matrix-table" in tool_discovery
+    assert "data-mcp-copy" in tool_discovery
+    assert "data-mcp-remove" in tool_discovery
+    assert "mcp-confirm" in tool_discovery
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".mcp-matrix-table" in styles
+    assert ".mcp-drift" in styles

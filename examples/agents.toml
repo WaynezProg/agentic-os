@@ -11,6 +11,7 @@ config_fingerprint_command = ["/usr/bin/printf", "static"]
 [[agents]]
 id = "claude"
 label = "Claude Code"
+tool_kind = "vibe_coding"
 command = ["claude", "-p", "{{message}}", "--output-format", "text"]
 model_arg = ["--model", "{{model}}"]
 cwd_mode = "required"
@@ -26,6 +27,7 @@ default_provider = "anthropic"
 [[agents]]
 id = "codex"
 label = "Codex"
+tool_kind = "vibe_coding"
 command = ["codex", "exec", "{{message}}"]
 model_arg = ["--model", "{{model}}"]
 cwd_mode = "required"
@@ -41,6 +43,7 @@ default_provider = "openai"
 [[agents]]
 id = "opencode"
 label = "OpenCode"
+tool_kind = "vibe_coding"
 command = ["opencode", "run", "{{message}}"]
 cwd_mode = "required"
 stop_policy = "process_group"
@@ -56,6 +59,7 @@ attach_command = ["opencode", "attach"]
 [[agents]]
 id = "qwen"
 label = "Qwen Code"
+tool_kind = "vibe_coding"
 command = ["qwen", "{{message}}"]
 cwd_mode = "required"
 stop_policy = "process_group"
@@ -70,6 +74,7 @@ default_provider = "qwen"
 [[agents]]
 id = "openclaw"
 label = "OpenClaw"
+tool_kind = "agentic_runtime"
 command = ["openclaw", "agent", "--message", "{{message}}", "--json"]
 cwd_mode = "required"
 stop_policy = "process_group"
@@ -85,6 +90,7 @@ attach_command = ["openclaw", "attach"]
 [[agents]]
 id = "hermes"
 label = "Hermes"
+tool_kind = "agentic_runtime"
 command = ["hermes", "chat", "--query", "{{message}}", "--quiet", "--source", "agentic-os"]
 cwd_mode = "optional"
 stop_policy = "process_group"
@@ -100,6 +106,7 @@ attach_command = ["hermes", "--resume"]
 [[agents]]
 id = "cursor"
 label = "Cursor Agent"
+tool_kind = "vibe_coding"
 command = ["cursor", "agent", "--print", "--trust", "--output-format", "text", "{{message}}"]
 cwd_mode = "required"
 stop_policy = "process_group"

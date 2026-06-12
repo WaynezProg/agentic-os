@@ -25,9 +25,14 @@
     <script src="ui/provider-switchboard.js"></script>
     <script src="ui/run-template-launcher.js"></script>
     <script src="ui/daily-dashboard.js"></script>
+    <script src="ui/dashboard-v2.js"></script>
+    <script src="ui/agentic-inventory.js"></script>
     <script src="ui/product-polish.js"></script>
     <script src="ui/actions.js"></script>
     <script src="ui/connection-gate.js"></script>
+    <script src="ui/tool-discovery.js"></script>
+    <script src="ui/vibe-coding-launcher.js"></script>
+    <script src="ui/discover-bind.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
@@ -55,10 +60,10 @@
         <nav class="sidebar-nav tabs" role="tablist" aria-label="控制面板區塊">
           <button
             id="tab-agents"
-            class="tab is-active"
+            class="tab"
             type="button"
             role="tab"
-            aria-selected="true"
+            aria-selected="false"
             data-tab="agents"
           >
             <span class="tab-glyph" aria-hidden="true">🎛️</span>
@@ -121,9 +126,21 @@
             <span class="tab-glyph" aria-hidden="true">📋</span>
             <span class="tab-label">稽核</span>
           </button>
-          <button id="tab-overview" class="tab" type="button" role="tab" aria-selected="false" data-tab="overview">
+          <button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="overview">
             <span class="tab-glyph" aria-hidden="true">☀️</span>
             <span class="tab-label">總覽</span>
+          </button>
+          <button id="tab-tools" class="tab" type="button" role="tab" aria-selected="false" data-tab="tools">
+            <span class="tab-glyph" aria-hidden="true">🔧</span>
+            <span class="tab-label">工具</span>
+          </button>
+          <button id="tab-vibe-coding" class="tab" type="button" role="tab" aria-selected="false" data-tab="vibe-coding">
+            <span class="tab-glyph" aria-hidden="true">🪩</span>
+            <span class="tab-label">Vibe Coding</span>
+          </button>
+          <button id="tab-agentic" class="tab" type="button" role="tab" aria-selected="false" data-tab="agentic">
+            <span class="tab-glyph" aria-hidden="true">🤖</span>
+            <span class="tab-label">Agentic</span>
           </button>
         </nav>
 
@@ -165,7 +182,7 @@
         </header>
 
         <main class="workspace">
-      <section id="panel-agents" class="panel is-active" role="tabpanel" aria-labelledby="tab-agents">
+      <section id="panel-agents" class="panel" role="tabpanel" aria-labelledby="tab-agents">
         <div class="panel-head">
           <h2>代理</h2>
           <button id="refresh-agents" type="button">重新整理代理</button>
@@ -492,6 +509,33 @@
             <pre id="attach-preview-output" class="summary-output" hidden aria-live="polite"></pre>
           </aside>
         </div>
+        <section id="discover-section" class="subpanel card">
+          <h3>Discover &amp; Bind 外部 Session</h3>
+          <p id="discover-message" class="message" aria-live="polite"></p>
+          <div id="discover-controls" class="control-row">
+            <span class="message">Workspace 跟隨上方選擇。</span>
+            <button id="discover-run" type="button" class="btn-primary">掃描外部 session</button>
+            <button id="discover-refresh" type="button">重新掃描</button>
+          </div>
+          <div class="table-shell">
+            <table id="discover-results-table" class="table-compact">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>External Session ID</th>
+                  <th>Started At</th>
+                  <th>Log Path</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="discover-results-body">
+                <tr>
+                  <td colspan="5">按「掃描外部 session」開始。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </section>
 
       <section id="panel-logs" class="panel" role="tabpanel" aria-labelledby="tab-logs" hidden>
@@ -1151,11 +1195,69 @@
         </div>
       </section>
 
-      <section id="panel-overview" class="panel" role="tabpanel" aria-labelledby="tab-overview">
+      <section id="panel-tools" class="panel" role="tabpanel" aria-labelledby="tab-tools" hidden>
+        <div class="panel-head">
+          <h2>工具探索</h2>
+          <button id="refresh-tools" type="button">重新整理工具</button>
+        </div>
+        <p class="message">已安裝工具的唯讀清單，合併 registry discovery 與本機 inventory。</p>
+        <div id="tool-discovery-container"></div>
+      </section>
+
+      <section id="panel-agentic" class="panel" role="tabpanel" aria-labelledby="tab-agentic" hidden>
+        <div class="panel-head">
+          <h2>Agentic Runtime Inventory</h2>
+          <button id="refresh-agentic" type="button">重新整理</button>
+        </div>
+        <p class="message">OpenClaw / Hermes / n8n 的 skills、MCP、tools、flows 唯讀清單。</p>
+        <div id="agentic-inventory-container"></div>
+      </section>
+
+      <section id="panel-vibe-coding" class="panel" role="tabpanel" aria-labelledby="tab-vibe-coding" hidden>
+        <div class="panel-head">
+          <h2>Vibe Coding 啟動器</h2>
+          <button id="vibe-coding-refresh" type="button">重新整理</button>
+        </div>
+        <p class="message">選擇 workspace、profile、agent 後一鍵啟動，並即時監看 stdout/stderr。</p>
+        <p id="vibe-coding-message" class="message" aria-live="polite"></p>
+        <div id="vibe-coding-launcher-controls" class="card">
+          <div class="eval-grid">
+            <label for="vibe-coding-agent">Agent</label>
+            <select id="vibe-coding-agent"></select>
+            <label for="vibe-coding-profile">Profile</label>
+            <select id="vibe-coding-profile"></select>
+          </div>
+          <div class="eval-grid">
+            <label for="vibe-coding-message-input">訊息</label>
+            <textarea id="vibe-coding-message-input" rows="3" spellcheck="false"></textarea>
+          </div>
+          <div class="control-row">
+            <button id="vibe-coding-launch" type="button" class="btn-primary">啟動 session</button>
+            <button id="vibe-coding-stop" type="button" disabled>停止</button>
+            <button id="vibe-coding-retry" type="button" disabled>重啟</button>
+            <button id="vibe-coding-download" type="button" disabled>下載證據 zip</button>
+          </div>
+          <p id="vibe-coding-session-detail" class="message">尚未啟動 session。</p>
+        </div>
+        <div class="runs-layout">
+          <pre id="vibe-coding-log-stdout" class="log-output" aria-label="stdout" aria-live="polite"></pre>
+          <pre id="vibe-coding-log-stderr" class="log-output" aria-label="stderr" aria-live="polite"></pre>
+        </div>
+      </section>
+
+      <section id="panel-overview" class="panel is-active" role="tabpanel" aria-labelledby="tab-overview">
         <div class="panel-head">
           <h2>總覽</h2>
           <button id="dashboard-refresh" type="button">重新整理儀表板</button>
         </div>
+        <section id="dashboard-v2" class="subpanel card">
+          <h3>雙軌操作台</h3>
+          <div class="dashboard-v2-layout" id="dashboard-v2-layout"></div>
+          <div class="dashboard-v2-layout dashboard-v2-columns">
+            <div id="dashboard-v2-left"></div>
+            <div id="dashboard-v2-right"></div>
+          </div>
+        </section>
         <section id="dashboard-workspace" class="subpanel card">
           <h3>工作區儀表板</h3>
           <div id="dashboard-workspace-body" class="card-body">載入中…</div>

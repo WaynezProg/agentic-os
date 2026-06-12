@@ -18,6 +18,7 @@ class SessionStatus(StrEnum):
 CwdMode = Literal["required", "optional", "ignored"]
 StopPolicy = Literal["process_group"]
 AttachStatus = Literal["none", "available", "attached", "unsupported"]
+ToolKind = Literal["vibe_coding", "agentic_runtime"]
 
 
 class AgentDefinition(BaseModel):
@@ -38,6 +39,7 @@ class AgentDefinition(BaseModel):
     model_arg: list[str] | None = None
     provider_env: str | None = None
     enabled: bool = True
+    tool_kind: ToolKind | None = None
 
 
 class SessionCreate(BaseModel):
@@ -53,6 +55,7 @@ class SessionCreate(BaseModel):
     resolved_provider: str | None = None
     resolved_model: str | None = None
     source_template_id: str | None = None
+    workspace_path: str | None = None
 
 
 class SessionRecord(SessionCreate):
@@ -75,6 +78,18 @@ class SessionRecord(SessionCreate):
 
 class SessionAttachRequest(BaseModel):
     mode: Literal["preview", "exec"] = "preview"
+
+
+class SessionDiscoverRequest(BaseModel):
+    workspace_path: str
+
+
+class SessionBindRequest(BaseModel):
+    agent_id: str
+    external_session_id: str
+    workspace_path: str
+    log_path: str
+    started_at: str | None = None
 
 
 class EventRecord(BaseModel):

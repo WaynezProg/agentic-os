@@ -140,6 +140,9 @@ window.AgenticOs = window.AgenticOs || {};
       }
     }
     await loadFleetSummary();
+    if (Ao.DashboardV2?.loadDashboardV2) {
+      await Ao.DashboardV2.loadDashboardV2();
+    }
     if (Ao.ProductPolish?.refresh) {
       await Ao.ProductPolish.refresh();
     }

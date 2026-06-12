@@ -105,6 +105,79 @@ class FakeClient:
         self.calls.append(("list_sessions", (), {}))
         return {"sessions": [{"id": "s_1", "agent_id": "shell", "status": "succeeded"}]}
 
+    def mcp_matrix(self) -> dict[str, object]:
+        self.calls.append(("mcp_matrix", (), {}))
+        return {
+            "servers": [
+                {"name": "context7", "tools": {"claude": True, "gemini": False}},
+            ],
+            "tools": ["claude", "gemini"],
+        }
+
+    def mcp_copy(
+        self, server: str, from_tool: str, to_tool: str, apply: bool = False
+    ) -> dict[str, object]:
+        self.calls.append(("mcp_copy", (server, from_tool, to_tool), {"apply": apply}))
+        return {
+            "action": "copy",
+            "server": server,
+            "from_tool": from_tool,
+            "to_tool": to_tool,
+            "applied": apply,
+            "patch_id": "p_x",
+            "summary": {"transport": "stdio", "fields": ["command"]},
+            "backup_path": "/tmp/b",
+        }
+
+    def mcp_remove(self, tool: str, server: str, apply: bool = False) -> dict[str, object]:
+        self.calls.append(("mcp_remove", (tool, server), {"apply": apply}))
+        return {
+            "action": "remove",
+            "server": server,
+            "tool": tool,
+            "applied": apply,
+            "patch_id": "p_y",
+            "summary": {"transport": "stdio", "fields": ["command"]},
+            "backup_path": "/tmp/b",
+        }
+
+    def tools_capabilities(self) -> dict[str, object]:
+        self.calls.append(("tools_capabilities", (), {}))
+        return {
+            "tools": [
+                {
+                    "tool": "claude",
+                    "present": True,
+                    "skills": ["browse", "tdd"],
+                    "mcp_servers": ["github"],
+                    "plugins": [],
+                    "memory_files": [
+                        {"path": "/h/.claude/CLAUDE.md", "size_bytes": 10, "modified_at": "2026-06-12T00:00:00+00:00"}
+                    ],
+                    "error": None,
+                }
+            ],
+        }
+
+    def list_live_sessions(self, within_hours: int = 72, limit: int = 50) -> dict[str, object]:
+        self.calls.append(
+            ("list_live_sessions", (), {"within_hours": within_hours, "limit": limit})
+        )
+        return {
+            "sessions": [
+                {
+                    "tool": "claude",
+                    "session_id": "abc-123",
+                    "workspace": "/Users/w/proj",
+                    "title": "fix the bug",
+                    "last_activity_at": "2026-06-12T10:00:00+00:00",
+                    "active": True,
+                    "resume_command": "cd /Users/w/proj && claude --resume abc-123",
+                }
+            ],
+            "errors": [],
+        }
+
     def show_session(self, session_id: str) -> dict[str, object]:
         self.calls.append(("show_session", (session_id,), {}))
         return {"id": session_id, "agent_id": "shell", "status": "succeeded"}
@@ -2245,3 +2318,74 @@ def test_deprecated_status_shown_in_skills_list(monkeypatch: Any) -> None:
     result = CliRunner().invoke(cli.app, ["skills", "list"])
     assert result.exit_code == 0
     assert "deprecated" in result.output
+
+
+def test_sessions_live_lists_external_sessions(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["sessions", "live"])
+
+    assert result.exit_code == 0
+    assert "claude" in result.output
+    assert "abc-123" in result.output
+    assert "ACTIVE" in result.output
+    assert ("list_live_sessions", (), {"within_hours": 72, "limit": 50}) in fake.calls
+
+
+def test_tools_capabilities_lists_per_tool(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+
+    result = CliRunner().invoke(cli.app, ["tools", "capabilities"])
+
+    assert result.exit_code == 0
+    assert "claude" in result.output
+    assert "skills=2" in result.output
+    assert ("tools_capabilities", (), {}) in fake.calls
+
+
+def test_tools_mcp_matrix(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(cli.app, ["tools", "mcp-matrix"])
+    assert result.exit_code == 0
+    assert "context7" in result.output
+    assert ("mcp_matrix", (), {}) in fake.calls
+
+
+def test_tools_mcp_copy_defaults_to_dry_run(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(
+        cli.app,
+        ["tools", "mcp-copy", "--server", "context7", "--from", "claude", "--to", "gemini"],
+    )
+    assert result.exit_code == 0
+    assert "dry-run" in result.output
+    assert ("mcp_copy", ("context7", "claude", "gemini"), {"apply": False}) in fake.calls
+
+
+def test_tools_mcp_copy_apply(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "tools", "mcp-copy", "--server", "context7",
+            "--from", "claude", "--to", "gemini", "--apply",
+        ],
+    )
+    assert result.exit_code == 0
+    assert ("mcp_copy", ("context7", "claude", "gemini"), {"apply": True}) in fake.calls
+
+
+def test_tools_mcp_remove(monkeypatch: Any) -> None:
+    fake = FakeClient()
+    install_fake_client(monkeypatch, fake)
+    result = CliRunner().invoke(
+        cli.app,
+        ["tools", "mcp-remove", "--tool", "gemini", "--server", "context7"],
+    )
+    assert result.exit_code == 0
+    assert ("mcp_remove", ("gemini", "context7"), {"apply": False}) in fake.calls

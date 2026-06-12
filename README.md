@@ -69,6 +69,15 @@ Phase positioning:
 | P31 | **complete** — agent content editor | form-based skill/MCP/policy/hook editing with history + policy evaluate | extended `ui/control-plane-editor.js` | MCP process start, marketplace |
 | P32 | **complete** — run template / task launcher | saved launchers with argv preview; `source_template_id` on sessions | `/run-templates`, `ui/run-template-launcher.js` | scheduling, background loop |
 | P33 | **complete** — daily operator dashboard | full 總覽 workbench; affordance-driven quick actions | `ui/daily-dashboard.js` | chat UI, RBAC |
+| P34 | **complete** — tool discovery + config inventory | read-only presence/version/config summary per tool | `tool_discovery.py`, `config_inventory.py`, `/tools/discovery`, `/tools/inventory` | config sync, secret reads |
+| P35 | **complete** — vibe coding runtime adapter | launch/stop/retry/logs/evidence zip for codex/claude headless runs | `ui/vibe-coding-launcher.js`, evidence zip endpoint | chat UI, agentic runtime launch |
+| P36 | **complete** — session discover / bind / attach | register external sessions and attach previews | `attach.py`, `/sessions/discover`, `/sessions/bind` | modifying external runtimes |
+| P37 | **complete** — agentic runtime inventory | read-only OpenClaw/Hermes/n8n capability inventory | `agentic_inventory.py`, `/agentic/inventory` | starting/stopping agentic runtimes |
+| P38 | **complete** — dual-track dashboard v2 | two-column 總覽 (Vibe Coding / Agentic Runtime) | `ui/dashboard-v2.js` | new backend aggregator |
+| P39 | **complete** — live session radar | observe-first: real claude/codex session stores surfaced with resume + open-terminal actions | `live_sessions.py`, `/sessions/live`, dashboard Live Sessions card | writing to external stores, file watching, cross-machine |
+| P40 | **complete** — capability radar | real skills/MCP/plugins/memory names per tool (claude/codex/gemini/qwen/opencode/cursor) | `capability_inventory.py`, `/tools/capabilities`, 工具 tab capability cards | writing tool configs, secret values, content reads |
+| P41 | **complete** — transcript preview | tail preview of any discovered session's conversation | `read_transcript_tail`, `/sessions/live/transcript`, radar inline panel | sending messages, full-transcript search |
+| P42 | **complete** — MCP alignment | cross-tool MCP matrix + safe copy/remove via P10 safe-edit (dry-run default, backup, rollback; values never leave the daemon) | `mcp_alignment.py`, `/tools/mcp/*`, 工具 tab matrix | creating/editing servers, skills/plugins writes, bulk sync |
 
 **Main (2026-06-07):** P11.5–P33 add remote access, editors, approval workbench, workspace scoping, switchboard, templates, and daily dashboard. Remote mode gates writes via affordances + localhost-only HTTP guards on workspace/template writes. Profile `resolved_model` / `resolved_provider` thread into harness argv/env when registry entries define `model_arg` / `provider_env`.
 

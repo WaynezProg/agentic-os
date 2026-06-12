@@ -9,6 +9,13 @@ window.AgenticOs = window.AgenticOs || {};
     health: "/health",
     agents: "/agents",
     sessions: "/sessions",
+    liveSessions: "/sessions/live",
+    liveOpenTerminal: "/sessions/live/open-terminal",
+    liveTranscript: "/sessions/live/transcript",
+    toolCapabilities: "/tools/capabilities",
+    mcpMatrix: "/tools/mcp/matrix",
+    mcpCopy: "/tools/mcp/copy",
+    mcpRemove: "/tools/mcp/remove",
     sessionDetail: "/sessions/{session_id}",
     sessionLogs: "/sessions/{session_id}/logs",
     sessionStop: "/sessions/{session_id}/stop",
@@ -86,6 +93,10 @@ window.AgenticOs = window.AgenticOs || {};
     runTemplates: "/run-templates",
     runTemplateDetail: "/run-templates/{template_id}",
     runTemplatePreview: "/run-templates/{template_id}/preview",
+    toolsDiscovery: "/tools/discovery",
+    toolsInventory: "/tools/inventory",
+    agenticInventory: "/agentic/inventory",
+    agenticInventoryDetail: "/agentic/inventory/{agent_id}",
   });
 
   let connectionProfile = null;
