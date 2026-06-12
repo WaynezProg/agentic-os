@@ -76,6 +76,7 @@ State lives entirely under `--state-dir` (default `.agentic-os/`). Each SQLite D
 - `agentic_inventory.py` — read-only OpenClaw/Hermes/n8n capability inventory (P37).
 - `live_sessions.py` — read-only scanners over real claude/codex session stores + open-terminal action (P39) + transcript tail preview (P41).
 - `capability_inventory.py` — read-only real skills/MCP/plugins/memory names per tool (P40). Names only; secrets never leave the module.
+- `mcp_alignment.py` — cross-tool MCP matrix + safe copy/remove patches via `SafeEditEngine` (P42). Definition values never leave the daemon.
 - `import_export.py` — portable setup bundle export/import (P26).
 - `remote_store.py` + `remote_access.py` + `remote_gateway.py` + `remote_affordances.py` — remote operator console (P12–P15, P25).
 - `evidence.py` + `audit.py` + `fleet.py` + `approvals.py` — session evidence, governance audit, fleet health, approval workflow.
