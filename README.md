@@ -77,6 +77,7 @@ Phase positioning:
 | P39 | **complete** — live session radar | observe-first: real claude/codex session stores surfaced with resume + open-terminal actions | `live_sessions.py`, `/sessions/live`, dashboard Live Sessions card | writing to external stores, file watching, cross-machine |
 | P40 | **complete** — capability radar | real skills/MCP/plugins/memory names per tool (claude/codex/gemini/qwen/opencode/cursor) | `capability_inventory.py`, `/tools/capabilities`, 工具 tab capability cards | writing tool configs, secret values, content reads |
 | P41 | **complete** — transcript preview | tail preview of any discovered session's conversation | `read_transcript_tail`, `/sessions/live/transcript`, radar inline panel | sending messages, full-transcript search |
+| P42 | **complete** — MCP alignment | cross-tool MCP matrix + safe copy/remove via P10 safe-edit (dry-run default, backup, rollback; values never leave the daemon) | `mcp_alignment.py`, `/tools/mcp/*`, 工具 tab matrix | creating/editing servers, skills/plugins writes, bulk sync |
 
 **Main (2026-06-07):** P11.5–P33 add remote access, editors, approval workbench, workspace scoping, switchboard, templates, and daily dashboard. Remote mode gates writes via affordances + localhost-only HTTP guards on workspace/template writes. Profile `resolved_model` / `resolved_provider` thread into harness argv/env when registry entries define `model_arg` / `provider_env`.
 

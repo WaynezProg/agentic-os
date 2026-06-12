@@ -196,12 +196,18 @@ def from_canonical(tool: str, canon: CanonicalServer) -> dict[str, object]:
     return out
 
 
-def summarize_def(raw: dict[str, object] | None) -> dict[str, object]:
-    """Keys-only summary safe for API responses. Never includes values."""
+def summarize_def(
+    raw: dict[str, object] | None, *, tool: str = "claude"
+) -> dict[str, object]:
+    """Keys-only summary safe for API responses. Never includes values.
+
+    Routed by source tool — claude entries legitimately carry a
+    `type: "stdio"` field, so shape-sniffing would misclassify them.
+    """
     if not isinstance(raw, dict):
         return {"transport": "unknown", "fields": []}
     try:
-        canon = to_canonical("claude", raw) if "type" not in raw else _opencode_to_canonical(raw)
+        canon = to_canonical(tool, raw)
     except ValueError:
         return {"transport": "unknown", "fields": sorted(str(k) for k in raw)}
     fields: list[str] = []
@@ -244,7 +250,7 @@ def build_copy_patch(
     canon = to_canonical(from_tool, raw)
     value = from_canonical(to_tool, canon)
     ops = [PatchOp(op="merge", path=f"{root_key(to_tool)}.{name}", value=value)]
-    return _patch_target(to_tool, home), ops, summarize_def(raw)
+    return _patch_target(to_tool, home), ops, summarize_def(raw, tool=from_tool)
 
 
 def build_remove_patch(
@@ -257,4 +263,4 @@ def build_remove_patch(
         msg = f"server not found in {tool}: {name}"
         raise KeyError(msg)
     ops = [PatchOp(op="remove", path=f"{root_key(tool)}.{name}")]
-    return _patch_target(tool, home), ops, summarize_def(raw)
+    return _patch_target(tool, home), ops, summarize_def(raw, tool=tool)

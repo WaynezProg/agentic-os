@@ -221,3 +221,13 @@ def test_target_config_parse_error(tmp_path: Path) -> None:
     (home / ".gemini" / "settings.json").write_text("{broken", encoding="utf-8")
     error = target_config_parse_error("gemini", home)
     assert error is not None and "parse" in error.lower()
+
+
+def test_summarize_def_claude_entry_with_type_field(tmp_path: Path) -> None:
+    # Real ~/.claude.json entries can carry type:"stdio"; summarize must
+    # not mistake them for opencode-shaped definitions.
+    raw = {"type": "stdio", "command": "headroom-mcp", "args": ["--x"], "env": {"K": "v"}}
+    summary = summarize_def(raw, tool="claude")
+    assert summary["transport"] == "stdio"
+    assert "command" in summary["fields"]
+    assert "env:K" in summary["fields"]
