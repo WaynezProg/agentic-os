@@ -12,11 +12,11 @@ API_URL="${AGENTIC_OS_API_URL:-http://${API_HOST}:${API_PORT}}"
 STATE_DIR="${AGENTIC_OS_STATE_DIR:-${HOME}/.agentic-os}"
 if desktop_bundle_mode; then
   REGISTRY="${AGENTIC_OS_REGISTRY:-$ROOT/registry/agents.toml}"
-  # Run the console script through the bundle's own interpreter: the
-  # script's shebang still points at the build-time staging venv, so a
-  # direct exec would import site-packages from the repo checkout.
-  AGENTD_PY="$ROOT/runtime/.venv/bin/python"
-  AGENTD_BIN="$ROOT/runtime/.venv/bin/agentd"
+  # Run the console script through the bundled relocatable CPython: the
+  # script's shebang pins a build-time absolute path, so a direct exec
+  # would reach outside the app.
+  AGENTD_PY="$ROOT/runtime/python/bin/python3.12"
+  AGENTD_BIN="$ROOT/runtime/python/bin/agentd"
 else
   REGISTRY="${AGENTIC_OS_REGISTRY:-$ROOT/examples/agents.toml}"
   AGENTD_BIN=""

@@ -6,6 +6,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAGING="${REPO_ROOT}/apps/desktop/src-tauri/bundle-resources/agentic-os"
+PYTHON_BUILD="cpython-3.12-macos-aarch64-none"
 
 echo "prepare-desktop-bundle: staging → ${STAGING}"
 
@@ -23,37 +24,47 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-# Build a wheel and install it non-editable so the bundle is fully
-# self-contained — `uv sync` installs the project editable, leaving a
-# .pth that points back into the repo checkout (app breaks if the repo
-# moves, and the bundled daemon would run repo working-tree code).
-VENV="${STAGING}/runtime/.venv"
+# Ship a full relocatable CPython (python-build-standalone) inside the
+# bundle and install the project wheel straight into its site-packages.
+# venvs are NOT relocatable: console-script shebangs and pyvenv.cfg pin
+# build-time absolute paths, and resource copiers (tauri/ditto) turn
+# the bin/python symlink into a real file whose @rpath libpython lookup
+# then misses. A standalone CPython resolves everything relative to its
+# own binary, so the copied app needs nothing from the build machine.
+uv python install "$PYTHON_BUILD" >/dev/null 2>&1 || true
+PY_SOURCE="$(uv python find "$PYTHON_BUILD")"
+PY_INSTALL="$(cd "$(dirname "$PY_SOURCE")/.." && pwd)"
+cp -R "$PY_INSTALL/." "$STAGING/runtime/python/"
+BUNDLED_PY="$STAGING/runtime/python/bin/python3.12"
+# This copy is ours to mutate; drop uv's PEP 668 guard so packages can
+# be installed straight into its site-packages.
+rm -f "$STAGING/runtime/python/lib/python3.12/EXTERNALLY-MANAGED"
+
 DIST_DIR="$(mktemp -d)"
 trap 'rm -rf "$DIST_DIR"' EXIT
 
 uv build --wheel --directory "$REPO_ROOT" --out-dir "$DIST_DIR" >/dev/null
 uv export --directory "$REPO_ROOT" --frozen --no-emit-project --no-dev \
   --format requirements.txt -o "$DIST_DIR/requirements.txt" >/dev/null
-uv venv --python 3.12 "$VENV" >/dev/null
-uv pip install --python "$VENV/bin/python" -r "$DIST_DIR/requirements.txt" >/dev/null
-uv pip install --python "$VENV/bin/python" --no-deps "$DIST_DIR"/agentic_os-*.whl >/dev/null
+uv pip install --python "$BUNDLED_PY" -r "$DIST_DIR/requirements.txt" >/dev/null
+uv pip install --python "$BUNDLED_PY" --no-deps "$DIST_DIR"/agentic_os-*.whl >/dev/null
 
-AGENTD="${VENV}/bin/agentd"
-if [[ ! -x "$AGENTD" ]]; then
-  echo "prepare-desktop-bundle: agentd missing in staged venv: ${AGENTD}" >&2
+SITE_PACKAGES="$STAGING/runtime/python/lib/python3.12/site-packages"
+if [[ ! -f "$SITE_PACKAGES/agentic_os/api.py" ]]; then
+  echo "prepare-desktop-bundle: agentic_os package not materialized" >&2
+  exit 1
+fi
+if grep -rq "$REPO_ROOT/src" "$SITE_PACKAGES"/*.pth 2>/dev/null; then
+  echo "prepare-desktop-bundle: staged runtime references the repo (editable leak)" >&2
   exit 1
 fi
 
-if grep -rq "$REPO_ROOT/src" "$VENV/lib"/python*/site-packages/*.pth 2>/dev/null; then
-  echo "prepare-desktop-bundle: staged venv still references the repo (editable leak)" >&2
-  exit 1
-fi
-if [[ ! -f "$VENV/lib/python3.12/site-packages/agentic_os/api.py" ]]; then
-  echo "prepare-desktop-bundle: agentic_os package not materialized in venv" >&2
-  exit 1
-fi
-
-echo "prepare-desktop-bundle: staged manifest"
-find "$STAGING" -type f | sort | sed "s|^${STAGING}/||"
+# Relocation smoke test: copy the runtime elsewhere and import the
+# package with the copied interpreter — proves no build-path coupling.
+RELOC_DIR="$(mktemp -d)"
+cp -R "$STAGING/runtime/python/." "$RELOC_DIR/python/"
+RELOC_VERSION="$("$RELOC_DIR/python/bin/python3.12" -c 'from agentic_os import __version__; print(__version__)')"
+rm -rf "$RELOC_DIR"
+echo "prepare-desktop-bundle: relocation smoke ok (agentic_os ${RELOC_VERSION})"
 
 echo "prepare-desktop-bundle: ok"
