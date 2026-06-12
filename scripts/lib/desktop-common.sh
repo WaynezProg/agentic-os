@@ -12,7 +12,9 @@ desktop_root() {
 }
 
 desktop_bundle_mode() {
-  [[ -f "$(desktop_root)/runtime/.venv/bin/agentd" ]]
+  local root
+  root="$(desktop_root)"
+  [[ -f "$root/runtime/python/bin/agentd" || -f "$root/runtime/.venv/bin/agentd" ]]
 }
 
 reconcile_stale_pid() {
