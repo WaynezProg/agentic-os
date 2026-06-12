@@ -32,6 +32,7 @@
     <script src="ui/connection-gate.js"></script>
     <script src="ui/tool-discovery.js"></script>
     <script src="ui/vibe-coding-launcher.js"></script>
+    <script src="ui/chat-launcher.js"></script>
     <script src="ui/discover-bind.js"></script>
     <script src="app.js" defer></script>
   </head>
@@ -63,19 +64,38 @@
             <div class="nav-group-items" role="presentation">
               <button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="overview">
                 <span class="tab-glyph" aria-hidden="true">☀️</span>
-                <span class="tab-label">總覽</span>
+                <span class="tab-copy">
+                  <span class="tab-label">總覽</span>
+                  <span class="tab-desc">狀態總表與快速操作</span>
+                </span>
+              </button>
+              <button id="tab-chat" class="tab" type="button" role="tab" aria-selected="false" data-tab="chat">
+                <span class="tab-glyph" aria-hidden="true">💬</span>
+                <span class="tab-copy">
+                  <span class="tab-label">聊天</span>
+                  <span class="tab-desc">傳訊息啟動工具</span>
+                </span>
               </button>
               <button id="tab-vibe-coding" class="tab" type="button" role="tab" aria-selected="false" data-tab="vibe-coding">
                 <span class="tab-glyph" aria-hidden="true">🪩</span>
-                <span class="tab-label">Vibe Coding</span>
+                <span class="tab-copy">
+                  <span class="tab-label">Vibe Coding</span>
+                  <span class="tab-desc">Codex／Claude 啟動監看</span>
+                </span>
               </button>
               <button id="tab-agentic" class="tab" type="button" role="tab" aria-selected="false" data-tab="agentic">
                 <span class="tab-glyph" aria-hidden="true">🤖</span>
-                <span class="tab-label">Agentic</span>
+                <span class="tab-copy">
+                  <span class="tab-label">Agentic</span>
+                  <span class="tab-desc">OpenClaw／Hermes 盤點</span>
+                </span>
               </button>
               <button id="tab-tools" class="tab" type="button" role="tab" aria-selected="false" data-tab="tools">
                 <span class="tab-glyph" aria-hidden="true">🔧</span>
-                <span class="tab-label">工具</span>
+                <span class="tab-copy">
+                  <span class="tab-label">工具</span>
+                  <span class="tab-desc">安裝狀態與 MCP 矩陣</span>
+                </span>
               </button>
             </div>
           </div>
@@ -91,7 +111,10 @@
                 data-tab="agents"
               >
                 <span class="tab-glyph" aria-hidden="true">🎛️</span>
-                <span class="tab-label">代理</span>
+                <span class="tab-copy">
+                  <span class="tab-label">代理</span>
+                  <span class="tab-desc">harness 實例與啟動</span>
+                </span>
               </button>
               <button
                 id="tab-sessions"
@@ -102,15 +125,24 @@
                 data-tab="sessions"
               >
                 <span class="tab-glyph" aria-hidden="true">🚀</span>
-                <span class="tab-label">執行</span>
+                <span class="tab-copy">
+                  <span class="tab-label">執行</span>
+                  <span class="tab-desc">run 歷史與時間軸</span>
+                </span>
               </button>
               <button id="tab-logs" class="tab" type="button" role="tab" aria-selected="false" data-tab="logs">
                 <span class="tab-glyph" aria-hidden="true">📜</span>
-                <span class="tab-label">日誌</span>
+                <span class="tab-copy">
+                  <span class="tab-label">日誌</span>
+                  <span class="tab-desc">session 輸出檢視</span>
+                </span>
               </button>
               <button id="tab-memory" class="tab" type="button" role="tab" aria-selected="false" data-tab="memory">
                 <span class="tab-glyph" aria-hidden="true">💭</span>
-                <span class="tab-label">記憶</span>
+                <span class="tab-copy">
+                  <span class="tab-label">記憶</span>
+                  <span class="tab-desc">摘要審核與記憶</span>
+                </span>
               </button>
             </div>
           </div>
@@ -128,11 +160,17 @@
             <div class="nav-group-items" id="nav-advanced-items" role="presentation">
               <button id="tab-skills" class="tab" type="button" role="tab" aria-selected="false" data-tab="skills">
                 <span class="tab-glyph" aria-hidden="true">✨</span>
-                <span class="tab-label">技能 / MCP</span>
+                <span class="tab-copy">
+                  <span class="tab-label">技能 / MCP</span>
+                  <span class="tab-desc">能力目錄與政策</span>
+                </span>
               </button>
               <button id="tab-fleet" class="tab" type="button" role="tab" aria-selected="false" data-tab="fleet">
                 <span class="tab-glyph" aria-hidden="true">🌿</span>
-                <span class="tab-label">機群</span>
+                <span class="tab-copy">
+                  <span class="tab-label">機群</span>
+                  <span class="tab-desc">健康探測與容量</span>
+                </span>
               </button>
               <button
                 id="tab-harnesses"
@@ -143,11 +181,17 @@
                 data-tab="harnesses"
               >
                 <span class="tab-glyph" aria-hidden="true">🔌</span>
-                <span class="tab-label">Harness</span>
+                <span class="tab-copy">
+                  <span class="tab-label">Harness</span>
+                  <span class="tab-desc">設定檔安全編輯</span>
+                </span>
               </button>
               <button id="tab-catalog" class="tab" type="button" role="tab" aria-selected="false" data-tab="catalog">
                 <span class="tab-glyph" aria-hidden="true">🧩</span>
-                <span class="tab-label">介面</span>
+                <span class="tab-copy">
+                  <span class="tab-label">介面</span>
+                  <span class="tab-desc">workflow surface 目錄</span>
+                </span>
               </button>
               <button
                 id="tab-approvals"
@@ -158,11 +202,17 @@
                 data-tab="approvals"
               >
                 <span class="tab-glyph" aria-hidden="true">👋</span>
-                <span class="tab-label">核准</span>
+                <span class="tab-copy">
+                  <span class="tab-label">核准</span>
+                  <span class="tab-desc">待核准請求</span>
+                </span>
               </button>
               <button id="tab-audit" class="tab" type="button" role="tab" aria-selected="false" data-tab="audit">
                 <span class="tab-glyph" aria-hidden="true">📋</span>
-                <span class="tab-label">稽核</span>
+                <span class="tab-copy">
+                  <span class="tab-label">稽核</span>
+                  <span class="tab-desc">治理事件紀錄</span>
+                </span>
               </button>
             </div>
           </div>
@@ -970,8 +1020,8 @@
         <section class="subpanel">
           <h3>稽核紀錄</h3>
           <div class="control-row">
-            <label for="audit-domain">領域</label>
-            <select id="audit-domain">
+            <label for="audit-events-domain">領域</label>
+            <select id="audit-events-domain">
               <option value="">全部</option>
               <option value="skill">skill</option>
               <option value="mcp">mcp</option>
@@ -1283,6 +1333,26 @@
           <pre id="vibe-coding-log-stdout" class="log-output" aria-label="stdout" aria-live="polite"></pre>
           <pre id="vibe-coding-log-stderr" class="log-output" aria-label="stderr" aria-live="polite"></pre>
         </div>
+      </section>
+
+      <section id="panel-chat" class="panel" role="tabpanel" aria-labelledby="tab-chat" hidden>
+        <div class="panel-head">
+          <h2>聊天</h2>
+          <button id="chat-clear" type="button">清除歷史</button>
+        </div>
+        <p id="chat-message" class="message" aria-live="polite"></p>
+        <div id="chat-thread" class="chat-thread" aria-live="polite"></div>
+        <div class="chat-composer">
+          <select id="chat-agent" aria-label="選擇 harness"></select>
+          <textarea
+            id="chat-input"
+            rows="2"
+            placeholder="輸入要交給工具執行的訊息…（Enter 送出、Shift+Enter 換行）"
+            spellcheck="false"
+          ></textarea>
+          <button id="chat-send" type="button" class="btn-primary">送出</button>
+        </div>
+        <p id="chat-cwd-hint" class="chat-cwd-hint"></p>
       </section>
 
       <section id="panel-overview" class="panel is-active" role="tabpanel" aria-labelledby="tab-overview">

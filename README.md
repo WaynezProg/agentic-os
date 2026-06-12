@@ -78,6 +78,7 @@ Phase positioning:
 | P40 | **complete** — capability radar | real skills/MCP/plugins/memory names per tool (claude/codex/gemini/qwen/opencode/cursor) | `capability_inventory.py`, `/tools/capabilities`, 工具 tab capability cards | writing tool configs, secret values, content reads |
 | P41 | **complete** — transcript preview | tail preview of any discovered session's conversation | `read_transcript_tail`, `/sessions/live/transcript`, radar inline panel | sending messages, full-transcript search |
 | P42 | **complete** — MCP alignment | cross-tool MCP matrix + safe copy/remove via P10 safe-edit (dry-run default, backup, rollback; values never leave the daemon) | `mcp_alignment.py`, `/tools/mcp/*`, 工具 tab matrix | creating/editing servers, skills/plugins writes, bulk sync |
+| P43 | **complete** — chat launcher | chat-shaped front on the policy-gated run path: message → `POST /sessions`, reply = session stdout with status + log links; denials render as system bubbles | `ui/chat-launcher.js`, 聊天 tab, sidebar `.tab-desc` sublabels | new endpoints, LLM routing, multi-turn process state, server-side chat history |
 
 **Main (2026-06-07):** P11.5–P33 add remote access, editors, approval workbench, workspace scoping, switchboard, templates, and daily dashboard. Remote mode gates writes via affordances + localhost-only HTTP guards on workspace/template writes. Profile `resolved_model` / `resolved_provider` thread into harness argv/env when registry entries define `model_arg` / `provider_env`.
 

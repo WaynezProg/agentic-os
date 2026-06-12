@@ -209,6 +209,8 @@ function loadActiveTab() {
     Ao.VibeCodingLauncher?.refresh?.();
   } else if (state.activeTab === "agentic") {
     Ao.AgenticInventory?.render?.("agentic-inventory-container");
+  } else if (state.activeTab === "chat") {
+    Ao.ChatLauncher?.init?.();
   }
 }
 
@@ -1115,7 +1117,7 @@ async function triggerFleetProbe() {
 
 async function loadAuditEvents() {
   const body = byId("audit-events-body");
-  const domain = byId("audit-domain").value;
+  const domain = byId("audit-events-domain").value;
   try {
     const query = new URLSearchParams({ limit: "100" });
     if (domain) {

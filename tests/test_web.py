@@ -61,7 +61,7 @@ def test_static_web_files_exist() -> None:
 def test_five_tabs_are_present() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert html.count('role="tab"') == 14
+    assert html.count('role="tab"') == 15
     for tab in [
         "代理",
         "執行",
@@ -74,6 +74,7 @@ def test_five_tabs_are_present() -> None:
         "核准",
         "稽核",
         "總覽",
+        "聊天",
         "工具",
         "Vibe Coding",
         "Agentic",
@@ -395,8 +396,15 @@ def test_fleet_tab_has_audit_events_section() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
     assert 'id="audit-events-table"' in html
     assert 'id="audit-events-body"' in html
-    assert 'id="audit-domain"' in html
+    assert 'id="audit-events-domain"' in html
     assert 'id="load-audit-events"' in html
+
+
+def test_index_html_ids_are_unique() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    ids = re.findall(r'\bid="([^"]+)"', html)
+    duplicates = sorted({elem_id for elem_id in ids if ids.count(elem_id) > 1})
+    assert duplicates == [], f"duplicate ids in index.html: {duplicates}"
 
 
 def test_javascript_references_audit_endpoints() -> None:
@@ -909,3 +917,35 @@ def test_topbar_keeps_only_daily_controls() -> None:
     assert 'id="workspace-add"' in advanced
     # Switchboard chips stay hidden until they carry real data.
     assert 'title="Provider / Model" hidden' in topbar
+
+
+def test_chat_launcher_wired() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    # 聊天 tab + panel exist and panel carries the composer contract.
+    assert 'id="tab-chat"' in html
+    assert 'id="panel-chat"' in html
+    for element in ["chat-thread", "chat-agent", "chat-input", "chat-send", "chat-clear"]:
+        assert f'id="{element}"' in html
+    assert '<script src="ui/chat-launcher.js"></script>' in html
+    chat_js = (WEB_DIR / "ui" / "chat-launcher.js").read_text(encoding="utf-8")
+    # One chat turn == one policy-gated managed run; no new endpoints.
+    assert 'buildEndpoint("sessionRun")' in chat_js
+    assert 'buildEndpoint("sessionDetail"' in chat_js
+    assert 'buildEndpoint("sessionLogs"' in chat_js
+    # Policy denials surface decision/reason instead of a dead end.
+    assert "decision" in chat_js
+    app_js = APP_JS.read_text(encoding="utf-8")
+    assert 'state.activeTab === "chat"' in app_js
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".chat-bubble--user" in styles
+    assert ".chat-composer" in styles
+
+
+def test_sidebar_tabs_carry_orientation_sublabels() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    # Every nav tab explains itself with a one-line sublabel.
+    assert html.count('class="tab-desc"') == 15
+    for desc in ["傳訊息啟動工具", "治理事件紀錄", "workflow surface 目錄"]:
+        assert desc in html
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".tab-desc" in styles

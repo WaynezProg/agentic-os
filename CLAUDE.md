@@ -124,7 +124,7 @@ When fixing a bug: write the failing test first against the relevant module's te
 - **No LLM calls, no embeddings, no vector DB, no cloud sync.** P1-P9 are intentionally deterministic; see "Limitations" in README.md before proposing additions.
 - **`stop` only applies to `running` sessions.** The `shell` smoke exits immediately and cannot be stopped — use the `sleep` registry pattern in README.md for stop demos.
 - **Specs are authoritative for scope.** `specs/001-058*.md` define each phase's contract; cross-check before changing behavior, and update the matching spec in the same PR.
-- **README phase table is the canonical positioning for P0–P33.** When adding a phase or capability, update both the README phase table and the relevant spec — tests in `test_web.py` assert against this wording. P34–P42 (dual-track product) specs: `054`–`062`.
+- **README phase table is the canonical positioning for P0–P33.** When adding a phase or capability, update both the README phase table and the relevant spec — tests in `test_web.py` assert against this wording. P34–P43 (dual-track product) specs: `054`–`063`.
 
 ## Reference: phase scope (P0-P9)
 
@@ -146,7 +146,7 @@ When fixing a bug: write the failing test first against the relevant module's te
 
 P10–P33 (remote access, safe editing, editors, approval workbench, workspace/templates, daily dashboard) are **complete** — see README phase table for per-phase owns/does-not-own. Do not duplicate that table here.
 
-### Dual-track product (P34–P42, on `feat/p34-p38-dual-track-product`)
+### Dual-track product (P34–P43)
 
 | Phase | Owns | Does not own |
 |-------|------|--------------|
@@ -159,3 +159,4 @@ P10–P33 (remote access, safe editing, editors, approval workbench, workspace/t
 | P40 | `capability_inventory.py`, `GET /tools/capabilities`, `agentctl tools capabilities`, 工具 tab capability cards | writing tool configs, secret values (names only), memory content reads |
 | P41 | `read_transcript_tail` in `live_sessions.py`, `GET /sessions/live/transcript` (root-bounded path validation), radar inline transcript panel | sending messages, full-transcript search/pagination |
 | P42 | `mcp_alignment.py` cross-tool matrix + copy/remove through `SafeEditEngine` (dry-run default, backup/rollback, values never in responses), `GET /tools/mcp/matrix`, `POST /tools/mcp/{copy,remove}`, `agentctl tools mcp-*`, 工具 tab matrix UI | creating/editing server definitions, skills/plugins writes, bulk sync, project scopes |
+| P43 | `ui/chat-launcher.js` 聊天 tab — chat-shaped front on the existing policy-gated `POST /sessions` path (message → run, reply = session stdout, denials as system bubbles with decision/reason/session_id), sidebar `.tab-desc` sublabels | new daemon endpoints, LLM calls/routing, multi-turn process state, server-side chat history |
