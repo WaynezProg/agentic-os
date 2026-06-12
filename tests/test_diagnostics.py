@@ -17,11 +17,13 @@ def test_diagnostics_resources_snapshot(tmp_path: Path) -> None:
 
 
 def test_version_endpoint_is_stub(tmp_path: Path) -> None:
+    from agentic_os import __version__
+
     client = make_client(tmp_path)
     response = client.get("/version")
     assert response.status_code == 200
     body = response.json()
-    assert body["version"]
+    assert body["version"] == __version__
     assert body["update_check"] == "stub"
     assert body["update_available"] is False
 

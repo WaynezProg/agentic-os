@@ -3089,8 +3089,10 @@ def create_app(
 
     @app.get("/version")
     def version_info() -> dict[str, object]:
+        from agentic_os import __version__
+
         return {
-            "version": "0.1.0",
+            "version": __version__,
             "update_available": False,
             "update_check": "stub",
         }
