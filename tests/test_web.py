@@ -839,3 +839,19 @@ def test_overview_panel_puts_radar_first() -> None:
     assert panel_chunk.index('id="dashboard-v2"') < panel_chunk.index(
         'id="dashboard-workspace"'
     )
+
+
+def test_mcp_alignment_matrix_wired() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    assert 'mcpMatrix: "/tools/mcp/matrix"' in api_js
+    assert 'mcpCopy: "/tools/mcp/copy"' in api_js
+    assert 'mcpRemove: "/tools/mcp/remove"' in api_js
+    tool_discovery = (WEB_DIR / "ui" / "tool-discovery.js").read_text(encoding="utf-8")
+    assert "renderMcpMatrix" in tool_discovery
+    assert "mcp-matrix-table" in tool_discovery
+    assert "data-mcp-copy" in tool_discovery
+    assert "data-mcp-remove" in tool_discovery
+    assert "mcp-confirm" in tool_discovery
+    styles = STYLES_CSS.read_text(encoding="utf-8")
+    assert ".mcp-matrix-table" in styles
+    assert ".mcp-drift" in styles

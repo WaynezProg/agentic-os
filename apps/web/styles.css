@@ -1290,3 +1290,42 @@ details.subpanel > summary:hover {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* P42 MCP alignment matrix */
+.mcp-matrix-table {
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.mcp-matrix-table th,
+.mcp-matrix-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid rgba(125, 125, 125, 0.18);
+  text-align: center;
+}
+.mcp-matrix-table td:first-child {
+  text-align: left;
+}
+.mcp-drift td {
+  background: rgba(234, 179, 8, 0.08);
+}
+.mcp-cell-yes {
+  color: #22c55e;
+}
+.mcp-cell-no {
+  color: #94a3b8;
+}
+.mcp-cell-action {
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.mcp-matrix-table tr:hover .mcp-cell-action {
+  opacity: 1;
+}
+.mcp-confirm {
+  margin-top: 10px;
+  border: 1px solid rgba(125, 125, 125, 0.35);
+  border-radius: 8px;
+  padding: 12px;
+}
