@@ -231,3 +231,16 @@ def test_summarize_def_claude_entry_with_type_field(tmp_path: Path) -> None:
     assert summary["transport"] == "stdio"
     assert "command" in summary["fields"]
     assert "env:K" in summary["fields"]
+
+
+def test_dotted_server_names_rejected(tmp_path: Path) -> None:
+    """Names containing '.' would split into nested patch paths (codex review P2)."""
+    home = _make_home(tmp_path)
+    config = json.loads((home / ".claude.json").read_text())
+    config["mcpServers"]["evil.dot"] = {"command": "x"}
+    (home / ".claude.json").write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="'.'"):
+        build_copy_patch("claude", "gemini", "evil.dot", home)
+    with pytest.raises(ValueError, match="'.'"):
+        build_remove_patch("claude", "evil.dot", home)

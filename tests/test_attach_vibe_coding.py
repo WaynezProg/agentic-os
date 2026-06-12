@@ -204,7 +204,10 @@ def test_discover_finds_external_claude_session_in_workspace(tmp_path: Path) -> 
     log_dir = tmp_path / ".claude" / "projects" / "demo"
     log_dir.mkdir(parents=True)
     log_file = log_dir / "abc-123.jsonl"
-    log_file.write_text('{"type":"init","session_id":"abc-123"}\n{"type":"msg"}\n', encoding="utf-8")
+    log_file.write_text(
+        '{"type":"init","session_id":"abc-123","cwd":"' + str(tmp_path) + '"}\n{"type":"msg"}\n',
+        encoding="utf-8",
+    )
 
     claude_agent = AgentDefinition(
         id="claude",
@@ -282,7 +285,7 @@ def test_discover_does_not_read_secrets(tmp_path: Path) -> None:
     log_dir.mkdir()
     log_file = log_dir / "s1.jsonl"
     log_file.write_text(
-        '{"sessionId":"s1","env":{"OPENAI_API_KEY":"sk-REDACTED"}}\n',
+        '{"sessionId":"s1","cwd":"' + str(tmp_path) + '","env":{"OPENAI_API_KEY":"sk-REDACTED"}}\n',
         encoding="utf-8",
     )
 
@@ -320,7 +323,8 @@ def test_api_discover_endpoint_returns_external_sessions(tmp_path: Path) -> None
     log_dir = tmp_path / ".claude" / "projects" / "demo"
     log_dir.mkdir(parents=True)
     (log_dir / "abc.jsonl").write_text(
-        '{"type":"init","session_id":"abc-xyz"}\n', encoding="utf-8"
+        '{"type":"init","session_id":"abc-xyz","cwd":"' + str(tmp_path) + '"}\n',
+        encoding="utf-8",
     )
 
     registry = tmp_path / "agents.toml"
@@ -362,10 +366,14 @@ def test_api_bind_creates_session_with_external_id(tmp_path: Path) -> None:
 
     from agentic_os.api import create_app
 
+    log_root = tmp_path / "claude-logs"
+    log_root.mkdir()
+    log_file = log_root / "claude.jsonl"
+    log_file.write_text('{"sessionId":"ext-abc-123"}\n', encoding="utf-8")
     registry = tmp_path / "agents.toml"
     registry.write_text(
         textwrap.dedent(
-            """\
+            f"""\
             [[agents]]
             id = "claude"
             label = "Claude Code"
@@ -373,6 +381,7 @@ def test_api_bind_creates_session_with_external_id(tmp_path: Path) -> None:
             cwd_mode = "required"
             stop_policy = "process_group"
             tool_kind = "vibe_coding"
+            log_paths = ["{log_root}"]
             """
         ),
         encoding="utf-8",
@@ -388,7 +397,7 @@ def test_api_bind_creates_session_with_external_id(tmp_path: Path) -> None:
             "agent_id": "claude",
             "external_session_id": "ext-abc-123",
             "workspace_path": str(tmp_path),
-            "log_path": str(tmp_path / "claude.jsonl"),
+            "log_path": str(log_file),
         },
     )
 
@@ -409,10 +418,14 @@ def test_api_attach_preview_vibe_coding(tmp_path: Path) -> None:
 
     from agentic_os.api import create_app
 
+    log_root = tmp_path / "claude-logs"
+    log_root.mkdir()
+    log_file = log_root / "claude.jsonl"
+    log_file.write_text('{"sessionId":"ext-preview-1"}\n', encoding="utf-8")
     registry = tmp_path / "agents.toml"
     registry.write_text(
         textwrap.dedent(
-            """\
+            f"""\
             [[agents]]
             id = "claude"
             label = "Claude Code"
@@ -421,6 +434,7 @@ def test_api_attach_preview_vibe_coding(tmp_path: Path) -> None:
             stop_policy = "process_group"
             tool_kind = "vibe_coding"
             attach_command = ["claude", "--resume"]
+            log_paths = ["{log_root}"]
             """
         ),
         encoding="utf-8",
@@ -436,7 +450,7 @@ def test_api_attach_preview_vibe_coding(tmp_path: Path) -> None:
             "agent_id": "claude",
             "external_session_id": "ext-preview-1",
             "workspace_path": str(tmp_path),
-            "log_path": str(tmp_path / "claude.jsonl"),
+            "log_path": str(log_file),
         },
     )
     assert bind.status_code == 200
@@ -450,3 +464,95 @@ def test_api_attach_preview_vibe_coding(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["decision"] == "allow"
     assert payload["attach_command"] == ["claude", "--resume", "ext-preview-1"]
+
+
+def test_discover_excludes_other_workspaces_and_unscoped_sessions(tmp_path: Path) -> None:
+    """workspace_path must actually scope results (codex review P1)."""
+    from agentic_os.attach import discover_external_sessions
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    (log_dir / "mine.jsonl").write_text(
+        '{"session_id":"mine-1","cwd":"' + str(tmp_path / "ws") + '"}\n', encoding="utf-8"
+    )
+    (log_dir / "other.jsonl").write_text(
+        '{"session_id":"other-1","cwd":"/somewhere/else"}\n', encoding="utf-8"
+    )
+    (log_dir / "nocwd.jsonl").write_text('{"session_id":"nocwd-1"}\n', encoding="utf-8")
+    (tmp_path / "ws").mkdir()
+
+    agent = AgentDefinition(
+        id="claude",
+        label="Claude Code",
+        command=["claude"],
+        cwd_mode="required",
+        stop_policy="process_group",
+        log_paths=[str(log_dir)],
+        tool_kind="vibe_coding",
+    )
+
+    results = discover_external_sessions(workspace_path=str(tmp_path / "ws"), agents=[agent])
+    assert [r.external_session_id for r in results] == ["mine-1"]
+
+
+def test_api_bind_rejects_log_path_outside_agent_roots(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from agentic_os.api import create_app
+
+    log_root = tmp_path / "claude-logs"
+    log_root.mkdir()
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}\n", encoding="utf-8")
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        textwrap.dedent(
+            f"""\
+            [[agents]]
+            id = "claude"
+            label = "Claude Code"
+            command = ["claude"]
+            cwd_mode = "required"
+            stop_policy = "process_group"
+            tool_kind = "vibe_coding"
+            log_paths = ["{log_root}"]
+            """
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.post(
+        "/sessions/bind",
+        json={
+            "agent_id": "claude",
+            "external_session_id": "ext-1",
+            "workspace_path": str(tmp_path),
+            "log_path": str(outside),
+        },
+    )
+    assert response.status_code == 400
+
+    not_jsonl = log_root / "x.txt"
+    not_jsonl.write_text("hi", encoding="utf-8")
+    response = client.post(
+        "/sessions/bind",
+        json={
+            "agent_id": "claude",
+            "external_session_id": "ext-1",
+            "workspace_path": str(tmp_path),
+            "log_path": str(not_jsonl),
+        },
+    )
+    assert response.status_code == 400
+
+    missing_ws = client.post(
+        "/sessions/bind",
+        json={
+            "agent_id": "claude",
+            "external_session_id": "ext-1",
+            "workspace_path": str(tmp_path / "nope"),
+            "log_path": str(log_root / "claude.jsonl"),
+        },
+    )
+    assert missing_ws.status_code == 400

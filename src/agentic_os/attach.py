@@ -118,12 +118,46 @@ def evaluate_attach(
     return "allow", "attach permitted"
 
 
+def _session_workspace(jsonl: Path) -> str | None:
+    """Best-effort cwd/workspace recorded in the session's JSONL head."""
+    try:
+        with jsonl.open("r", encoding="utf-8", errors="replace") as fh:
+            for index, line in enumerate(fh):
+                if index >= 40:
+                    break
+                stripped = line.strip()
+                if not stripped.startswith("{"):
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                for key in ("cwd", "workspace", "workspace_path"):
+                    value = payload.get(key)
+                    if isinstance(value, str) and value:
+                        return value
+    except OSError:
+        return None
+    return None
+
+
 def discover_external_sessions(
     *,
     workspace_path: str,
     agents: list[AgentDefinition],
 ) -> list[DiscoveredSession]:
-    """Scan agent log_paths for external session files. Read-only; no secret contents returned."""
+    """Scan agent log_paths for external sessions recorded in workspace_path.
+
+    Sessions whose JSONL head carries no resolvable cwd are excluded —
+    the endpoint promises workspace-scoped results, so unscopable files
+    must not leak in (codex review P1).
+    """
+    try:
+        target = Path(workspace_path).expanduser().resolve()
+    except (TypeError, ValueError, OSError):
+        return []
     results: list[DiscoveredSession] = []
     for agent in agents:
         if agent.id not in _SUPPORTED:
@@ -143,6 +177,14 @@ def discover_external_sessions(
                 except Exception:  # parser must never crash the discover flow
                     continue
                 if not external_id:
+                    continue
+                session_ws = _session_workspace(jsonl)
+                if session_ws is None:
+                    continue
+                try:
+                    if Path(session_ws).expanduser().resolve() != target:
+                        continue
+                except (ValueError, OSError):
                     continue
                 started_at = _read_started_at(jsonl)
                 results.append(

@@ -237,12 +237,24 @@ def _patch_target(tool: str, home: Path) -> PatchTarget:
     )
 
 
+def _require_patchable_name(name: str) -> None:
+    # PatchEngine paths split on "." — a dotted server name would write
+    # a nested config shape instead of one key (codex review P2).
+    if "." in name:
+        msg = f"server names containing '.' are not supported for safe patching: {name}"
+        raise ValueError(msg)
+    if not name or "[" in name or "]" in name:
+        msg = f"unsupported server name for safe patching: {name!r}"
+        raise ValueError(msg)
+
+
 def build_copy_patch(
     from_tool: str,
     to_tool: str,
     name: str,
     home: Path,
 ) -> tuple[PatchTarget, list[PatchOp], dict[str, object]]:
+    _require_patchable_name(name)
     raw = read_server_def(from_tool, name, home)
     if raw is None:
         msg = f"server not found in {from_tool}: {name}"
@@ -258,6 +270,7 @@ def build_remove_patch(
     name: str,
     home: Path,
 ) -> tuple[PatchTarget, list[PatchOp], dict[str, object]]:
+    _require_patchable_name(name)
     raw = read_server_def(tool, name, home)
     if raw is None:
         msg = f"server not found in {tool}: {name}"

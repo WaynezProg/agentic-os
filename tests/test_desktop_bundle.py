@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGING = ROOT / "apps/desktop/src-tauri/bundle-resources/agentic-os"
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="stages a macOS app bundle")
 def test_prepare_desktop_bundle_layout() -> None:
     env = os.environ.copy()
     result = subprocess.run(

@@ -1350,6 +1350,33 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+        # Bound sessions feed the logs API the stored paths verbatim, so
+        # reject paths the caller invented (codex review P2): the log
+        # must be a real .jsonl under the agent's configured log roots
+        # and the workspace must exist.
+        if not Path(request.workspace_path).expanduser().is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"workspace_path is not a directory: {request.workspace_path}",
+            )
+        try:
+            resolved_log = Path(request.log_path).expanduser().resolve()
+        except (ValueError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if resolved_log.suffix != ".jsonl" or not resolved_log.is_file():
+            raise HTTPException(
+                status_code=400, detail="log_path must be an existing .jsonl file"
+            )
+        log_roots = [Path(p).expanduser() for p in agent.log_paths]
+        if not any(
+            root.is_dir() and resolved_log.is_relative_to(root.resolve())
+            for root in log_roots
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"log_path outside {agent.id} log roots",
+            )
+
         session_create = SessionCreate(
             agent_id=agent.id,
             cwd=request.workspace_path,
