@@ -2997,3 +2997,177 @@ def test_live_transcript_rejects_non_jsonl(tmp_path: Path) -> None:
         params={"tool": "claude", "log_path": str(sneaky)},
     )
     assert response.status_code == 400
+
+
+# --- P42 mcp alignment ---
+
+
+def _make_alignment_client(tmp_path: Path) -> tuple[TestClient, Path]:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    home = tmp_path / "home"
+    (home / ".claude").mkdir(parents=True)
+    (home / ".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "github": {
+                        "command": "gh-mcp",
+                        "args": ["--stdio"],
+                        "env": {"GH_TOKEN": "sk-FAKE-SECRET"},
+                    }
+                },
+                "keepTopLevel": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (home / ".gemini").mkdir(parents=True)
+    (home / ".gemini" / "settings.json").write_text(
+        json.dumps({"mcpServers": {"context7": {"command": "npx"}}}),
+        encoding="utf-8",
+    )
+    (home / ".codex").mkdir(parents=True)
+    (home / ".codex" / "config.toml").write_text('model = "gpt-5"\n', encoding="utf-8")
+    client = TestClient(
+        create_app(
+            state_dir=tmp_path / ".agentic-os",
+            registry_path=registry,
+            capability_home=home,
+        )
+    )
+    return client, home
+
+
+def test_mcp_matrix_endpoint(tmp_path: Path) -> None:
+    client, _ = _make_alignment_client(tmp_path)
+    response = client.get("/tools/mcp/matrix")
+    assert response.status_code == 200
+    body = response.json()
+    servers = {entry["name"]: entry["tools"] for entry in body["servers"]}
+    assert servers["github"]["claude"] is True
+    assert servers["github"]["gemini"] is False
+    assert servers["context7"]["gemini"] is True
+    assert "sk-FAKE-SECRET" not in response.text
+
+
+def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    before = (home / ".gemini" / "settings.json").read_text(encoding="utf-8")
+    response = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "gemini"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is False
+    assert body["summary"]["transport"] == "stdio"
+    assert "sk-FAKE-SECRET" not in response.text
+    assert "gh-mcp" not in response.text
+    assert (home / ".gemini" / "settings.json").read_text(encoding="utf-8") == before
+
+
+def test_mcp_copy_apply_writes_target(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    response = client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "dry_run": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is True
+    assert body["patch_id"]
+    target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
+    assert target["mcpServers"]["github"]["command"] == "gh-mcp"
+    assert target["mcpServers"]["context7"] == {"command": "npx"}
+    source = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
+    assert source["keepTopLevel"] == 1
+    assert "sk-FAKE-SECRET" not in response.text
+
+
+def test_mcp_copy_to_codex_toml_roundtrip(tmp_path: Path) -> None:
+    import tomllib
+
+    client, home = _make_alignment_client(tmp_path)
+    response = client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "codex",
+            "dry_run": False,
+        },
+    )
+    assert response.status_code == 200
+    with (home / ".codex" / "config.toml").open("rb") as fh:
+        doc = tomllib.load(fh)
+    assert doc["mcp_servers"]["github"]["command"] == "gh-mcp"
+    assert doc["model"] == "gpt-5"
+
+
+def test_mcp_copy_conflicts(tmp_path: Path) -> None:
+    client, _ = _make_alignment_client(tmp_path)
+    missing = client.post(
+        "/tools/mcp/copy",
+        json={"server": "nope", "from_tool": "claude", "to_tool": "gemini"},
+    )
+    assert missing.status_code == 404
+    bad_tool = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "vscode"},
+    )
+    assert bad_tool.status_code == 400
+    client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "dry_run": False,
+        },
+    )
+    duplicate = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "gemini"},
+    )
+    assert duplicate.status_code == 409
+
+
+def test_mcp_copy_refuses_unparseable_target(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    corrupt = home / ".gemini" / "settings.json"
+    corrupt.write_text("{broken", encoding="utf-8")
+    response = client.post(
+        "/tools/mcp/copy",
+        json={
+            "server": "github",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "dry_run": False,
+        },
+    )
+    assert response.status_code == 400
+    assert corrupt.read_text(encoding="utf-8") == "{broken"
+
+
+def test_mcp_remove_apply_and_404(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    response = client.post(
+        "/tools/mcp/remove",
+        json={"tool": "claude", "server": "github", "dry_run": False},
+    )
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    doc = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
+    assert "github" not in doc["mcpServers"]
+    assert doc["keepTopLevel"] == 1
+    again = client.post(
+        "/tools/mcp/remove",
+        json={"tool": "claude", "server": "github"},
+    )
+    assert again.status_code == 404

@@ -90,6 +90,7 @@ from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
+from agentic_os import mcp_alignment
 from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
 from agentic_os.live_sessions import (
     default_roots,
@@ -259,6 +260,19 @@ class LiveOpenTerminalRequest(BaseModel):
     tool: str
     session_id: str
     workspace: str
+
+
+class McpCopyRequest(BaseModel):
+    server: str
+    from_tool: str
+    to_tool: str
+    dry_run: bool = True
+
+
+class McpRemoveRequest(BaseModel):
+    tool: str
+    server: str
+    dry_run: bool = True
 
 
 class ApprovalRejectRequest(BaseModel):
@@ -445,6 +459,130 @@ def create_app(
             "tools": [capabilities_dict(c) for c in read_all_capabilities(capability_home)],
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         }
+
+    def _alignment_home() -> Path:
+        return capability_home or Path.home()
+
+    def _require_alignment_tool(tool: str) -> None:
+        if tool not in mcp_alignment.SUPPORTED_TOOLS:
+            raise HTTPException(status_code=400, detail=f"unsupported tool: {tool}")
+
+    def _apply_alignment_patch(
+        target: object,
+        ops: list[object],
+        summary: dict[str, object],
+        *,
+        dry_run: bool,
+        action: str,
+        server: str,
+    ) -> dict[str, object]:
+        try:
+            result = safe_edit_engine.apply(
+                target,  # type: ignore[arg-type]
+                ops,  # type: ignore[arg-type]
+                source="mcp_alignment",
+                dry_run=dry_run,
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=400, detail={"validation_errors": exc.errors}
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        backup = result.backup or {}
+        return {
+            "action": action,
+            "server": server,
+            "applied": result.applied,
+            "patch_id": result.patch_id,
+            "summary": summary,
+            "validation": result.validation,
+            "backup_path": backup.get("path"),
+        }
+
+    @app.get("/tools/mcp/matrix")
+    def mcp_matrix() -> dict[str, object]:
+        """Cross-tool MCP server presence matrix (P42). Read-only, names only."""
+        home = _alignment_home()
+        names_by_tool = {
+            tool: set(mcp_alignment.read_server_names(tool, home))
+            for tool in mcp_alignment.SUPPORTED_TOOLS
+        }
+        all_names = sorted(set().union(*names_by_tool.values()))
+        servers = [
+            {
+                "name": name,
+                "tools": {tool: name in names_by_tool[tool] for tool in names_by_tool},
+            }
+            for name in all_names
+        ]
+        servers.sort(key=lambda s: (-sum(s["tools"].values()), s["name"]))
+        return {
+            "servers": servers,
+            "tools": list(mcp_alignment.SUPPORTED_TOOLS),
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+
+    @app.post("/tools/mcp/copy")
+    def mcp_copy(payload: McpCopyRequest) -> dict[str, object]:
+        """Copy an MCP server definition between tools (P42). Dry-run by default."""
+        _require_alignment_tool(payload.from_tool)
+        _require_alignment_tool(payload.to_tool)
+        home = _alignment_home()
+        if payload.server in mcp_alignment.read_server_names(payload.to_tool, home):
+            raise HTTPException(
+                status_code=409,
+                detail=f"server already configured in {payload.to_tool}: {payload.server}",
+            )
+        parse_error = mcp_alignment.target_config_parse_error(payload.to_tool, home)
+        if parse_error:
+            raise HTTPException(status_code=400, detail=parse_error)
+        try:
+            target, ops, summary = mcp_alignment.build_copy_patch(
+                payload.from_tool, payload.to_tool, payload.server, home
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        response = _apply_alignment_patch(
+            target,
+            ops,
+            summary,
+            dry_run=payload.dry_run,
+            action="copy",
+            server=payload.server,
+        )
+        response["from_tool"] = payload.from_tool
+        response["to_tool"] = payload.to_tool
+        return response
+
+    @app.post("/tools/mcp/remove")
+    def mcp_remove(payload: McpRemoveRequest) -> dict[str, object]:
+        """Remove an MCP server from a tool config (P42). Dry-run by default."""
+        _require_alignment_tool(payload.tool)
+        home = _alignment_home()
+        parse_error = mcp_alignment.target_config_parse_error(payload.tool, home)
+        if parse_error:
+            raise HTTPException(status_code=400, detail=parse_error)
+        try:
+            target, ops, summary = mcp_alignment.build_remove_patch(
+                payload.tool, payload.server, home
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        response = _apply_alignment_patch(
+            target,
+            ops,
+            summary,
+            dry_run=payload.dry_run,
+            action="remove",
+            server=payload.server,
+        )
+        response["tool"] = payload.tool
+        return response
 
     @app.get("/agentic/inventory")
     def agentic_inventory() -> dict[str, object]:

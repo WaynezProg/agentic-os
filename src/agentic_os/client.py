@@ -47,6 +47,28 @@ class AgenticClient:
     def tools_capabilities(self) -> dict[str, Any]:
         return self._get("/tools/capabilities")
 
+    def mcp_matrix(self) -> dict[str, Any]:
+        return self._get("/tools/mcp/matrix")
+
+    def mcp_copy(
+        self, server: str, from_tool: str, to_tool: str, apply: bool = False
+    ) -> dict[str, Any]:
+        return self._post(
+            "/tools/mcp/copy",
+            {
+                "server": server,
+                "from_tool": from_tool,
+                "to_tool": to_tool,
+                "dry_run": not apply,
+            },
+        )
+
+    def mcp_remove(self, tool: str, server: str, apply: bool = False) -> dict[str, Any]:
+        return self._post(
+            "/tools/mcp/remove",
+            {"tool": tool, "server": server, "dry_run": not apply},
+        )
+
     def show_session(self, session_id: str) -> dict[str, Any]:
         return self._get(f"/sessions/{_validate_path_id(session_id)}")
 

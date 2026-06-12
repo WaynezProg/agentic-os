@@ -334,6 +334,56 @@ def tools_capabilities(api: str | None = _api_option()) -> None:
         )
 
 
+def _echo_alignment_result(data: dict[str, object]) -> None:
+    mode = "APPLIED" if data.get("applied") else "dry-run（加 --apply 才會寫入）"
+    summary = data.get("summary") or {}
+    fields = ",".join(summary.get("fields", [])) if isinstance(summary, dict) else ""
+    typer.echo(
+        f"{data.get('action')}\t{data.get('server')}\t{mode}\t"
+        f"transport={summary.get('transport', '-') if isinstance(summary, dict) else '-'}\t"
+        f"fields={fields or '-'}\tpatch={data.get('patch_id', '-')}\t"
+        f"backup={data.get('backup_path', '-')}"
+    )
+
+
+@tools_cmd.command("mcp-matrix")
+def tools_mcp_matrix(api: str | None = _api_option()) -> None:
+    """Cross-tool MCP server presence matrix (P42)."""
+    data = _run_api_call(lambda: make_client(api).mcp_matrix())
+    tools = data.get("tools", [])
+    typer.echo("server\t" + "\t".join(tools))
+    for entry in data.get("servers", []):
+        marks = "\t".join("✓" if entry["tools"].get(tool) else "-" for tool in tools)
+        typer.echo(f"{entry['name']}\t{marks}")
+
+
+@tools_cmd.command("mcp-copy")
+def tools_mcp_copy(
+    server: str = typer.Option(..., "--server", help="MCP server name."),
+    from_tool: str = typer.Option(..., "--from", help="Source tool."),
+    to_tool: str = typer.Option(..., "--to", help="Target tool."),
+    apply: bool = typer.Option(False, "--apply", help="Actually write (default dry-run)."),
+    api: str | None = _api_option(),
+) -> None:
+    """Copy an MCP server definition between tools (P42). Dry-run by default."""
+    data = _run_api_call(
+        lambda: make_client(api).mcp_copy(server, from_tool, to_tool, apply=apply)
+    )
+    _echo_alignment_result(data)
+
+
+@tools_cmd.command("mcp-remove")
+def tools_mcp_remove(
+    tool: str = typer.Option(..., "--tool", help="Target tool."),
+    server: str = typer.Option(..., "--server", help="MCP server name."),
+    apply: bool = typer.Option(False, "--apply", help="Actually write (default dry-run)."),
+    api: str | None = _api_option(),
+) -> None:
+    """Remove an MCP server from a tool config (P42). Dry-run by default."""
+    data = _run_api_call(lambda: make_client(api).mcp_remove(tool, server, apply=apply))
+    _echo_alignment_result(data)
+
+
 @sessions.command("live")
 def sessions_live(
     within_hours: int = typer.Option(72, "--within-hours", help="Scan window in hours."),
