@@ -3171,3 +3171,14 @@ def test_mcp_remove_apply_and_404(tmp_path: Path) -> None:
         json={"tool": "claude", "server": "github"},
     )
     assert again.status_code == 404
+
+
+def test_cors_allows_tauri_webview_origins(tmp_path: Path) -> None:
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+    for origin in ("tauri://localhost", "https://tauri.localhost", "http://127.0.0.1:5173"):
+        response = client.get("/health", headers={"Origin": origin})
+        assert response.headers.get("access-control-allow-origin") == origin, origin
+    blocked = client.get("/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in blocked.headers

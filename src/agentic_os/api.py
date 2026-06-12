@@ -339,9 +339,17 @@ def create_app(
     app.state.control_plane = control_plane
     app.state.approval_store = approval_store
     app.state.usage_store = usage_store
+    # tauri://localhost (macOS/Linux webview) and https://tauri.localhost
+    # (Windows webview) are the packaged desktop app's origins — without
+    # them every fetch from the app window is CORS-blocked and the
+    # connection gate spins forever.
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
+        allow_origin_regex=(
+            r"^(https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?"
+            r"|tauri://localhost"
+            r"|https://tauri\.localhost)$"
+        ),
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
