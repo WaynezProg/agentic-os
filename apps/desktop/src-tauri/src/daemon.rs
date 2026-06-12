@@ -76,6 +76,9 @@ fn run_script_at(script_path: &Path, working_dir: &Path, command: &str) -> Resul
         .arg(command)
         .current_dir(working_dir)
         .env("PATH", hardened_path())
+        // Crash-orphan guard: the daemon watches this pid and exits
+        // when the app dies without a clean stop_stack.
+        .env("AGENTIC_OS_PARENT_PID", std::process::id().to_string())
         .output()
         .map_err(|error| error.to_string())?;
     if !output.status.success() {

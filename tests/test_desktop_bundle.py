@@ -26,6 +26,12 @@ def test_prepare_desktop_bundle_layout() -> None:
     assert (STAGING / "scripts/lib/desktop-common.sh").is_file()
     assert (STAGING / "web/index.html").is_file()
     assert (STAGING / "registry/agents.toml").is_file()
-    agentd = STAGING / "runtime/.venv/bin/agentd"
+    agentd = STAGING / "runtime/python/bin/agentd"
     assert agentd.is_file()
     assert os.access(agentd, os.X_OK)
+    # Relocatable runtime: package materialized inside the bundled
+    # python, and nothing points back at the repo checkout.
+    site = STAGING / "runtime/python/lib/python3.12/site-packages"
+    assert (site / "agentic_os/api.py").is_file()
+    for pth in site.glob("*.pth"):
+        assert "src" not in pth.read_text(), f"repo reference leaked via {pth.name}"

@@ -25,6 +25,13 @@ fi
 PID_FILE="$(desktop_runtime_dir)/daemon.pid"
 LOG_FILE="$(desktop_runtime_dir)/daemon.log"
 
+# Desktop crash-orphan guard: the app passes its pid so the daemon can
+# exit when the app dies abnormally. Empty for CLI/manual starts.
+PARENT_WATCH_ARGS=()
+if [[ -n "${AGENTIC_OS_PARENT_PID:-}" ]]; then
+  PARENT_WATCH_ARGS=(--parent-watch-pid "$AGENTIC_OS_PARENT_PID")
+fi
+
 health_check() {
   python3 - "$API_URL/health" <<'PY'
 import sys
@@ -103,13 +110,15 @@ cmd_start() {
         --host "$API_HOST" \
         --port "$API_PORT" \
         --state-dir "$STATE_DIR" \
-        --registry "$REGISTRY" >>"$LOG_FILE" 2>&1 &
+        --registry "$REGISTRY" \
+        ${PARENT_WATCH_ARGS[@]+"${PARENT_WATCH_ARGS[@]}"} >>"$LOG_FILE" 2>&1 &
     else
       nohup uv run agentd serve \
         --host "$API_HOST" \
         --port "$API_PORT" \
         --state-dir "$STATE_DIR" \
-        --registry "$REGISTRY" >>"$LOG_FILE" 2>&1 &
+        --registry "$REGISTRY" \
+        ${PARENT_WATCH_ARGS[@]+"${PARENT_WATCH_ARGS[@]}"} >>"$LOG_FILE" 2>&1 &
     fi
     echo $! >"$PID_FILE"
   )

@@ -33,10 +33,19 @@ def serve(
         "--registry",
         help="Agent registry TOML.",
     ),
+    parent_watch_pid: int | None = typer.Option(
+        None,
+        "--parent-watch-pid",
+        help="Exit when this process disappears (desktop crash-orphan guard).",
+    ),
 ) -> None:
     if host not in _LOOPBACK and os.environ.get("AGENTIC_OS_ALLOW_PUBLIC_BIND") != "1":
         raise typer.BadParameter(
             "agentd must bind loopback only (127.0.0.1); use a remote gateway for external access."
         )
+    if parent_watch_pid is not None:
+        from agentic_os.parent_watch import start_parent_watch
+
+        start_parent_watch(parent_watch_pid)
     api = create_app(state_dir=state_dir, registry_path=registry)
     uvicorn.run(api, host=host, port=port)
