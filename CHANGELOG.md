@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.0.1 — 2026-06-12
+
+Hardening release driven by an external code review (codex).
+
+- **CI portability**: the macOS-only bundle staging test skips on
+  non-darwin runners and the script guards `uname` — main is green
+  again.
+- **`/sessions/discover` is now actually workspace-scoped**: sessions
+  must carry a resolvable `cwd` matching the requested workspace;
+  unscopable files are excluded.
+- **`/sessions/bind` validates caller paths**: the workspace must
+  exist and the log must be a real `.jsonl` under the agent's
+  configured log roots (bound sessions feed the logs API those paths
+  verbatim).
+- **MCP alignment rejects dotted server names**: PatchEngine paths
+  split on `.`, so `copy`/`remove` now refuse names that would write a
+  nested config shape.
+- Desktop crash-orphan watchdog (`--parent-watch-pid`) and explanatory
+  empty states for managed-run tabs (landed post-v1.0.0, first
+  packaged here).
+
+
 ## v1.0.0 — 2026-06-12
 
 First release. agentic-os is a local **Harness Manager**: the management
