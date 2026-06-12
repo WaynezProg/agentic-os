@@ -8,6 +8,15 @@ window.AgenticOs = window.AgenticOs || {};
   const HISTORY_LIMIT = 200;
   const POLL_INTERVAL_MS = 1500;
   const TERMINAL_STATUSES = new Set(["succeeded", "failed", "stopped"]);
+  // Replies are bounded previews, not the durable record: cap what we
+  // fetch, what we render, and what lands in localStorage. Full output
+  // stays behind the session log link.
+  const REPLY_FETCH_MAX_LINES = 400;
+  const REPLY_TAIL_LINES = 120;
+  const REPLY_TAIL_CHARS = 4000;
+  const STDERR_TAIL_LINES = 40;
+  const STDERR_TAIL_CHARS = 1500;
+  const TRUNCATION_MARKER = "⋯（輸出過長，僅顯示片段預覽；完整輸出請點上方日誌連結）";
 
   let bound = false;
   let history = [];
@@ -36,7 +45,11 @@ window.AgenticOs = window.AgenticOs || {};
 
   function saveHistory() {
     try {
-      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-HISTORY_LIMIT)));
+      const bounded = history.slice(-HISTORY_LIMIT).map((entry) => ({
+        ...entry,
+        text: typeof entry.text === "string" ? entry.text.slice(0, REPLY_TAIL_CHARS + 200) : entry.text,
+      }));
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(bounded));
     } catch {
       // Best-effort: history is a convenience, not a record of truth.
     }
@@ -174,30 +187,51 @@ window.AgenticOs = window.AgenticOs || {};
     return history.find((entry) => entry.role === "tool" && entry.sessionId === sessionId);
   }
 
+  function boundTail(payload, maxLines, maxChars) {
+    let lines = (payload.entries || []).map((entry) => entry.line);
+    let clipped = Boolean(payload.truncated);
+    if (lines.length > maxLines) {
+      lines = lines.slice(-maxLines);
+      clipped = true;
+    }
+    let text = lines.join("\n");
+    if (text.length > maxChars) {
+      text = text.slice(-maxChars);
+      clipped = true;
+    }
+    return { text, clipped };
+  }
+
+  async function fetchStreamTail(sessionId, stream, maxLines, maxChars) {
+    const path = Ao.buildEndpoint("sessionLogs", { session_id: sessionId });
+    const payload = await Ao.apiFetch(
+      `${path}?stream=${stream}&max_lines=${REPLY_FETCH_MAX_LINES}`
+    );
+    return boundTail(payload, maxLines, maxChars);
+  }
+
   async function fetchReplyText(sessionId, status) {
     let text = "";
+    let clipped = false;
     try {
-      const stdout = await Ao.apiFetch(
-        `${Ao.buildEndpoint("sessionLogs", { session_id: sessionId })}?stream=stdout`
-      );
-      text = (stdout.entries || []).map((entry) => entry.line).join("\n");
+      const stdout = await fetchStreamTail(sessionId, "stdout", REPLY_TAIL_LINES, REPLY_TAIL_CHARS);
+      text = stdout.text;
+      clipped = stdout.clipped;
     } catch {
       // Logs may not exist yet; keep placeholder.
     }
     if (status === "failed") {
       try {
-        const stderr = await Ao.apiFetch(
-          `${Ao.buildEndpoint("sessionLogs", { session_id: sessionId })}?stream=stderr`
-        );
-        const errText = (stderr.entries || []).map((entry) => entry.line).join("\n");
-        if (errText) {
-          text = text ? `${text}\n[stderr]\n${errText}` : `[stderr]\n${errText}`;
+        const stderr = await fetchStreamTail(sessionId, "stderr", STDERR_TAIL_LINES, STDERR_TAIL_CHARS);
+        if (stderr.text) {
+          text = text ? `${text}\n[stderr]\n${stderr.text}` : `[stderr]\n${stderr.text}`;
+          clipped = clipped || stderr.clipped;
         }
       } catch {
         // Best-effort.
       }
     }
-    return text;
+    return clipped ? `${TRUNCATION_MARKER}\n${text}` : text;
   }
 
   function stopPolling(sessionId) {

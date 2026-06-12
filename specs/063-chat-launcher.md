@@ -17,8 +17,11 @@ presentation of that existing run path.
   - composer (harness select + message textarea + Enter-to-send) feeding
     the existing `POST /sessions` gate; workspace selection supplies cwd.
   - one chat turn == one managed session. The user bubble is the message;
-    the tool reply bubble is that session's stdout (stderr appended on
-    failure), with live status chip polled until terminal.
+    the tool reply bubble is a **bounded preview** of that session's
+    stdout (stderr appended on failure) with a live status chip polled
+    until terminal. Bounds: `max_lines` on the fetch plus client-side
+    line/char caps with an explicit truncation marker; localStorage only
+    ever holds the capped preview. Full output stays in the log view.
   - policy `deny` / `approval_required` render as system bubbles carrying
     decision + reason + shadow `session_id`, linking to session logs.
   - thread history persists client-side only (localStorage, capped),
@@ -43,7 +46,8 @@ presentation of that existing run path.
 2. HTTP 403/409 → system bubble with `decision/reason/session_id`; no
    user-facing dead end (audit link preserved).
 3. accepted → tool bubble polls `GET /sessions/{id}` every 1.5s until
-   `succeeded|failed|stopped`, then renders stdout tail from
-   `GET /sessions/{id}/logs`.
+   `succeeded|failed|stopped`, then renders a bounded stdout preview from
+   `GET /sessions/{id}/logs?max_lines=…` (client caps lines/chars and
+   marks truncation).
 4. 清除歷史 wipes only the local thread; session records and evidence
    stay under the 執行 tab.

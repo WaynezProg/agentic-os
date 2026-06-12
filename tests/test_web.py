@@ -26,29 +26,19 @@ RUN_TEMPLATE_LAUNCHER_JS = WEB_DIR / "ui" / "run-template-launcher.js"
 DAILY_DASHBOARD_JS = WEB_DIR / "ui" / "daily-dashboard.js"
 
 
+def _web_javascript_paths() -> list[Path]:
+    # Auto-collect from index.html so cross-module guards can never lag
+    # behind the real load list (a hardcoded list gave false greens).
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    sources = re.findall(r'<script src="([^"]+\.js)"', html)
+    return [WEB_DIR / src for src in sources]
+
+
 def _web_javascript_sources() -> str:
-    return "".join(
-        path.read_text(encoding="utf-8")
-        for path in (
-            APP_JS,
-            API_JS,
-            CATALOG_EDITOR_JS,
-            CONFIG_EDITOR_JS,
-            PROFILE_EDITOR_JS,
-            REGISTRY_EDITOR_JS,
-            CONTROL_PLANE_EDITOR_JS,
-            APPROVAL_WORKBENCH_JS,
-            REMOTE_CONSOLE_JS,
-            PRODUCT_POLISH_JS,
-            ROLLBACK_JS,
-            ACTIONS_JS,
-            WORKSPACE_MANAGER_JS,
-            PROVIDER_SWITCHBOARD_JS,
-            RUN_TEMPLATE_LAUNCHER_JS,
-            DAILY_DASHBOARD_JS,
-        )
-        if path.is_file()
-    )
+    paths = _web_javascript_paths()
+    missing = [str(path) for path in paths if not path.is_file()]
+    assert not missing, f"index.html references missing scripts: {missing}"
+    return "".join(path.read_text(encoding="utf-8") for path in paths)
 
 
 def test_static_web_files_exist() -> None:
@@ -949,3 +939,35 @@ def test_sidebar_tabs_carry_orientation_sublabels() -> None:
         assert desc in html
     styles = STYLES_CSS.read_text(encoding="utf-8")
     assert ".tab-desc" in styles
+
+
+def test_chat_reply_preview_is_bounded() -> None:
+    chat_js = (WEB_DIR / "ui" / "chat-launcher.js").read_text(encoding="utf-8")
+    # Fetch is server-capped and the rendered/stored preview is client-capped.
+    assert "max_lines=${REPLY_FETCH_MAX_LINES}" in chat_js
+    for constant in ["REPLY_TAIL_LINES", "REPLY_TAIL_CHARS", "TRUNCATION_MARKER"]:
+        assert constant in chat_js
+    # localStorage never stores unbounded output.
+    assert "slice(0, REPLY_TAIL_CHARS + 200)" in chat_js
+
+
+def test_web_javascript_sources_track_index_script_tags() -> None:
+    paths = _web_javascript_paths()
+    names = {path.name for path in paths}
+    # The guard bundle follows index.html, so new modules are always scanned.
+    for required in ["app.js", "api.js", "chat-launcher.js", "dashboard-v2.js", "tool-discovery.js"]:
+        assert required in names
+    assert "initChatLauncher" in _web_javascript_sources()
+
+
+def test_logs_tab_is_self_sufficient() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    panel = html[html.index('id="panel-logs"') : html.index('id="panel-memory"')]
+    # Entering 日誌 directly must offer a session picker, not demand an
+    # ID whose input lives on another panel.
+    assert 'id="log-session-picker"' in panel
+    assert 'id="log-open-in-sessions"' in panel
+    app_js = APP_JS.read_text(encoding="utf-8")
+    assert "populateLogSessionPicker" in app_js
+    assert 'state.activeTab === "logs"' in app_js
+    assert "loadLogsTab" in app_js

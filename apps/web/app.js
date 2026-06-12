@@ -138,6 +138,24 @@ function bindControls() {
   byId("log-stream").addEventListener("change", () => {
     resetLogState();
   });
+  document.getElementById("log-session-picker")?.addEventListener("change", (event) => {
+    const sessionId = event.target.value;
+    byId("log-session-id").value = sessionId;
+    byId("log-after").value = "0";
+    if (sessionId) {
+      loadLogs();
+    }
+  });
+  document.getElementById("log-open-in-sessions")?.addEventListener("click", () => {
+    const picked = document.getElementById("log-session-picker")?.value;
+    if (picked) {
+      byId("log-session-id").value = picked;
+    }
+    showTab("sessions");
+    if (byId("log-session-id").value.trim()) {
+      byId("load-logs").click();
+    }
+  });
   byId("catalog-load").addEventListener("click", loadCatalog);
   byId("harness-config-load").addEventListener("click", loadHarnessNativeConfig);
   byId("approval-load").addEventListener("click", loadApprovalsTab);
@@ -186,7 +204,7 @@ function loadActiveTab() {
       loadSessionTimeline(selectedSession);
     }
   } else if (state.activeTab === "logs") {
-    loadLogs();
+    loadLogsTab();
   } else if (state.activeTab === "memory") {
     loadMemory();
   } else if (state.activeTab === "skills") {
@@ -402,6 +420,38 @@ function renderTimelineEntry(entry) {
       <p>${escapeHtml(entry.message || "")}</p>
     </article>
   `;
+}
+
+async function populateLogSessionPicker() {
+  const select = document.getElementById("log-session-picker");
+  if (!select) {
+    return;
+  }
+  try {
+    const data = await apiFetch(buildEndpoint("sessions"));
+    const sessions = (data.sessions || []).slice(0, 50);
+    const current = byId("log-session-id").value.trim();
+    select.replaceChildren(
+      new Option("— 選擇 session —", ""),
+      ...sessions.map((session) => {
+        const label = `${session.id.slice(0, 12)}… · ${session.agent_id} · ${session.status}`;
+        const option = new Option(label, session.id);
+        option.selected = session.id === current;
+        return option;
+      })
+    );
+  } catch (error) {
+    setMessage("logs-message", `無法載入 session 清單：${error.message}`, true);
+  }
+}
+
+async function loadLogsTab() {
+  await populateLogSessionPicker();
+  if (byId("log-session-id").value.trim()) {
+    await loadLogs();
+  } else {
+    setMessage("logs-message", "從上方選一個 session 載入事件；時間軸與即時輸出在「執行」分頁。");
+  }
 }
 
 async function loadLogs() {
