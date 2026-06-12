@@ -72,6 +72,15 @@ cmd_status() {
 }
 
 cmd_start() {
+  if desktop_bundle_mode; then
+    # Packaged app: the Tauri window serves bundled assets directly
+    # (tauri://localhost). A loopback web server here is a useless
+    # extra process and an orphan risk on crash — skip it. `stop` and
+    # `reconcile` stay live to clean up servers from older versions.
+    echo "ui server skipped (bundled assets served by the app)" >&2
+    cmd_status
+    exit 0
+  fi
   local pid
   pid="$(read_pid "$PID_FILE" || true)"
   if is_running "$pid"; then
