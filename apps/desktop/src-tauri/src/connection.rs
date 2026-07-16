@@ -23,8 +23,8 @@ pub fn connection_profile() -> Result<ConnectionProfile, String> {
     let settings = settings::load_settings()?;
     if settings.connection.mode == "remote" {
         let gateway = remote::validate_remote_gateway(&settings.remote.remote_gateway)?;
-        let token_present = keychain::load_remote_token(&gateway, &settings.remote.device_id)?
-            .is_some();
+        let token_present =
+            keychain::load_remote_token(&gateway, &settings.remote.device_id)?.is_some();
         Ok(ConnectionProfile {
             mode: "remote".to_string(),
             api_url: gateway.clone(),
@@ -46,7 +46,7 @@ pub fn api_request(method: &str, path: &str, body: Option<&str>) -> Result<Strin
     if settings.connection.mode == "remote" {
         remote::gateway_request(&settings, method, path, body)
     } else {
-        dispatch_local(method, path, body)
+        remote::request(&settings.local.api_url, method, path, body, None)
     }
 }
 
@@ -75,15 +75,6 @@ pub fn probe_remote_connection() -> Result<RemoteProbeResult, String> {
         events_ok,
         detail,
     })
-}
-
-fn dispatch_local(method: &str, path: &str, body: Option<&str>) -> Result<String, String> {
-    match method.to_uppercase().as_str() {
-        "GET" => remote::get_json(path),
-        "POST" => remote::post_json(path, body),
-        "DELETE" => remote::delete_json(path),
-        other => Err(format!("unsupported method: {other}")),
-    }
 }
 
 #[cfg(test)]

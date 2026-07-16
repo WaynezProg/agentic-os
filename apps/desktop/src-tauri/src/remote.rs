@@ -3,6 +3,21 @@ use std::io::Read;
 const GATEWAY_TRANSPORT_ERROR: &str =
     "remote gateway must use https; http:// is allowed only for localhost";
 
+pub fn is_supported_method(method: &str) -> bool {
+    matches!(
+        method.to_ascii_uppercase().as_str(),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+    )
+}
+
+fn normalize_path(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
+}
+
 pub fn validate_remote_gateway(gateway: &str) -> Result<String, String> {
     let normalized = gateway.trim().trim_end_matches('/');
     if normalized.is_empty() {
@@ -38,11 +53,7 @@ fn parse_gateway_scheme_and_host(gateway: &str) -> Result<(String, String), Stri
             .ok_or_else(|| GATEWAY_TRANSPORT_ERROR.to_string())?;
         host_port[1..close].to_string()
     } else {
-        host_port
-            .split(':')
-            .next()
-            .unwrap_or(host_port)
-            .to_string()
+        host_port.split(':').next().unwrap_or(host_port).to_string()
     };
 
     Ok((scheme.to_string(), host))
@@ -61,10 +72,31 @@ fn response_error(response: reqwest::blocking::Response) -> String {
     response.text().unwrap_or_else(|_| status.to_string())
 }
 
-pub fn post_json(path: &str, body: Option<&str>) -> Result<String, String> {
-    let url = format!("{}{}", local_api_url().trim_end_matches('/'), path);
+pub fn request(
+    base_url: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    bearer: Option<&str>,
+) -> Result<String, String> {
+    if !is_supported_method(method) {
+        return Err(format!(
+            "unsupported method: {}",
+            method.to_ascii_uppercase()
+        ));
+    }
+    let request_method = reqwest::Method::from_bytes(method.to_ascii_uppercase().as_bytes())
+        .map_err(|error| error.to_string())?;
+    let url = format!(
+        "{}{}",
+        base_url.trim().trim_end_matches('/'),
+        normalize_path(path)
+    );
     let client = reqwest::blocking::Client::new();
-    let mut request = client.post(&url);
+    let mut request = client.request(request_method, &url);
+    if let Some(token) = bearer {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
     if let Some(raw) = body {
         request = request
             .header("Content-Type", "application/json")
@@ -77,28 +109,16 @@ pub fn post_json(path: &str, body: Option<&str>) -> Result<String, String> {
     response.text().map_err(|error| error.to_string())
 }
 
+pub fn post_json(path: &str, body: Option<&str>) -> Result<String, String> {
+    request(&local_api_url(), "POST", path, body, None)
+}
+
 pub fn get_json(path: &str) -> Result<String, String> {
-    let url = format!("{}{}", local_api_url().trim_end_matches('/'), path);
-    let response = reqwest::blocking::Client::new()
-        .get(&url)
-        .send()
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(response_error(response));
-    }
-    response.text().map_err(|error| error.to_string())
+    request(&local_api_url(), "GET", path, None, None)
 }
 
 pub fn delete_json(path: &str) -> Result<String, String> {
-    let url = format!("{}{}", local_api_url().trim_end_matches('/'), path);
-    let response = reqwest::blocking::Client::new()
-        .delete(&url)
-        .send()
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(response_error(response));
-    }
-    response.text().map_err(|error| error.to_string())
+    request(&local_api_url(), "DELETE", path, None, None)
 }
 
 pub fn complete_pairing(pairing_code: &str, device_name: &str) -> Result<String, String> {
@@ -106,10 +126,7 @@ pub fn complete_pairing(pairing_code: &str, device_name: &str) -> Result<String,
         "pairing_code": pairing_code,
         "device_name": device_name,
     });
-    post_json(
-        "/remote/pairing/complete",
-        Some(&body.to_string()),
-    )
+    post_json("/remote/pairing/complete", Some(&body.to_string()))
 }
 
 fn gateway_url(settings: &crate::settings::DesktopSettings) -> Result<String, String> {
@@ -176,35 +193,26 @@ fn gateway_request_with_token(
     token: &str,
 ) -> Result<String, String> {
     let gateway = validate_remote_gateway(gateway)?;
-    let normalized_path = if path.starts_with('/') {
-        path.to_string()
-    } else {
-        format!("/{path}")
-    };
-    let url = format!("{gateway}{normalized_path}");
-    let client = reqwest::blocking::Client::new();
-    let mut request = match method.to_uppercase().as_str() {
-        "GET" => client.get(&url),
-        "POST" => client.post(&url),
-        "DELETE" => client.delete(&url),
-        other => return Err(format!("unsupported method: {other}")),
-    };
-    request = request.header("Authorization", format!("Bearer {token}"));
-    if let Some(raw) = body {
-        request = request
-            .header("Content-Type", "application/json")
-            .body(raw.to_string());
-    }
-    let response = request.send().map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(response_error(response));
-    }
-    response.text().map_err(|error| error.to_string())
+    request(&gateway, method, path, body, Some(token))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supported_methods_include_put_and_patch() {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] {
+            assert!(is_supported_method(method));
+        }
+        assert!(!is_supported_method("TRACE"));
+    }
+
+    #[test]
+    fn normalize_path_adds_one_leading_slash() {
+        assert_eq!(normalize_path("health"), "/health");
+        assert_eq!(normalize_path("/health"), "/health");
+    }
 
     #[test]
     fn validate_rejects_cleartext_non_loopback() {

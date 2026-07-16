@@ -42,7 +42,7 @@
   `remote::request(base_url, method, path, body, bearer) -> Result<String, String>`.
 - Consumed by local and remote connection paths.
 
-- [ ] **Step 1: Add Rust tests**
+- [x] **Step 1: Add Rust tests**
 
 In `remote.rs` test module add:
 
@@ -62,7 +62,7 @@ fn normalize_path_adds_one_leading_slash() {
 }
 ```
 
-- [ ] **Step 2: Verify current failure**
+- [x] **Step 2: Verify current failure**
 
 ```bash
 cd apps/desktop/src-tauri
@@ -71,7 +71,7 @@ cargo test supported_methods_include_put_and_patch
 
 Expected: compile failure because helpers do not exist.
 
-- [ ] **Step 3: Implement shared method helpers**
+- [x] **Step 3: Implement shared method helpers**
 
 Add:
 
@@ -96,21 +96,21 @@ Replace `post_json`, `get_json`, `delete_json`, and gateway verb switches with
 one private request builder using `client.request(reqwest::Method, url)`.
 Keep thin compatibility wrappers for current callers.
 
-- [ ] **Step 4: Use configured local URL**
+- [x] **Step 4: Use configured local URL**
 
 Change `connection::api_request()` so local mode passes
 `settings.local.api_url` into the shared builder. Remove the fixed/env-only URL
 from normal Desktop requests; lifecycle scripts may continue using their
 managed loopback port.
 
-- [ ] **Step 5: Run Rust tests**
+- [x] **Step 5: Run Rust tests**
 
 ```bash
 cd apps/desktop/src-tauri
 cargo test
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/desktop/src-tauri/src/remote.rs apps/desktop/src-tauri/src/connection.rs
