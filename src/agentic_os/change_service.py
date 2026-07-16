@@ -120,49 +120,111 @@ class ChangeService:
             if built.is_standalone
             else None
         )
-        applying = self.store.update(plan.with_updates(status="applying"))
+        patch_id = _patch_id_for_change(plan.id)
+        applying = self.store.update(
+            plan.with_updates(
+                status="applying",
+                backup_ref=patch_id,
+                apply_result={
+                    "patch_id": patch_id,
+                    "applied": False,
+                    "phase": "prepared",
+                },
+            )
+        )
         try:
-            result = self._apply_built(built, current, plan.id)
-            observed = self._observe_built(built)
-            self._post_mutation(plan.operation)
+            result = self._apply_built(built, current, plan.id, patch_id)
         except ConflictError:
-            return self._mark_stale(applying, "target_changed_during_apply")
+            return self._mark_stale(
+                applying.with_updates(backup_ref=None),
+                "target_changed_during_apply",
+            )
         except Exception:
+            if self.safe_edit_engine.backup_store.get(patch_id) is not None:
+                return self._mark_applied_partial(
+                    applying,
+                    reason="apply_interrupted_after_backup",
+                    applied=None,
+                )
             self._mark_failed(applying, "apply_failed")
             raise
+
+        applied = self.store.update(
+            applying.with_updates(
+                status="partial",
+                apply_result={
+                    "patch_id": result.patch_id,
+                    "applied": result.applied,
+                    "audit_event_id": result.audit_event_id,
+                    "phase": "applied_pending_verification",
+                },
+                verification=ChangeVerification(
+                    status="partial",
+                    checks=[
+                        {
+                            "name": "post_apply_verification",
+                            "passed": False,
+                            "detail": "pending",
+                        }
+                    ],
+                ),
+            )
+        )
+        try:
+            observed = self._observe_built(built)
+        except Exception:
+            return self._mark_applied_partial(
+                applied,
+                reason="target_reobservation_failed",
+                applied=True,
+            )
 
         matches = (
             observed.content_sha256 == expected_hash
             if built.is_standalone
             else observed.document == expected_document
         )
+        checks: list[dict[str, object]] = [
+            {
+                "name": (
+                    "content_matches_expected"
+                    if built.is_standalone
+                    else "document_matches_expected"
+                ),
+                "passed": matches,
+            }
+        ]
+        try:
+            self._post_mutation(plan.operation)
+        except Exception:
+            checks.append({"name": "post_apply_verification", "passed": False})
+            return self._mark_applied_partial(
+                applied,
+                reason="post_apply_verification_failed",
+                applied=True,
+                observed=observed,
+                checks=checks,
+            )
+
         verification = ChangeVerification(
             status="verified" if matches else "partial",
             observed=_observation_evidence(observed),
-            checks=[
-                {
-                    "name": (
-                        "content_matches_expected"
-                        if built.is_standalone
-                        else "document_matches_expected"
-                    ),
-                    "passed": matches,
-                }
-            ],
+            checks=checks,
         )
         updated = self.store.update(
-            applying.with_updates(
+            applied.with_updates(
                 status=verification.status,
-                backup_ref=result.patch_id,
                 apply_result={
                     "patch_id": result.patch_id,
                     "applied": result.applied,
                     "audit_event_id": result.audit_event_id,
+                    "phase": "verified" if matches else "verification_partial",
                 },
                 verification=verification,
             )
         )
-        self.payload_store.delete(plan.id)
+        if updated.status == "verified":
+            self.payload_store.delete(plan.id)
         return updated
 
     def rollback(self, change_id: str) -> ChangePlan:
@@ -343,6 +405,7 @@ class ChangeService:
         built: BuiltChange,
         current: ObservedTarget,
         change_id: str,
+        patch_id: str,
     ) -> PatchResult:
         if built.target is not None:
             return self.safe_edit_engine.apply(
@@ -351,6 +414,7 @@ class ChangeService:
                 source=f"change.apply:{change_id}",
                 base_mtime=_mtime_seconds(current),
                 extra_validator=built.extra_validator,
+                patch_id=patch_id,
             )
         if built.standalone_path is None or built.standalone_content is None:
             raise ValueError("change has no target")
@@ -363,6 +427,7 @@ class ChangeService:
             surface_id=built.surface_id or "surface",
             source=f"change.apply:{change_id}",
             base_mtime=_mtime_seconds(current),
+            patch_id=patch_id,
         )
 
     def _observe_built(self, built: BuiltChange) -> ObservedTarget:
@@ -494,10 +559,44 @@ class ChangeService:
         return self.store.update(
             plan.with_updates(
                 status="failed",
+                backup_ref=None,
                 apply_result={"applied": False, "reason": reason},
                 verification=ChangeVerification(
                     status="failed",
                     checks=[{"name": reason, "passed": False}],
+                ),
+            )
+        )
+
+    def _mark_applied_partial(
+        self,
+        plan: ChangePlan,
+        *,
+        reason: str,
+        applied: bool | None,
+        observed: ObservedTarget | None = None,
+        checks: list[dict[str, object]] | None = None,
+    ) -> ChangePlan:
+        apply_result = dict(plan.apply_result or {})
+        apply_result.update(
+            {
+                "patch_id": plan.backup_ref,
+                "applied": applied,
+                "reason": reason,
+                "phase": "applied_unverified",
+            }
+        )
+        return self.store.update(
+            plan.with_updates(
+                status="partial",
+                apply_result=apply_result,
+                verification=ChangeVerification(
+                    status="partial",
+                    observed=(
+                        _observation_evidence(observed) if observed is not None else {}
+                    ),
+                    checks=checks
+                    or [{"name": "post_apply_verification", "passed": False}],
                 ),
             )
         )
@@ -693,6 +792,10 @@ def _operation_diff(built: BuiltChange) -> dict[str, object]:
             for op in built.ops
         ]
     }
+
+
+def _patch_id_for_change(change_id: str) -> str:
+    return f"p_{change_id.removeprefix('chg_')}"
 
 
 def _mtime_seconds(observed: ObservedTarget) -> float | None:

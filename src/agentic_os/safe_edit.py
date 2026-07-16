@@ -83,8 +83,9 @@ class SafeEditEngine:
         dry_run: bool = False,
         base_mtime: float | None = None,
         extra_validator: Callable[[dict[str, Any]], list[str]] | None = None,
+        patch_id: str | None = None,
     ) -> PatchResult:
-        patch_id = f"p_{uuid.uuid4().hex}"
+        patch_id = patch_id or f"p_{uuid.uuid4().hex}"
         before = self.observe_target(target).document
         for op in ops:
             if not self.schema_registry.is_path_allowed(target.harness_id, target.kind, op.path):
@@ -163,8 +164,9 @@ class SafeEditEngine:
         source: str,
         dry_run: bool = False,
         base_mtime: float | None = None,
+        patch_id: str | None = None,
     ) -> PatchResult:
-        patch_id = f"p_{uuid.uuid4().hex}"
+        patch_id = patch_id or f"p_{uuid.uuid4().hex}"
         before_text = file_path.read_text(encoding="utf-8") if file_path.exists() else ""
         current_mtime = file_path.stat().st_mtime if file_path.exists() else None
         if base_mtime is not None and current_mtime is not None and base_mtime != current_mtime:

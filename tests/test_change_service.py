@@ -102,6 +102,74 @@ def test_mcp_copy_preview_apply_verify_and_rollback(
     assert target.read_bytes() == before_bytes
 
 
+def test_apply_persists_backup_reference_before_post_write_store_failure(
+    service: ChangeService,
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = home / ".codex" / "config.toml"
+    before_bytes = target.read_bytes()
+    plan = service.preview(sample_copy_request())
+    original_update = service.store.update
+    update_count = 0
+
+    def fail_second_update(candidate):
+        nonlocal update_count
+        update_count += 1
+        if update_count == 2:
+            raise RuntimeError("simulated post-write database failure")
+        return original_update(candidate)
+
+    monkeypatch.setattr(service.store, "update", fail_second_update)
+
+    with pytest.raises(RuntimeError, match="post-write database failure"):
+        service.apply(plan.id)
+
+    persisted = service.get(plan.id)
+    assert persisted.status == "applying"
+    assert persisted.backup_ref == f"p_{plan.id.removeprefix('chg_')}"
+    assert target.read_bytes() != before_bytes
+
+    rolled_back = service.rollback(plan.id)
+
+    assert rolled_back.status == "rolled_back"
+    assert target.read_bytes() == before_bytes
+
+
+def test_post_apply_verification_failure_stays_rollbackable(
+    service: ChangeService,
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = home / ".codex" / "config.toml"
+    before_bytes = target.read_bytes()
+    plan = service.preview(sample_copy_request())
+    original_post_mutation = service._post_mutation
+
+    def fail_post_mutation(_operation: str) -> None:
+        raise RuntimeError("simulated reload failure")
+
+    monkeypatch.setattr(service, "_post_mutation", fail_post_mutation)
+
+    partial = service.apply(plan.id)
+
+    assert partial.status == "partial"
+    assert partial.backup_ref
+    assert partial.apply_result["applied"] is True
+    assert partial.verification is not None
+    assert partial.verification.status == "partial"
+    assert partial.verification.checks[-1]["name"] == "post_apply_verification"
+    assert partial.verification.checks[-1]["passed"] is False
+    payload = service.payload_store.directory / f"{plan.id}.json"
+    assert payload.exists()
+    monkeypatch.setattr(service, "_post_mutation", original_post_mutation)
+
+    rolled_back = service.rollback(plan.id)
+
+    assert rolled_back.status == "rolled_back"
+    assert target.read_bytes() == before_bytes
+
+
 def test_apply_refuses_stale_preview(service: ChangeService, home: Path) -> None:
     plan = service.preview(sample_copy_request())
     target = home / ".codex" / "config.toml"
