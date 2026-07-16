@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from agentic_os.adapter_contract import SEMANTIC_HARNESS_IDS
 
@@ -21,6 +22,9 @@ class EnvironmentAdapter:
     desktop: bool = False
     ide: bool = False
     native_sessions: bool = False
+    config_activation: Literal["immediate", "next_session", "reload", "restart"] = (
+        "next_session"
+    )
 
 
 _ADAPTERS = (

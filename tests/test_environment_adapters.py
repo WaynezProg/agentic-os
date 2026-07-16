@@ -19,6 +19,7 @@ def test_adapter_declares_independent_surfaces() -> None:
     assert adapter.native_sessions is True
     assert adapter.desktop is True
     assert adapter.ide is False
+    assert adapter.config_activation == "next_session"
 
 
 def test_runtime_and_ide_support_are_not_inferred_from_cli_support() -> None:

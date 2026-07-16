@@ -10,6 +10,7 @@ from agentic_os import catalog, config_scope, harness_config, profiles, registry
 from agentic_os.change_models import ChangePlan, ChangeVerification
 from agentic_os.change_payload_store import ChangePayloadStore
 from agentic_os.change_store import ChangeStore
+from agentic_os.environment_adapters import get_adapter
 from agentic_os.mcp_alignment import (
     build_copy_patch,
     build_remove_patch,
@@ -66,9 +67,10 @@ class ChangeService:
         before = self._observe_built(built)
         result = self._preview_built(built, before)
         operation = _required_str(redacted_request, "operation")
+        environment_id = _required_str(redacted_request, "environment_id")
         plan = ChangePlan.previewed(
             operation=operation,
-            environment_id=_required_str(redacted_request, "environment_id"),
+            environment_id=environment_id,
             target_surfaces=[
                 "capability" if operation == "catalog.patch" else "config"
             ],
@@ -77,6 +79,7 @@ class ChangeService:
             diff=_operation_diff(built),
             validation=result.validation,
             base_versions=self._base_versions(redacted_request),
+            restart_requirements=_restart_requirements(operation, environment_id),
         )
         self.payload_store.write(plan.id, request)
         try:
@@ -195,7 +198,7 @@ class ChangeService:
             }
         ]
         try:
-            self._post_mutation(plan.operation)
+            post_mutation_check = self._post_mutation(plan.operation)
         except Exception:
             checks.append({"name": "post_apply_verification", "passed": False})
             return self._mark_applied_partial(
@@ -205,9 +208,24 @@ class ChangeService:
                 observed=observed,
                 checks=checks,
             )
+        if post_mutation_check is not None:
+            checks.append(post_mutation_check)
+        if plan.restart_requirements:
+            checks.append(
+                {
+                    "name": "runtime_activation_verified",
+                    "passed": False,
+                    "detail": "operator_action_required",
+                }
+            )
 
+        verification_status = (
+            "verified"
+            if matches and all(check.get("passed") is True for check in checks)
+            else "partial"
+        )
         verification = ChangeVerification(
-            status="verified" if matches else "partial",
+            status=verification_status,
             observed=_observation_evidence(observed),
             checks=checks,
         )
@@ -218,7 +236,11 @@ class ChangeService:
                     "patch_id": result.patch_id,
                     "applied": result.applied,
                     "audit_event_id": result.audit_event_id,
-                    "phase": "verified" if matches else "verification_partial",
+                    "phase": (
+                        "verified"
+                        if verification_status == "verified"
+                        else "verification_partial"
+                    ),
                 },
                 verification=verification,
             )
@@ -541,9 +563,17 @@ class ChangeService:
         from_tool = _required_str(plan.redacted_request, "from_tool")
         return _file_evidence(config_path(from_tool, self.home)) == expected
 
-    def _post_mutation(self, operation: str) -> None:
-        if operation == "registry.patch" and self.on_registry_change is not None:
-            self.on_registry_change()
+    def _post_mutation(self, operation: str) -> dict[str, object] | None:
+        if operation != "registry.patch":
+            return None
+        if self.on_registry_change is None:
+            return {
+                "name": "registry_reload",
+                "passed": False,
+                "detail": "reload_callback_not_configured",
+            }
+        self.on_registry_change()
+        return {"name": "registry_reload", "passed": True}
 
     def _mark_stale(self, plan: ChangePlan, reason: str) -> ChangePlan:
         self.payload_store.delete(plan.id)
@@ -792,6 +822,33 @@ def _operation_diff(built: BuiltChange) -> dict[str, object]:
             for op in built.ops
         ]
     }
+
+
+_EXTERNAL_ACTIVATION_OPERATIONS = frozenset(
+    {
+        "mcp.copy",
+        "mcp.remove",
+        "catalog.patch",
+        "harness_config.patch",
+    }
+)
+
+
+def _restart_requirements(operation: str, environment_id: str) -> list[str]:
+    if operation not in _EXTERNAL_ACTIVATION_OPERATIONS:
+        return []
+    adapter = get_adapter(environment_id, required=False)
+    label = adapter.label if adapter is not None else environment_id
+    activation = adapter.config_activation if adapter is not None else "next_session"
+    if activation == "immediate":
+        return []
+    if activation == "reload":
+        action = "reload"
+    elif activation == "restart":
+        action = "restart"
+    else:
+        action = "開啟新 session 或 reload"
+    return [f"{label} 的設定檔已驗證；既有 runtime 尚未驗證生效，請{action}。"]
 
 
 def _patch_id_for_change(change_id: str) -> str:

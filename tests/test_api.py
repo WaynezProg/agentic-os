@@ -2292,7 +2292,8 @@ def test_catalog_standalone_change_apply_and_rollback(
 
     assert applied.status_code == 200
     body = applied.json()
-    assert body["status"] == "verified"
+    assert body["status"] == "partial"
+    assert body["restart_requirements"]
     skill = repo / ".claude" / "skills" / "review" / "SKILL.md"
     assert skill.read_text(encoding="utf-8") == "# Review\n"
 
@@ -3243,13 +3244,14 @@ def test_change_api_preview_apply_list_and_rollback(tmp_path: Path) -> None:
     applied = client.post(f"/changes/{plan['id']}/apply")
 
     assert applied.status_code == 200
-    assert applied.json()["status"] == "verified"
+    assert applied.json()["status"] == "partial"
     listed = client.get("/changes")
     assert listed.status_code == 200
     assert listed.json()["changes"][0]["id"] == plan["id"]
     shown = client.get(f"/changes/{plan['id']}")
     assert shown.status_code == 200
-    assert shown.json()["verification"]["status"] == "verified"
+    assert shown.json()["verification"]["status"] == "partial"
+    assert shown.json()["restart_requirements"]
     target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
     assert "github" in target["mcpServers"]
 
@@ -3259,6 +3261,32 @@ def test_change_api_preview_apply_list_and_rollback(tmp_path: Path) -> None:
     assert rolled_back.json()["status"] == "rolled_back"
     restored = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
     assert "github" not in restored["mcpServers"]
+
+
+def test_environment_pending_change_count_tracks_change_lifecycle(tmp_path: Path) -> None:
+    client, _home = _make_alignment_client(tmp_path)
+
+    assert client.get("/environments/codex").json()["pending_change_count"] == 0
+    preview = client.post(
+        "/changes/preview",
+        json={
+            "operation": "mcp.copy",
+            "environment_id": "codex",
+            "from_tool": "claude",
+            "to_tool": "codex",
+            "server": "github",
+        },
+    ).json()
+
+    assert client.get("/environments/codex").json()["pending_change_count"] == 1
+    applied = client.post(f"/changes/{preview['id']}/apply")
+    assert applied.json()["status"] == "partial"
+    assert client.get("/environments/codex").json()["pending_change_count"] == 1
+
+    rolled_back = client.post(f"/changes/{preview['id']}/rollback")
+
+    assert rolled_back.json()["status"] == "rolled_back"
+    assert client.get("/environments/codex").json()["pending_change_count"] == 0
 
 
 def test_change_api_returns_409_for_stale_preview(tmp_path: Path) -> None:
@@ -3347,7 +3375,7 @@ def test_legacy_preview_can_apply_through_unified_change_endpoint(tmp_path: Path
     applied = client.post(f"/changes/{preview['change_id']}/apply")
 
     assert applied.status_code == 200
-    assert applied.json()["status"] == "verified"
+    assert applied.json()["status"] == "partial"
     target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
     assert "github" in target["mcpServers"]
 
@@ -3368,8 +3396,9 @@ def test_mcp_copy_apply_writes_target(tmp_path: Path) -> None:
     assert body["applied"] is True
     assert body["patch_id"]
     assert body["change_id"]
-    assert body["status"] == "verified"
-    assert body["verification"]["status"] == "verified"
+    assert body["status"] == "partial"
+    assert body["verification"]["status"] == "partial"
+    assert body["restart_requirements"]
     target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
     assert target["mcpServers"]["github"]["command"] == "gh-mcp"
     assert target["mcpServers"]["context7"] == {"command": "npx"}
@@ -3452,7 +3481,7 @@ def test_mcp_remove_apply_and_404(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["applied"] is True
     assert response.json()["change_id"]
-    assert response.json()["status"] == "verified"
+    assert response.json()["status"] == "partial"
     doc = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
     assert "github" not in doc["mcpServers"]
     assert doc["keepTopLevel"] == 1

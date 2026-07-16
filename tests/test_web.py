@@ -136,7 +136,8 @@ def test_verified_change_center_contract_and_editor_handoff() -> None:
     ]:
         assert endpoint in api_js
     assert 'const APPLYABLE_STATUSES = new Set(["previewed", "approved"])' in change_center
-    assert 'const ROLLBACKABLE_STATUSES = new Set(["verified", "partial"])' in change_center
+    for rollbackable_status in ["applying", "verified", "partial", "rollback_failed"]:
+        assert f'"{rollbackable_status}"' in change_center
     assert "APPLYABLE_STATUSES.has(change.status)" in change_center
     assert "restart_requirements" in change_center
     assert "verification.checks" in change_center

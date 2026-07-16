@@ -4,8 +4,20 @@ window.AgenticOs = window.AgenticOs || {};
 
 (function initChangeCenter(Ao) {
   const APPLYABLE_STATUSES = new Set(["previewed", "approved"]);
-  const ROLLBACKABLE_STATUSES = new Set(["verified", "partial"]);
-  const PENDING_STATUSES = new Set(["previewed", "approved", "applying"]);
+  const ROLLBACKABLE_STATUSES = new Set([
+    "applying",
+    "verified",
+    "partial",
+    "rollback_failed",
+  ]);
+  const PENDING_STATUSES = new Set([
+    "previewed",
+    "approved",
+    "applying",
+    "partial",
+    "failed",
+    "rollback_failed",
+  ]);
   const STATUS_LABELS = Object.freeze({
     previewed: "待確認",
     approved: "已核准",
@@ -167,7 +179,7 @@ window.AgenticOs = window.AgenticOs || {};
       ? change.restart_requirements
       : [];
     if (!requirements.length) {
-      return '<p class="empty-state">不需要重新啟動。</p>';
+      return '<p class="empty-state">不需要 reload 或 restart。</p>';
     }
     return `
       <ul class="change-restart-list">

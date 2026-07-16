@@ -81,16 +81,20 @@ def test_mcp_copy_preview_apply_verify_and_rollback(
 
     assert plan.status == "previewed"
     assert plan.backup_ref is None
+    assert plan.restart_requirements
     assert plan.diff == {
         "operations": [{"op": "merge", "path": "mcp_servers.github"}]
     }
 
-    verified = service.apply(plan.id)
+    partial = service.apply(plan.id)
 
-    assert verified.status == "verified"
-    assert verified.verification is not None
-    assert verified.verification.status == "verified"
-    assert verified.backup_ref
+    assert partial.status == "partial"
+    assert partial.verification is not None
+    assert partial.verification.status == "partial"
+    assert partial.verification.checks[0]["passed"] is True
+    assert partial.verification.checks[-1]["name"] == "runtime_activation_verified"
+    assert partial.verification.checks[-1]["passed"] is False
+    assert partial.backup_ref
     document = tomllib.loads(target.read_text(encoding="utf-8"))
     assert document["mcp_servers"]["github"]["command"] == "gh-mcp"
 
@@ -222,7 +226,7 @@ def test_mcp_remove_round_trip(service: ChangeService, home: Path) -> None:
         }
     )
 
-    assert service.apply(plan.id).status == "verified"
+    assert service.apply(plan.id).status == "partial"
     assert "context7" not in tomllib.loads(target.read_text(encoding="utf-8"))["mcp_servers"]
     assert service.rollback(plan.id).status == "rolled_back"
     assert target.read_bytes() == before_bytes
@@ -258,7 +262,12 @@ def test_supported_operation_round_trip(
     plan = operation_service.preview(request)
 
     assert plan.status == "previewed"
-    assert operation_service.apply(plan.id).status == "verified"
+    expected_status = (
+        "partial"
+        if operation in {"catalog.patch", "harness_config.patch"}
+        else "verified"
+    )
+    assert operation_service.apply(plan.id).status == expected_status
     assert target.read_bytes() != before_bytes
     assert operation_service.rollback(plan.id).status == "rolled_back"
     assert target.read_bytes() == before_bytes
@@ -317,6 +326,7 @@ def _make_service(
             audit_store=audit_store,
         ),
         registry_path=registry_path,
+        on_registry_change=(lambda: None) if registry_path is not None else None,
     )
 
 

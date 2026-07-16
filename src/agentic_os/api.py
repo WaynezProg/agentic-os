@@ -321,6 +321,7 @@ def create_app(
         capability_home=capability_home,
         native_sessions=native_session_service,
         fleet_store=fleet_store,
+        pending_change_counter=change_store.count_pending,
     )
     launch_decision_service = LaunchDecisionService(control_plane)
     logs = JsonlLogStore()
@@ -461,6 +462,7 @@ def create_app(
             "base_mtime": base_mtime,
             "change_id": plan.id,
             "status": plan.status,
+            "restart_requirements": plan.restart_requirements,
             "verification": (
                 plan.verification.model_dump(mode="json")
                 if plan.verification is not None

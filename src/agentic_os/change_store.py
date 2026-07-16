@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS change_plans (
 
 CREATE INDEX IF NOT EXISTS idx_change_plans_created
 ON change_plans (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_change_plans_environment_status
+ON change_plans (environment_id, status);
 """
 
 
@@ -120,6 +123,26 @@ class ChangeStore:
             if plan.backup_ref == patch_id:
                 return plan
         return None
+
+    def count_pending(self, environment_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM change_plans
+                WHERE environment_id = ?
+                  AND status IN (
+                      'previewed',
+                      'approved',
+                      'applying',
+                      'partial',
+                      'failed',
+                      'rollback_failed'
+                  )
+                """,
+                (environment_id,),
+            ).fetchone()
+        return int(row["count"]) if row is not None else 0
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)

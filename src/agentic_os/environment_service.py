@@ -40,6 +40,7 @@ ConfigReader = Callable[[str, str], ConfigSummary]
 CapabilityReader = Callable[[str, Path | None], ToolCapabilities]
 RuntimeReader = Callable[..., AgenticInventoryResult]
 ApplicationFinder = Callable[[tuple[str, ...], Path], Path | None]
+PendingChangeCounter = Callable[[str], int]
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ class EnvironmentService:
             read_all_capabilities
         ),
         application_finder: ApplicationFinder = find_application_bundle,
+        pending_change_counter: PendingChangeCounter | None = None,
     ) -> None:
         self.registry = registry
         self.home = capability_home or Path.home()
@@ -89,6 +91,7 @@ class EnvironmentService:
         self.runtime_reader = runtime_reader
         self.all_capabilities_reader = all_capabilities_reader
         self.application_finder = application_finder
+        self.pending_change_counter = pending_change_counter or (lambda _environment_id: 0)
 
     def observe(self, environment_id: str | None = None) -> list[Environment]:
         return [snapshot.environment for snapshot in self.snapshots(environment_id)]
@@ -248,6 +251,7 @@ class EnvironmentService:
             surfaces=surfaces,
             capability_names=capability_names,
             active_sessions=active_sessions,
+            pending_change_count=self.pending_change_counter(adapter.id),
         )
         return EnvironmentSnapshot(
             environment=environment,

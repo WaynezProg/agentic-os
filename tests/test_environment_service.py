@@ -120,3 +120,33 @@ def test_surface_evidence_is_independent(tmp_path: Path) -> None:
     assert surfaces["desktop"].source == "application_bundle"
     assert environment.capability_names["skills"] == ["review"]
     assert environment.active_sessions == 0
+
+
+def test_environment_reports_pending_change_count(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    config_dir = home / ".codex"
+    config_dir.mkdir(parents=True)
+    registry = _registry(tmp_path, "codex", config_dir)
+
+    service = EnvironmentService(
+        registry=registry,
+        capability_home=home,
+        native_sessions=_sessions(tmp_path),
+        fleet_store=_fleet(tmp_path),
+        tool_detector=lambda agent: ToolDiscoveryResult(
+            agent_id=agent.id,
+            tool_kind=agent.tool_kind,
+            installed=False,
+            binary_path=None,
+            version=None,
+            version_error=None,
+        ),
+        config_reader=lambda agent_id, path: ConfigSummary(config_source=path),
+        capability_reader=lambda tool, home: ToolCapabilities(tool=tool, present=False),
+        application_finder=lambda names, home: None,
+        pending_change_counter=lambda environment_id: 3 if environment_id == "codex" else 0,
+    )
+
+    environment = service.observe("codex")[0]
+
+    assert environment.pending_change_count == 3

@@ -64,3 +64,27 @@ def test_change_store_updates_full_validated_payload(tmp_path) -> None:
     store.update(updated)
 
     assert store.get(plan.id) == updated
+
+
+def test_change_store_counts_only_attention_statuses_by_environment(tmp_path) -> None:
+    store = ChangeStore(tmp_path / "state.db")
+    store.init()
+    statuses = [
+        "previewed",
+        "approved",
+        "applying",
+        "partial",
+        "failed",
+        "rollback_failed",
+        "verified",
+        "stale",
+        "rolled_back",
+    ]
+    for status in statuses:
+        plan = sample_plan("codex").with_updates(status=status)
+        store.create(plan)
+    store.create(sample_plan("claude"))
+
+    assert store.count_pending("codex") == 6
+    assert store.count_pending("claude") == 1
+    assert store.count_pending("cursor") == 0
