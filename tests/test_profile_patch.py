@@ -23,6 +23,8 @@ def test_show_profile_respects_cwd_and_scope(tmp_path: Path) -> None:
         },
     )
     assert created.status_code == 201
+    assert created.json()["change_id"]
+    assert created.json()["status"] == "verified"
 
     shown = client.get("/profiles/dev", params={"cwd": str(repo)})
     assert shown.status_code == 200
@@ -78,6 +80,8 @@ def test_delete_profile_removes_entry(tmp_path: Path) -> None:
     )
     assert deleted.status_code == 200
     assert deleted.json()["applied"] is True
+    assert deleted.json()["change_id"]
+    assert deleted.json()["status"] == "verified"
     patch_id = deleted.json()["patch_id"]
 
     listed = client.get("/profiles", params={"cwd": str(repo)})

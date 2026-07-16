@@ -34,6 +34,8 @@ def test_registry_create_appears_after_reload(tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     assert response.json()["applied"] is True
+    assert response.json()["change_id"]
+    assert response.json()["status"] == "verified"
 
     listed = client.get("/agents")
     ids = {agent["id"] for agent in listed.json()["agents"]}

@@ -2265,6 +2265,44 @@ def test_catalog_patch_apply_and_audit(tmp_path: Path, monkeypatch) -> None:
     assert any(e["event_type"] == "config_patch_applied" for e in audit.json()["events"])
 
 
+def test_catalog_standalone_change_apply_and_rollback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    home = tmp_path / "home"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    client = make_client(tmp_path)
+
+    applied = client.post(
+        "/catalog/claude/surfaces/patch",
+        params={"cwd": str(repo)},
+        json={
+            "ops": [
+                {
+                    "op": "upsert_skill",
+                    "name": "review",
+                    "scope": "project",
+                    "content": "# Review\n",
+                }
+            ]
+        },
+    )
+
+    assert applied.status_code == 200
+    body = applied.json()
+    assert body["status"] == "verified"
+    skill = repo / ".claude" / "skills" / "review" / "SKILL.md"
+    assert skill.read_text(encoding="utf-8") == "# Review\n"
+
+    rolled_back = client.post(f"/patches/{body['patch_id']}/rollback")
+
+    assert rolled_back.status_code == 200
+    assert rolled_back.json()["status"] == "rolled_back"
+    assert skill.exists() is False
+
+
 def test_approvals_list_filter_by_status(tmp_path: Path) -> None:
     """GET /approvals?status=pending filters by approval status."""
     client = make_client(tmp_path)
@@ -3183,6 +3221,104 @@ def test_mcp_matrix_endpoint(tmp_path: Path) -> None:
     assert "sk-FAKE-SECRET" not in response.text
 
 
+def test_change_api_preview_apply_list_and_rollback(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    preview = client.post(
+        "/changes/preview",
+        json={
+            "operation": "mcp.copy",
+            "environment_id": "gemini",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "server": "github",
+        },
+    )
+
+    assert preview.status_code == 200
+    plan = preview.json()
+    assert plan["status"] == "previewed"
+    assert "sk-FAKE-SECRET" not in preview.text
+    assert "gh-mcp" not in preview.text
+
+    applied = client.post(f"/changes/{plan['id']}/apply")
+
+    assert applied.status_code == 200
+    assert applied.json()["status"] == "verified"
+    listed = client.get("/changes")
+    assert listed.status_code == 200
+    assert listed.json()["changes"][0]["id"] == plan["id"]
+    shown = client.get(f"/changes/{plan['id']}")
+    assert shown.status_code == 200
+    assert shown.json()["verification"]["status"] == "verified"
+    target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
+    assert "github" in target["mcpServers"]
+
+    rolled_back = client.post(f"/changes/{plan['id']}/rollback")
+
+    assert rolled_back.status_code == 200
+    assert rolled_back.json()["status"] == "rolled_back"
+    restored = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
+    assert "github" not in restored["mcpServers"]
+
+
+def test_change_api_returns_409_for_stale_preview(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    preview = client.post(
+        "/changes/preview",
+        json={
+            "operation": "mcp.copy",
+            "environment_id": "gemini",
+            "from_tool": "claude",
+            "to_tool": "gemini",
+            "server": "github",
+        },
+    ).json()
+    target = home / ".gemini" / "settings.json"
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    payload["changed"] = True
+    target.write_text(json.dumps(payload), encoding="utf-8")
+
+    response = client.post(f"/changes/{preview['id']}/apply")
+
+    assert response.status_code == 409
+    assert response.json()["status"] == "stale"
+
+
+def test_change_api_unknown_plan_returns_404(tmp_path: Path) -> None:
+    client, _ = _make_alignment_client(tmp_path)
+
+    assert client.get("/changes/chg_missing").status_code == 404
+    assert client.post("/changes/chg_missing/apply").status_code == 404
+
+
+def test_change_api_never_returns_secret_payload_values(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    repo = tmp_path / "repo"
+    target = repo / ".agentic-os" / "config.toml"
+    target.parent.mkdir(parents=True)
+    target.write_text("[daemon]\nport = 8767\n", encoding="utf-8")
+
+    response = client.post(
+        "/changes/preview",
+        json={
+            "operation": "config.patch",
+            "environment_id": "agentic_os",
+            "scope": "project",
+            "cwd": str(repo),
+            "ops": [
+                {
+                    "op": "merge",
+                    "path": "daemon.credentials",
+                    "value": {"api_token": "FAKE-SECRET"},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "FAKE-SECRET" not in response.text
+
+
 def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
     client, home = _make_alignment_client(tmp_path)
     before = (home / ".gemini" / "settings.json").read_text(encoding="utf-8")
@@ -3193,6 +3329,8 @@ def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["applied"] is False
+    assert body["change_id"]
+    assert body["status"] == "previewed"
     assert body["summary"]["transport"] == "stdio"
     assert "sk-FAKE-SECRET" not in response.text
     assert "gh-mcp" not in response.text
@@ -3214,6 +3352,9 @@ def test_mcp_copy_apply_writes_target(tmp_path: Path) -> None:
     body = response.json()
     assert body["applied"] is True
     assert body["patch_id"]
+    assert body["change_id"]
+    assert body["status"] == "verified"
+    assert body["verification"]["status"] == "verified"
     target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
     assert target["mcpServers"]["github"]["command"] == "gh-mcp"
     assert target["mcpServers"]["context7"] == {"command": "npx"}
@@ -3295,6 +3436,8 @@ def test_mcp_remove_apply_and_404(tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     assert response.json()["applied"] is True
+    assert response.json()["change_id"]
+    assert response.json()["status"] == "verified"
     doc = json.loads((home / ".claude.json").read_text(encoding="utf-8"))
     assert "github" not in doc["mcpServers"]
     assert doc["keepTopLevel"] == 1

@@ -106,6 +106,21 @@ class ChangeStore:
             ).fetchall()
         return [ChangePlan.model_validate_json(row["payload_json"]) for row in rows]
 
+    def find_by_backup_ref(self, patch_id: str) -> ChangePlan | None:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT payload_json
+                FROM change_plans
+                ORDER BY created_at DESC, rowid DESC
+                """
+            ).fetchall()
+        for row in rows:
+            plan = ChangePlan.model_validate_json(row["payload_json"])
+            if plan.backup_ref == patch_id:
+                return plan
+        return None
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row

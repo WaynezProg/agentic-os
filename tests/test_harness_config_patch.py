@@ -66,6 +66,8 @@ def test_harness_config_patch_preserves_unknown_keys(
     )
     assert response.status_code == 200
     assert response.json()["applied"] is True
+    assert response.json()["change_id"]
+    assert response.json()["status"] == "verified"
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["model"] == "x"
     assert data["extra"] == 1
@@ -87,4 +89,6 @@ def test_harness_config_patch_dry_run(tmp_path: Path, monkeypatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["applied"] is False
+    assert response.json()["change_id"]
+    assert response.json()["status"] == "previewed"
     assert json.loads(settings.read_text(encoding="utf-8"))["model"] == "x"

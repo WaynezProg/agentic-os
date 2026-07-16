@@ -145,6 +145,8 @@ def test_config_patch_user_scope(tmp_path: Path, monkeypatch) -> None:
     )
     assert response.status_code == 200
     assert response.json()["applied"] is True
+    assert response.json()["change_id"]
+    assert response.json()["status"] == "verified"
     effective_response = client.get("/config/shell/effective")
     assert effective_response.status_code == 200
     daemon_entries = [

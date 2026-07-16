@@ -224,6 +224,15 @@ class ChangeService:
     def list(self, *, limit: int = 200) -> list[ChangePlan]:
         return self.store.list(limit=limit)
 
+    def find_by_backup_ref(self, patch_id: str) -> ChangePlan | None:
+        return self.store.find_by_backup_ref(patch_id)
+
+    def invalidate(self, change_id: str, reason: str) -> ChangePlan:
+        plan = self.store.get(change_id)
+        if plan.status not in {"previewed", "approved"}:
+            raise ConflictError(f"change_not_invalidatable:{plan.status}")
+        return self._mark_stale(plan, reason)
+
     def _build(self, request: dict[str, object]) -> BuiltChange:
         operation = _required_str(request, "operation")
         environment_id = _required_str(request, "environment_id")

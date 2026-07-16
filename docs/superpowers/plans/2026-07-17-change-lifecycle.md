@@ -430,7 +430,7 @@ git commit -m "refactor: route config changes through verified plans"
   - `POST /changes/{id}/apply`
   - `POST /changes/{id}/rollback`
 
-- [ ] **Step 1: Write API tests**
+- [x] **Step 1: Write API tests**
 
 Add to `tests/test_api.py`:
 
@@ -455,13 +455,13 @@ def test_change_api_never_returns_secret_values(client, secret_fixture) -> None:
     assert "FAKE-SECRET" not in response.text
 ```
 
-- [ ] **Step 2: Wire stores and routes**
+- [x] **Step 2: Wire stores and routes**
 
 Instantiate `ChangeStore` and `ChangeService` in `create_app()`. Map `KeyError`
 to 404, stale conflict to 409, validation/parse errors to 400 or 422, and
 unsupported operations to 400.
 
-- [ ] **Step 3: Convert direct mutation routes**
+- [x] **Step 3: Convert direct mutation routes**
 
 Compatibility routes construct an equivalent change request:
 
@@ -471,13 +471,13 @@ Compatibility routes construct an equivalent change request:
 - rollback calls `ChangeService.rollback()` when the patch belongs to a change
   plan and falls back to legacy rollback for historical patches.
 
-- [ ] **Step 4: Verify API compatibility**
+- [x] **Step 4: Verify API compatibility**
 
 ```bash
 rtk uv run pytest tests/test_api.py tests/test_cli.py tests/test_end_to_end.py tests/test_mcp_alignment.py tests/test_harness_config_patch.py -q
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agentic_os/api.py tests/test_api.py tests/test_cli.py tests/test_end_to_end.py

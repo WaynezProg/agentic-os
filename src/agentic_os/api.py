@@ -42,13 +42,14 @@ from agentic_os.control_plane_history import (
     mutation_envelope,
 )
 from agentic_os.backup_store import BackupStore
+from agentic_os.change_models import ChangePlan
+from agentic_os.change_service import ChangeService
+from agentic_os.change_store import ChangeStore
 from agentic_os.catalog import (
     SUPPORTED_HARNESSES,
     SurfaceRecord,
     diff as catalog_diff,
     merge as catalog_merge,
-    resolve_standalone_surface_path,
-    resolve_surface_write_target,
     scan as catalog_scan,
 )
 from agentic_os.import_export import (
@@ -62,17 +63,12 @@ from agentic_os.harness_config import (
     diff as harness_config_diff,
     effective as harness_config_effective,
     explain as harness_config_explain,
-    infer_patch_kind,
-    resolve_write_path,
 )
-from agentic_os.patch_engine import PatchOp
 from agentic_os.config_scope import (
-    AGENTIC_CONFIG_SCHEMA_HARNESS,
     CONFIG_PATCH_SCOPES,
     diff as config_diff,
     effective as config_effective,
     explain as config_explain,
-    resolve_write_path as config_resolve_write_path,
 )
 from agentic_os.adapter_contract import (
     SEMANTIC_HARNESS_IDS,
@@ -114,8 +110,6 @@ from agentic_os.registry import (
     agents_document,
     disable_agent_instance,
     merge_agent_instance,
-    registry_patch_target,
-    replace_agents_ops,
     validate_registry,
     validate_registry_document,
 )
@@ -130,14 +124,11 @@ from agentic_os.run_templates import (
 from agentic_os.workspaces import WorkspaceStore, build_workspace_dashboard
 from agentic_os.safe_edit import (
     ConflictError,
-    PatchResult,
-    PatchTarget,
     SafeEditEngine,
     ValidationError,
 )
 from agentic_os.storage import Store
 from agentic_os.supervisor import ProcessSupervisor
-from agentic_os.surface_ops import compile_semantic_ops
 from agentic_os.profiles import ResolvedRunProfile
 from agentic_os.usage import UsageStore, usage_record_to_dict
 
@@ -304,6 +295,15 @@ def create_app(
         backup_store=backup_store,
         audit_store=audit_store,
     )
+    change_store = ChangeStore(state_dir / "agentic-os.db")
+    change_store.init()
+    change_service = ChangeService(
+        home=capability_home or Path.home(),
+        store=change_store,
+        safe_edit_engine=safe_edit_engine,
+        registry_path=registry_path,
+        on_registry_change=registry.reload,
+    )
     usage_store = UsageStore(state_dir / "agentic-os.db")
     usage_store.init()
     workspace_store = WorkspaceStore(state_dir / "agentic-os.db")
@@ -341,6 +341,8 @@ def create_app(
     app.state.audit_store = audit_store
     app.state.backup_store = backup_store
     app.state.safe_edit_engine = safe_edit_engine
+    app.state.change_store = change_store
+    app.state.change_service = change_service
     app.state.control_plane = control_plane
     app.state.approval_store = approval_store
     app.state.usage_store = usage_store
@@ -370,6 +372,164 @@ def create_app(
         if request.method == "POST" and request.url.path == "/sessions":
             return JSONResponse(status_code=400, content={"detail": exc.errors()})
         return await request_validation_exception_handler(request, exc)
+
+    def _preview_change(payload: dict[str, object]) -> ChangePlan:
+        try:
+            return change_service.preview(payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"validation_errors": exc.errors},
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def _apply_change(change_id: str) -> ChangePlan:
+        try:
+            return change_service.apply(change_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"validation_errors": exc.errors},
+            ) from exc
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "forbidden_path", "message": str(exc)},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def _rollback_change(change_id: str) -> ChangePlan:
+        try:
+            return change_service.rollback(change_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail={"error": str(exc)}) from exc
+        except ConflictError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    def _change_payload(plan: ChangePlan) -> dict[str, object]:
+        return plan.model_dump(mode="json")
+
+    def _legacy_change_payload(plan: ChangePlan) -> dict[str, object]:
+        backup_entry = (
+            backup_store.get(plan.backup_ref)
+            if plan.backup_ref is not None
+            else None
+        )
+        before_mtime_ns = plan.before_evidence.get("mtime_ns")
+        base_mtime = (
+            before_mtime_ns / 1_000_000_000
+            if isinstance(before_mtime_ns, int)
+            else None
+        )
+        apply_result = plan.apply_result or {}
+        return {
+            "patch_id": plan.backup_ref or plan.id,
+            "applied": plan.status in {"verified", "partial"},
+            "diff": plan.diff,
+            "validation": plan.validation,
+            "backup": (
+                {
+                    "kind": backup_entry.backup_kind,
+                    "path": backup_entry.backup_paths[0],
+                }
+                if backup_entry is not None
+                else None
+            ),
+            "backup_path": (
+                backup_entry.backup_paths[0]
+                if backup_entry is not None
+                else None
+            ),
+            "audit_event_id": apply_result.get("audit_event_id"),
+            "base_mtime": base_mtime,
+            "change_id": plan.id,
+            "status": plan.status,
+            "verification": (
+                plan.verification.model_dump(mode="json")
+                if plan.verification is not None
+                else None
+            ),
+        }
+
+    def _legacy_change(
+        payload: dict[str, object],
+        *,
+        dry_run: bool,
+        base_mtime: float | None = None,
+    ) -> ChangePlan:
+        plan = _preview_change(payload)
+        observed_mtime_ns = plan.before_evidence.get("mtime_ns")
+        if base_mtime is not None and isinstance(observed_mtime_ns, int):
+            observed_mtime = observed_mtime_ns / 1_000_000_000
+            if observed_mtime != base_mtime:
+                change_service.invalidate(plan.id, "legacy_base_mtime_mismatch")
+                raise HTTPException(
+                    status_code=409,
+                    detail={"error": "stale_target"},
+                )
+        if dry_run:
+            return plan
+        applied = _apply_change(plan.id)
+        if applied.status == "stale":
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "stale_target", "change_id": applied.id},
+            )
+        return applied
+
+    @app.post("/changes/preview")
+    def changes_preview(payload: dict[str, object]) -> dict[str, object]:
+        return _change_payload(_preview_change(payload))
+
+    @app.get("/changes")
+    def changes_list(
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, object]:
+        changes = change_service.list(limit=limit)
+        return {
+            "changes": [_change_payload(plan) for plan in changes],
+            "count": len(changes),
+        }
+
+    @app.get("/changes/{change_id}")
+    def changes_get(change_id: str) -> dict[str, object]:
+        try:
+            return _change_payload(change_service.get(change_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/changes/{change_id}/apply")
+    def changes_apply(change_id: str) -> Any:
+        plan = _apply_change(change_id)
+        payload = _change_payload(plan)
+        if plan.status == "stale":
+            return JSONResponse(status_code=409, content=payload)
+        return payload
+
+    @app.post("/changes/{change_id}/rollback")
+    def changes_rollback(change_id: str) -> Any:
+        plan = _rollback_change(change_id)
+        payload = _change_payload(plan)
+        if plan.status == "rollback_failed":
+            return JSONResponse(status_code=409, content=payload)
+        return payload
 
     def _running_session_count() -> int:
         running = [
@@ -536,39 +696,6 @@ def create_app(
         if tool not in mcp_alignment.SUPPORTED_TOOLS:
             raise HTTPException(status_code=400, detail=f"unsupported tool: {tool}")
 
-    def _apply_alignment_patch(
-        target: object,
-        ops: list[object],
-        summary: dict[str, object],
-        *,
-        dry_run: bool,
-        action: str,
-        server: str,
-    ) -> dict[str, object]:
-        try:
-            result = safe_edit_engine.apply(
-                target,  # type: ignore[arg-type]
-                ops,  # type: ignore[arg-type]
-                source="mcp_alignment",
-                dry_run=dry_run,
-            )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=400, detail={"validation_errors": exc.errors}
-            ) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        backup = result.backup or {}
-        return {
-            "action": action,
-            "server": server,
-            "applied": result.applied,
-            "patch_id": result.patch_id,
-            "summary": summary,
-            "validation": result.validation,
-            "backup_path": backup.get("path"),
-        }
-
     @app.get("/tools/mcp/matrix")
     def mcp_matrix() -> dict[str, object]:
         """Cross-tool MCP server presence matrix (P42). Read-only, names only."""
@@ -607,24 +734,32 @@ def create_app(
         if parse_error:
             raise HTTPException(status_code=400, detail=parse_error)
         try:
-            target, ops, summary = mcp_alignment.build_copy_patch(
+            _target, _ops, summary = mcp_alignment.build_copy_patch(
                 payload.from_tool, payload.to_tool, payload.server, home
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        response = _apply_alignment_patch(
-            target,
-            ops,
-            summary,
+        plan = _legacy_change(
+            {
+                "operation": "mcp.copy",
+                "environment_id": payload.to_tool,
+                "from_tool": payload.from_tool,
+                "to_tool": payload.to_tool,
+                "server": payload.server,
+                "source": "mcp_alignment",
+            },
             dry_run=payload.dry_run,
-            action="copy",
-            server=payload.server,
         )
-        response["from_tool"] = payload.from_tool
-        response["to_tool"] = payload.to_tool
-        return response
+        return {
+            **_legacy_change_payload(plan),
+            "action": "copy",
+            "server": payload.server,
+            "summary": summary,
+            "from_tool": payload.from_tool,
+            "to_tool": payload.to_tool,
+        }
 
     @app.post("/tools/mcp/remove")
     def mcp_remove(payload: McpRemoveRequest) -> dict[str, object]:
@@ -635,23 +770,29 @@ def create_app(
         if parse_error:
             raise HTTPException(status_code=400, detail=parse_error)
         try:
-            target, ops, summary = mcp_alignment.build_remove_patch(
+            _target, _ops, summary = mcp_alignment.build_remove_patch(
                 payload.tool, payload.server, home
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        response = _apply_alignment_patch(
-            target,
-            ops,
-            summary,
+        plan = _legacy_change(
+            {
+                "operation": "mcp.remove",
+                "environment_id": payload.tool,
+                "server": payload.server,
+                "source": "mcp_alignment",
+            },
             dry_run=payload.dry_run,
-            action="remove",
-            server=payload.server,
         )
-        response["tool"] = payload.tool
-        return response
+        return {
+            **_legacy_change_payload(plan),
+            "action": "remove",
+            "server": payload.server,
+            "summary": summary,
+            "tool": payload.tool,
+        }
 
     @app.get("/agentic/inventory")
     def agentic_inventory() -> dict[str, object]:
@@ -768,36 +909,6 @@ def create_app(
         payload["cwd"] = str(resolved_cwd)
         return payload
 
-    def _apply_profile_patch(
-        target: PatchTarget,
-        ops: list[PatchOp],
-        *,
-        source: str,
-        dry_run: bool = False,
-        base_mtime: float | None = None,
-    ) -> PatchResult:
-        try:
-            return safe_edit_engine.apply(
-                target,
-                ops,
-                source=source,
-                dry_run=dry_run,
-                base_mtime=base_mtime,
-            )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"validation_errors": exc.errors}
-            ) from exc
-        except PermissionError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden_path", "message": str(exc)},
-            ) from exc
-        except ConflictError as exc:
-            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
-
     @app.post("/profiles", status_code=201)
     def upsert_profile(
         profile: profiles_module.RunProfileInput,
@@ -813,18 +924,25 @@ def create_app(
                 detail={"message": f"unsupported scope: {scope}", "supported": ["local", "global"]},
             )
         cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
-        target = profiles_module.profile_patch_target(scope, cwd_path)
-        ops = profiles_module.upsert_profile_ops(profile)
-        result = _apply_profile_patch(
-            target,
-            ops,
-            source=source,
+        plan = _legacy_change(
+            {
+                "operation": "profile.patch",
+                "environment_id": "agentic_os",
+                "action": "upsert",
+                "scope": scope,
+                "cwd": str(cwd_path),
+                "profile": profile.model_dump(mode="json"),
+                "source": source,
+            },
             dry_run=dry_run,
             base_mtime=base_mtime,
         )
         if dry_run:
-            return _patch_result_dict(result)
-        return profile.model_dump()
+            return _legacy_change_payload(plan)
+        return {
+            **profile.model_dump(mode="json"),
+            **_legacy_change_payload(plan),
+        }
 
     @app.delete("/profiles/{name}")
     def delete_profile(
@@ -852,16 +970,21 @@ def create_app(
                 status_code=409,
                 detail={"error": "bound", "projects": bound},
             )
-        target = profiles_module.profile_patch_target(scope, cwd_path)
-        ops = profiles_module.delete_profile_ops(name, bundle, cascade=cascade)
-        result = _apply_profile_patch(
-            target,
-            ops,
-            source=source,
+        plan = _legacy_change(
+            {
+                "operation": "profile.patch",
+                "environment_id": "agentic_os",
+                "action": "delete",
+                "scope": scope,
+                "cwd": str(cwd_path),
+                "name": name,
+                "cascade": cascade,
+                "source": source,
+            },
             dry_run=dry_run,
             base_mtime=base_mtime,
         )
-        return _patch_result_dict(result)
+        return _legacy_change_payload(plan)
 
     @app.get("/profiles/{name}/diff")
     def profile_diff(
@@ -901,22 +1024,26 @@ def create_app(
                 },
             )
         cwd_path = Path(resolved_project)
-        local_path = profiles_module.local_profile_path(cwd_path)
-        bundle = profiles_module._read_bundle(local_path)
-        target = profiles_module.profile_patch_target("local", cwd_path)
-        ops = profiles_module.bind_project_profile_ops(bundle, resolved_project, request.run_profile)
-        result = _apply_profile_patch(
-            target,
-            ops,
-            source=source,
+        plan = _legacy_change(
+            {
+                "operation": "profile.patch",
+                "environment_id": "agentic_os",
+                "action": "bind",
+                "scope": "local",
+                "cwd": str(cwd_path),
+                "project_path": resolved_project,
+                "run_profile": request.run_profile,
+                "source": source,
+            },
             dry_run=dry_run,
             base_mtime=base_mtime,
         )
         if dry_run:
-            return _patch_result_dict(result)
+            return _legacy_change_payload(plan)
         return {
             "project_path": resolved_project,
             "run_profile": request.run_profile,
+            **_legacy_change_payload(plan),
         }
 
     @app.get("/usage/sessions/{session_id}")
@@ -2319,33 +2446,6 @@ def create_app(
         result = catalog_diff(records_a, records_b)
         return result
 
-    _STRUCTURED_OPS = frozenset(
-        {"enable_mcp_server", "disable_mcp_server", "upsert_hook"}
-    )
-
-    def _infer_surface_kind(op_name: str) -> str:
-        if op_name in ("enable_mcp_server", "disable_mcp_server"):
-            return "mcp_server"
-        if op_name == "upsert_hook":
-            return "hook"
-        if op_name == "upsert_skill":
-            return "skill"
-        if op_name == "upsert_command":
-            return "command"
-        msg = f"unsupported semantic op: {op_name}"
-        raise ValueError(msg)
-
-    def _patch_result_dict(result: PatchResult) -> dict[str, object]:
-        return {
-            "patch_id": result.patch_id,
-            "applied": result.applied,
-            "diff": result.diff,
-            "validation": result.validation,
-            "backup": result.backup,
-            "audit_event_id": result.audit_event_id,
-            "base_mtime": result.base_mtime,
-        }
-
     def _with_audit_event(mutation: ControlPlaneMutationResult, event_id: int | None) -> ControlPlaneMutationResult:
         return ControlPlaneMutationResult(
             patch_id=mutation.patch_id,
@@ -2369,51 +2469,24 @@ def create_app(
         if not body.ops:
             raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
         cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
-        try:
-            compiled = compile_semantic_ops(harness, body.ops)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
-        structured_target: PatchTarget | None = None
-        if compiled.patch_ops:
-            structured_ops = [op for op in body.ops if str(op.get("op")) in _STRUCTURED_OPS]
-            first_op = structured_ops[0]
-            scope = str(first_op.get("scope", "project"))
-            kind = _infer_surface_kind(str(first_op["op"]))
-            file_path, file_format = resolve_surface_write_target(harness, scope, kind, cwd_path)
-            structured_target = PatchTarget(
-                harness_id=harness,
-                cwd=cwd_path,
-                scope=scope,
-                target_kind="surface",
-                kind=kind,
-                file_path=file_path,
-                file_format=file_format,
-            )
-        try:
-            results = safe_edit_engine.apply_surface_batch(
-                harness_id=harness,
-                cwd=cwd_path,
-                compiled=compiled,
-                structured_target=structured_target,
-                resolve_standalone_path=resolve_standalone_surface_path,
-                source=body.source,
+        plans = [
+            _legacy_change(
+                {
+                    "operation": "catalog.patch",
+                    "environment_id": harness,
+                    "cwd": str(cwd_path),
+                    "ops": [raw_op],
+                    "source": body.source,
+                },
                 dry_run=dry_run,
                 base_mtime=body.base_mtime,
             )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"validation_errors": exc.errors}
-            ) from exc
-        except PermissionError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden_path", "message": str(exc)},
-            ) from exc
-        except ConflictError as exc:
-            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
-        if len(results) == 1:
-            return _patch_result_dict(results[0])
-        return {"results": [_patch_result_dict(result) for result in results]}
+            for raw_op in body.ops
+        ]
+        responses = [_legacy_change_payload(plan) for plan in plans]
+        if len(responses) == 1:
+            return responses[0]
+        return {"results": responses}
 
     @app.get("/patches")
     def patches_list(
@@ -2440,6 +2513,18 @@ def create_app(
         patch_id: str,
         source: str = Query(default="api"),
     ) -> dict[str, object]:
+        managed_change = change_service.find_by_backup_ref(patch_id)
+        if managed_change is not None:
+            plan = _rollback_change(managed_change.id)
+            rollback = plan.rollback or {}
+            return {
+                "patch_id": rollback.get("patch_id"),
+                "applied": plan.status == "rolled_back",
+                "audit_event_id": None,
+                "change_id": plan.id,
+                "status": plan.status,
+                "verification": rollback,
+            }
         entry = backup_store.get(patch_id)
         try:
             result = safe_edit_engine.rollback(patch_id, source=source)
@@ -2455,48 +2540,12 @@ def create_app(
             "audit_event_id": result.audit_event_id,
         }
 
-    def _registry_extra_validator(after: dict[str, object]) -> list[str]:
-        errors, _warnings = validate_registry_document(after)
-        return errors
-
-    def _apply_registry_patch(
-        ops: list[PatchOp],
-        *,
-        source: str,
-        dry_run: bool = False,
-        base_mtime: float | None = None,
-    ) -> PatchResult:
-        cwd_path = Path.cwd()
-        target = registry_patch_target(registry_path, cwd_path)
-        try:
-            result = safe_edit_engine.apply(
-                target,
-                ops,
-                source=source,
-                dry_run=dry_run,
-                base_mtime=base_mtime,
-                extra_validator=_registry_extra_validator,
-            )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"validation_errors": exc.errors}
-            ) from exc
-        except PermissionError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden_path", "message": str(exc)},
-            ) from exc
-        except ConflictError as exc:
-            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
-        if not dry_run:
-            registry.reload()
-        return result
-
-    def _registry_patch_response(result: PatchResult, after_doc: dict[str, object]) -> dict[str, object]:
+    def _registry_patch_response(
+        plan: ChangePlan,
+        after_doc: dict[str, object],
+    ) -> dict[str, object]:
         _errors, warnings = validate_registry_document(after_doc)
-        response = _patch_result_dict(result)
+        response = _legacy_change_payload(plan)
         validation = dict(response.get("validation", {}))
         validation["warnings"] = warnings
         response["validation"] = validation
@@ -2515,14 +2564,18 @@ def create_app(
     ) -> dict[str, object]:
         merged = merge_agent_instance(registry.list_agents(), agent)
         agent_payloads = agents_document(merged)
-        ops = replace_agents_ops(agent_payloads)
-        result = _apply_registry_patch(
-            ops,
-            source=source,
+        plan = _legacy_change(
+            {
+                "operation": "registry.patch",
+                "environment_id": "agentic_os",
+                "action": "upsert",
+                "agent": agent.model_dump(mode="json"),
+                "source": source,
+            },
             dry_run=dry_run,
             base_mtime=base_mtime,
         )
-        return _registry_patch_response(result, {"agents": agent_payloads})
+        return _registry_patch_response(plan, {"agents": agent_payloads})
 
     @app.post("/registry/agents/{agent_id}/disable")
     def registry_disable_agent(
@@ -2536,14 +2589,18 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         agent_payloads = agents_document(merged)
-        ops = replace_agents_ops(agent_payloads)
-        result = _apply_registry_patch(
-            ops,
-            source=source,
+        plan = _legacy_change(
+            {
+                "operation": "registry.patch",
+                "environment_id": "agentic_os",
+                "action": "disable",
+                "agent_id": agent_id,
+                "source": source,
+            },
             dry_run=dry_run,
             base_mtime=base_mtime,
         )
-        return _registry_patch_response(result, {"agents": agent_payloads})
+        return _registry_patch_response(plan, {"agents": agent_payloads})
 
     @app.get("/config/{harness_id}/effective")
     def config_effective_endpoint(
@@ -2596,50 +2653,19 @@ def create_app(
         if not body.ops:
             raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
         cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
-        home_dir = Path.home()
-        try:
-            file_path = config_resolve_write_path(scope, cwd=str(cwd_path), home_dir=home_dir)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
-        patch_ops = [
-            PatchOp(
-                op=str(raw["op"]),
-                path=str(raw.get("path", "")),
-                value=raw.get("value"),
-            )
-            for raw in body.ops
-        ]
-        target = PatchTarget(
-            harness_id=AGENTIC_CONFIG_SCHEMA_HARNESS,
-            cwd=cwd_path,
-            scope=scope,
-            target_kind="agentic_config",
-            kind="config",
-            file_path=file_path,
-            file_format="toml",
+        plan = _legacy_change(
+            {
+                "operation": "config.patch",
+                "environment_id": harness_id,
+                "scope": scope,
+                "cwd": str(cwd_path),
+                "ops": body.ops,
+                "source": body.source,
+            },
+            dry_run=dry_run,
+            base_mtime=body.base_mtime,
         )
-        try:
-            result = safe_edit_engine.apply(
-                target,
-                patch_ops,
-                source=body.source,
-                dry_run=dry_run,
-                base_mtime=body.base_mtime,
-            )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"validation_errors": exc.errors}
-            ) from exc
-        except PermissionError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden_path", "message": str(exc)},
-            ) from exc
-        except ConflictError as exc:
-            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
-        response = _patch_result_dict(result)
+        response = _legacy_change_payload(plan)
         response["harness_id"] = harness_id
         return response
 
@@ -2709,55 +2735,20 @@ def create_app(
         if not body.ops:
             raise HTTPException(status_code=422, detail={"validation_errors": ["ops must not be empty"]})
         cwd_path = Path(cwd).resolve() if cwd else Path.cwd()
-        try:
-            file_path, file_format = resolve_write_path(
-                harness_id,
-                scope,
-                cwd_path,
-                file_name=file,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
-        kind = infer_patch_kind(harness_id, file_path)
-        patch_ops = [
-            PatchOp(
-                op=str(raw["op"]),
-                path=str(raw.get("path", "")),
-                value=raw.get("value"),
-            )
-            for raw in body.ops
-        ]
-        target = PatchTarget(
-            harness_id=harness_id,
-            cwd=cwd_path,
-            scope=scope,
-            target_kind="harness_config",
-            kind=kind,
-            file_path=file_path,
-            file_format=file_format,
+        plan = _legacy_change(
+            {
+                "operation": "harness_config.patch",
+                "environment_id": harness_id,
+                "scope": scope,
+                "cwd": str(cwd_path),
+                "file": file,
+                "ops": body.ops,
+                "source": body.source,
+            },
+            dry_run=dry_run,
+            base_mtime=body.base_mtime,
         )
-        try:
-            result = safe_edit_engine.apply(
-                target,
-                patch_ops,
-                source=body.source,
-                dry_run=dry_run,
-                base_mtime=body.base_mtime,
-            )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=422, detail={"validation_errors": exc.errors}
-            ) from exc
-        except PermissionError as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "forbidden_path", "message": str(exc)},
-            ) from exc
-        except ConflictError as exc:
-            raise HTTPException(status_code=409, detail={"error": "stale_target"}) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail={"validation_errors": [str(exc)]}) from exc
-        return _patch_result_dict(result)
+        return _legacy_change_payload(plan)
 
     @app.get("/fleet/health")
     def fleet_health() -> dict[str, object]:
