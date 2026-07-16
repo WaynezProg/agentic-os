@@ -251,7 +251,7 @@ git commit -m "refactor: deduplicate desktop data loading"
 - Consumes: `GET /environments`, detail, refresh routes.
 - Produces: Environment area list, detail, status cards, action links.
 
-- [ ] **Step 1: Add endpoint map and Web tests**
+- [x] **Step 1: Add endpoint map and Web tests**
 
 In `api.js` add:
 
@@ -270,7 +270,7 @@ Add static tests for:
 - action-required copy;
 - no innerHTML insertion of raw evidence values.
 
-- [ ] **Step 2: Implement module**
+- [x] **Step 2: Implement module**
 
 Create `apps/web/ui/environment-manager.js` with:
 
@@ -295,20 +295,20 @@ const STATUS_LABELS = Object.freeze({
 });
 ```
 
-- [ ] **Step 3: Add markup and styles**
+- [x] **Step 3: Add markup and styles**
 
 Environment list uses rows/cards with name, overall status, CLI version,
 configured surfaces, sessions, pending changes, and primary action. Detail uses
 one surface card per observation with proof source and observed time.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 node --check apps/web/ui/environment-manager.js
 rtk uv run pytest tests/test_web.py tests/test_api.py -k "environment or web" -q
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/api.js apps/web/index.html apps/web/styles.css apps/web/i18n.js apps/web/ui/environment-manager.js tests/test_web.py
@@ -322,7 +322,7 @@ git commit -m "feat: add desktop environment manager"
 - Consumes: `/changes` APIs.
 - Produces: pending plans, verification, restart requirements, history, rollback.
 
-- [ ] **Step 1: Add endpoint map and contracts**
+- [x] **Step 1: Add endpoint map and contracts**
 
 Add:
 
@@ -337,7 +337,7 @@ changeRollback: "/changes/{change_id}/rollback",
 Static tests assert `change-center.js`, pending/history sections, verification
 details, and no apply control for stale plans.
 
-- [ ] **Step 2: Implement module**
+- [x] **Step 2: Implement module**
 
 Create `apps/web/ui/change-center.js`. Render plan cards with:
 
@@ -354,13 +354,13 @@ Create `apps/web/ui/change-center.js`. Render plan cards with:
 Apply is available only for `previewed`; rollback only for `verified` or
 `partial` with a backup.
 
-- [ ] **Step 3: Connect existing editors**
+- [x] **Step 3: Connect existing editors**
 
 After existing MCP/config/profile/registry dry-run calls return a `change_id`,
 open the Change center detail. Existing confirm buttons call the unified apply
 endpoint instead of the old direct apply request.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 node --check apps/web/ui/change-center.js
@@ -371,7 +371,7 @@ node --check apps/web/ui/registry-editor.js
 rtk uv run pytest tests/test_web.py tests/test_api.py -k "change or patch or rollback" -q
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/api.js apps/web/index.html apps/web/styles.css apps/web/i18n.js apps/web/ui/change-center.js apps/web/ui/tool-discovery.js apps/web/ui/config-editor.js apps/web/ui/profile-editor.js apps/web/ui/registry-editor.js tests/test_web.py

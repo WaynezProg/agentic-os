@@ -26,6 +26,7 @@ PROVIDER_SWITCHBOARD_JS = WEB_DIR / "ui" / "provider-switchboard.js"
 RUN_TEMPLATE_LAUNCHER_JS = WEB_DIR / "ui" / "run-template-launcher.js"
 DAILY_DASHBOARD_JS = WEB_DIR / "ui" / "daily-dashboard.js"
 ENVIRONMENT_MANAGER_JS = WEB_DIR / "ui" / "environment-manager.js"
+CHANGE_CENTER_JS = WEB_DIR / "ui" / "change-center.js"
 
 
 def _web_javascript_paths() -> list[Path]:
@@ -113,6 +114,45 @@ def test_environment_manager_contract_exists_and_escapes_observations() -> None:
     assert "Ao.escapeHtml" in manager
     assert "${evidence.detail}" not in manager
     assert "${evidence.source}" not in manager
+
+
+def test_verified_change_center_contract_and_editor_handoff() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    api_js = API_JS.read_text(encoding="utf-8")
+
+    assert CHANGE_CENTER_JS.is_file()
+    change_center = CHANGE_CENTER_JS.read_text(encoding="utf-8")
+
+    assert html.index('src="ui/change-center.js"') < html.index('src="app.js"')
+    for element_id in ["change-pending-list", "change-history-list", "change-detail"]:
+        assert f'id="{element_id}"' in html
+    for endpoint in [
+        'changes: "/changes"',
+        'changePreview: "/changes/preview"',
+        'changeDetail: "/changes/{change_id}"',
+        'changeApply: "/changes/{change_id}/apply"',
+        'changeRollback: "/changes/{change_id}/rollback"',
+    ]:
+        assert endpoint in api_js
+    assert 'const APPLYABLE_STATUSES = new Set(["previewed", "approved"])' in change_center
+    assert 'const ROLLBACKABLE_STATUSES = new Set(["verified", "partial"])' in change_center
+    assert "APPLYABLE_STATUSES.has(change.status)" in change_center
+    assert "restart_requirements" in change_center
+    assert "verification.checks" in change_center
+    assert "Ao.escapeHtml" in change_center
+    assert '"ui.write.changes"' in change_center
+
+    for editor_path in [
+        CONFIG_EDITOR_JS,
+        PROFILE_EDITOR_JS,
+        REGISTRY_EDITOR_JS,
+        CATALOG_EDITOR_JS,
+        WEB_DIR / "ui" / "tool-discovery.js",
+    ]:
+        editor = editor_path.read_text(encoding="utf-8")
+        assert "change_id" in editor, editor_path.name
+        assert "changeApply" in editor, editor_path.name
+        assert "Ao.ChangeCenter" in editor, editor_path.name
 
 
 def test_daemon_api_override_input_exists() -> None:

@@ -66,6 +66,7 @@ window.AgenticOs = window.AgenticOs || {};
 
     let previewBaseMtime = null;
     let lastPreviewOps = null;
+    let pendingChangeId = null;
 
     function toggleEditorChrome() {
       const writable = isWritable();
@@ -110,6 +111,7 @@ window.AgenticOs = window.AgenticOs || {};
     function resetApplyState() {
       previewBaseMtime = null;
       lastPreviewOps = null;
+      pendingChangeId = null;
       byId(elId(descriptor, "apply")).disabled = true;
     }
 
@@ -226,6 +228,7 @@ window.AgenticOs = window.AgenticOs || {};
         const result = await runPatch(true, ops, null);
         previewBaseMtime = result.base_mtime ?? null;
         lastPreviewOps = ops;
+        pendingChangeId = result.change_id || null;
         preview.textContent = formatDiff(result.diff);
         byId(elId(descriptor, "apply")).disabled = false;
         setMessage(
@@ -233,6 +236,11 @@ window.AgenticOs = window.AgenticOs || {};
             ? "預覽完成（無 base_mtime），確認後可套用。"
             : `預覽完成，base_mtime=${previewBaseMtime}。確認後可套用。`,
         );
+        if (pendingChangeId) {
+          Ao.ChangeCenter?.open?.(pendingChangeId)?.catch((error) => {
+            console.warn("change center unavailable", error);
+          });
+        }
       } catch (error) {
         preview.textContent = formatDiff(error.payload?.detail || error.message);
         const validationErrors = extractValidationErrors(error);
@@ -248,20 +256,22 @@ window.AgenticOs = window.AgenticOs || {};
     }
 
     async function applyPatch() {
-      if (!lastPreviewOps?.length) {
+      if (!lastPreviewOps?.length || !pendingChangeId) {
         setMessage("請先預覽變更。", true);
         return;
       }
       clearValidationErrors();
       try {
-        const result = await runPatch(false, lastPreviewOps, previewBaseMtime);
-        const patchId = result.patch_id || "(unknown)";
+        const result = await Ao.postEmpty(
+          Ao.buildEndpoint("changeApply", { change_id: pendingChangeId }),
+        );
+        const patchId = result.backup_ref || "(unknown)";
         byId(elId(descriptor, "diff-preview")).textContent = formatDiff(result.diff);
-        setMessage(`已套用 patch_id=${patchId}`);
+        setMessage(`已套用並驗證 patch_id=${patchId}（${result.status}）`);
         resetApplyState();
         await loadEffective();
       } catch (error) {
-        if (isStaleTarget(error)) {
+        if (isStaleTarget(error) || error.payload?.status === "stale") {
           setMessage("檔案已變更（stale_target），已重新預覽，請確認 diff 後再套用。", true);
           await dryRunPatch();
           return;

@@ -3337,6 +3337,21 @@ def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
     assert (home / ".gemini" / "settings.json").read_text(encoding="utf-8") == before
 
 
+def test_legacy_preview_can_apply_through_unified_change_endpoint(tmp_path: Path) -> None:
+    client, home = _make_alignment_client(tmp_path)
+    preview = client.post(
+        "/tools/mcp/copy",
+        json={"server": "github", "from_tool": "claude", "to_tool": "gemini"},
+    ).json()
+
+    applied = client.post(f"/changes/{preview['change_id']}/apply")
+
+    assert applied.status_code == 200
+    assert applied.json()["status"] == "verified"
+    target = json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8"))
+    assert "github" in target["mcpServers"]
+
+
 def test_mcp_copy_apply_writes_target(tmp_path: Path) -> None:
     client, home = _make_alignment_client(tmp_path)
     response = client.post(

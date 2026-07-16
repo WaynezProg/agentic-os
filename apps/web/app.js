@@ -42,6 +42,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.DailyDashboard?.init?.();
   Ao.DashboardV2?.init?.();
   Ao.EnvironmentManager?.init?.();
+  Ao.ChangeCenter?.init?.();
   Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindNavigation();
@@ -169,6 +170,8 @@ Ao.showTab = showTab;
 function loadActiveTab() {
   if (state.activeTab === "environment-list") {
     Ao.EnvironmentManager?.load?.();
+  } else if (state.activeTab === "change-center") {
+    Ao.ChangeCenter?.load?.();
   } else if (state.activeTab === "agents") {
     loadAgents();
     Ao.ProviderSwitchboard?.refresh?.();
@@ -218,6 +221,7 @@ async function refreshAll() {
     loadFleet(),
     loadHarnesses(),
     Ao.EnvironmentManager?.load?.({ force: true }),
+    Ao.ChangeCenter?.load?.({ force: true }),
   ]);
   if (state.activeTab === "logs" && byId("log-session-id").value.trim()) {
     await loadLogs();

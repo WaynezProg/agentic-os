@@ -57,6 +57,11 @@ LOCALHOST_ONLY_ACTION_SPECS: tuple[LocalhostOnlyAction, ...] = (
     # Native harness config editing / repair.
     LocalhostOnlyAction("config.patch", "POST", "/config/{harness_id}/patch"),
     LocalhostOnlyAction("harness_config.patch", "POST", "/harness-config/{harness_id}/patch"),
+    # Unified verified-change lifecycle. These routes can mutate every config
+    # family above, so they must preserve the same localhost trust boundary.
+    LocalhostOnlyAction("changes.preview", "POST", "/changes/preview"),
+    LocalhostOnlyAction("changes.apply", "POST", "/changes/{change_id}/apply"),
+    LocalhostOnlyAction("changes.rollback", "POST", "/changes/{change_id}/rollback"),
     # Setup import + raw log download.
     LocalhostOnlyAction("setup.import", "POST", "/setup/import"),
     LocalhostOnlyAction("setup.logs_zip", "GET", "/setup/logs.zip"),
@@ -72,6 +77,7 @@ UI_LOCALHOST_ONLY_ACTIONS: frozenset[str] = frozenset(
         "ui.write.catalog",
         "ui.write.control-plane",
         "ui.write.harness-config",
+        "ui.write.changes",
         "ui.write.profile",
         "ui.write.registry",
         "ui.write.setup-import",

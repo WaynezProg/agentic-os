@@ -9,6 +9,7 @@
     <script src="api.js"></script>
     <script src="ui/data-cache.js"></script>
     <script src="ui/environment-manager.js"></script>
+    <script src="ui/change-center.js"></script>
     <script src="ui/rollback.js"></script>
     <script src="ui/catalog-editor.js"></script>
     <script src="ui/config-editor.js"></script>
@@ -1144,8 +1145,34 @@
             <p class="eyebrow">Verified Changes</p>
             <h2>變更中心</h2>
           </div>
+          <button id="change-refresh" type="button">重新整理</button>
         </div>
-        <p class="message">變更預覽、套用與 rollback 介面準備中。</p>
+        <p id="change-message" class="message" aria-live="polite"></p>
+        <div class="change-center-layout">
+          <div class="change-center-lists">
+            <section class="change-list-section" aria-labelledby="change-pending-heading">
+              <div class="change-list-section__head">
+                <h3 id="change-pending-heading">待確認</h3>
+                <span id="change-pending-count" class="badge">0</span>
+              </div>
+              <div id="change-pending-list" class="change-list">
+                <p class="empty-state">沒有待確認變更。</p>
+              </div>
+            </section>
+            <section class="change-list-section" aria-labelledby="change-history-heading">
+              <div class="change-list-section__head">
+                <h3 id="change-history-heading">歷史</h3>
+                <span id="change-history-count" class="badge">0</span>
+              </div>
+              <div id="change-history-list" class="change-list">
+                <p class="empty-state">尚無變更紀錄。</p>
+              </div>
+            </section>
+          </div>
+          <section id="change-detail" class="change-detail" aria-label="變更明細">
+            <p class="empty-state">從左側選擇一筆變更。</p>
+          </section>
+        </div>
       </section>
 
       <section id="panel-approvals" class="panel" role="region" aria-label="核准請求" data-view="approvals" hidden>

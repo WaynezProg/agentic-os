@@ -15,6 +15,7 @@ window.AgenticOs = window.AgenticOs || {};
     "ui.write.catalog",
     "ui.write.control-plane",
     "ui.write.harness-config",
+    "ui.write.changes",
     "ui.write.profile",
     "ui.write.registry",
     "ui.write.setup-import",
@@ -79,6 +80,7 @@ window.AgenticOs = window.AgenticOs || {};
     Ao.ProductPolish?.toggleLocalOnlyActions?.();
     Ao.CatalogEditor?.toggleEditorChrome?.();
     Ao.HarnessConfigEditor?.toggleEditorChrome?.();
+    Ao.ChangeCenter?.toggleChrome?.();
     Ao.ProfileEditor?.toggleEditorChrome?.();
     Ao.RegistryEditor?.toggleEditorChrome?.();
     Ao.ControlPlaneEditor?.toggleEditorChrome?.();

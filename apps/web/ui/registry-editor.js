@@ -15,6 +15,7 @@ window.AgenticOs = window.AgenticOs || {};
 
   let previewBaseMtime = null;
   let pendingAgent = null;
+  let pendingChangeId = null;
   let cwdModeOptions = ["required", "optional", "ignored"];
 
   function escapeHtml(value) {
@@ -81,6 +82,7 @@ window.AgenticOs = window.AgenticOs || {};
   function resetApplyState() {
     previewBaseMtime = null;
     pendingAgent = null;
+    pendingChangeId = null;
     byId("registry-apply").disabled = true;
   }
 
@@ -206,6 +208,7 @@ window.AgenticOs = window.AgenticOs || {};
       const path = `${Ao.buildEndpoint("registryAgents")}?${buildRegistryQuery(true, null)}`;
       const result = await Ao.postJson(path, agent);
       previewBaseMtime = result.base_mtime ?? null;
+      pendingChangeId = result.change_id || null;
       preview.textContent = formatDiff(result.diff);
       renderValidationWarnings(result.validation?.warnings || []);
       byId("registry-apply").disabled = false;
@@ -214,6 +217,11 @@ window.AgenticOs = window.AgenticOs || {};
           ? "預覽完成，確認後可套用。"
           : `預覽完成，base_mtime=${previewBaseMtime}。`,
       );
+      if (pendingChangeId) {
+        Ao.ChangeCenter?.open?.(pendingChangeId)?.catch((error) => {
+          console.warn("change center unavailable", error);
+        });
+      }
     } catch (error) {
       preview.textContent = formatDiff(error.payload?.detail || error.message);
       handleRegistryError(error);
@@ -221,23 +229,27 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   async function applyRegistry() {
-    if (!pendingAgent) {
+    if (!pendingAgent || !pendingChangeId) {
       setMessage("請先預覽變更。", true);
       return;
     }
     clearValidationErrors();
     try {
-      const path = `${Ao.buildEndpoint("registryAgents")}?${buildRegistryQuery(false, previewBaseMtime)}`;
-      const result = await Ao.postJson(path, pendingAgent);
+      const result = await Ao.postEmpty(
+        Ao.buildEndpoint("changeApply", { change_id: pendingChangeId }),
+      );
       byId("registry-diff-preview").textContent = formatDiff(result.diff);
       renderValidationWarnings(result.validation?.warnings || []);
-      setMessage(`已套用 instance：${pendingAgent.id}`);
+      setMessage(`已套用並驗證 instance：${pendingAgent.id}（${result.status}）`);
       resetApplyState();
       if (typeof Ao.loadAgents === "function") {
         await Ao.loadAgents();
       }
     } catch (error) {
-      if (error.status === 409 && error.payload?.detail?.error === "stale_target") {
+      if (
+        error.status === 409 &&
+        (error.payload?.detail?.error === "stale_target" || error.payload?.status === "stale")
+      ) {
         setMessage("檔案已變更（stale_target），已重新預覽。", true);
         await dryRunRegistry();
         return;

@@ -234,3 +234,39 @@ view without duplicating the older discovery, inventory, and fleet modules.
 - `node --check apps/web/app.js`
 - `rtk uv run pytest tests/test_web.py tests/test_api.py -k "environment or web" -q`
   — 85 passed.
+
+## 2026-07-17 — Route Desktop config writes through Verified Changes
+
+### Purpose
+
+Give the operator one durable place to inspect, apply, verify, and rollback
+cross-agent configuration changes while keeping the legacy editors usable.
+
+### Decision and rationale
+
+- Add a Change Center master-detail view that separates pending plans from
+  history and exposes redacted diff, validation, restart requirements,
+  verification checks, backup reference, and rollback result.
+- Show Apply only for `previewed` or `approved` plans. Show Rollback only for
+  `verified` or `partial` plans with a backup; stale plans never regain an
+  apply control.
+- Keep legacy MCP, catalog, harness-config, profile, and registry preview
+  routes, but capture their `change_id` and apply that exact persisted plan
+  through `/changes/{id}/apply`. This avoids creating a second preview between
+  operator confirmation and mutation.
+- Open the Change Center after a successful legacy preview without making
+  editor success depend on the Change Center list request.
+- Add `/changes/preview`, `/changes/{id}/apply`, and rollback to the
+  server-side localhost-only route registry. Without this, the unified apply
+  endpoint would bypass the remote restrictions enforced on each legacy
+  config-write route.
+
+### Verification
+
+- JavaScript syntax checks passed for the Change Center and all connected
+  editors.
+- Focused Change/API/remote suite:
+  `135 passed`.
+- Ruff passed for the remote-affordance and API test changes.
+- A regression test proves a legacy MCP dry-run `change_id` can be applied
+  through the unified endpoint and reaches `verified`.

@@ -14,6 +14,7 @@ window.AgenticOs = window.AgenticOs || {};
   const PATCH_SOURCE = "web-catalog-editor";
 
   let pendingOps = null;
+  let pendingChangeId = null;
   let enableTarget = null;
 
   function escapeHtml(value) {
@@ -48,6 +49,7 @@ window.AgenticOs = window.AgenticOs || {};
 
   function setPendingOps(ops) {
     pendingOps = ops;
+    pendingChangeId = null;
     const hasPending = Array.isArray(ops) && ops.length > 0;
     const dryRunBtn = byId("catalog-dry-run");
     const applyBtn = byId("catalog-apply");
@@ -292,9 +294,15 @@ window.AgenticOs = window.AgenticOs || {};
     preview.textContent = "預覽中…";
     try {
       const result = await runPatch(true);
+      pendingChangeId = result.change_id || null;
       preview.textContent = formatDiff(result.diff);
       byId("catalog-apply").disabled = false;
       setEditorMessage("預覽完成，確認後可套用。");
+      if (pendingChangeId) {
+        Ao.ChangeCenter?.open?.(pendingChangeId)?.catch((error) => {
+          console.warn("change center unavailable", error);
+        });
+      }
     } catch (error) {
       preview.textContent = formatDiff(error.payload?.detail || error.message);
       byId("catalog-apply").disabled = true;
@@ -303,14 +311,24 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   async function applyPatch() {
+    if (!pendingChangeId) {
+      setEditorMessage("請先預覽變更。", true);
+      return;
+    }
     try {
-      const result = await runPatch(false);
-      const patchId = result.patch_id || "(unknown)";
+      const result = await Ao.postEmpty(
+        Ao.buildEndpoint("changeApply", { change_id: pendingChangeId }),
+      );
+      const patchId = result.backup_ref || "(unknown)";
       byId("catalog-diff-preview").textContent = formatDiff(result.diff);
-      setEditorMessage(`已套用 patch_id=${patchId}`);
+      setEditorMessage(`已套用並驗證 patch_id=${patchId}（${result.status}）`);
       setPendingOps(null);
       await loadCatalog();
     } catch (error) {
+      if (error.payload?.status === "stale") {
+        setEditorMessage("目標已改變，這筆變更已 stale；請重新預覽。", true);
+        return;
+      }
       setEditorMessage(error.message, true);
     }
   }

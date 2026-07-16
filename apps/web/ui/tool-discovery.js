@@ -182,10 +182,15 @@ window.AgenticOs = window.AgenticOs || {};
       ${warning}
       <button type="button" class="btn-primary btn-sm" data-mcp-apply>確認寫入</button>
       <button type="button" class="btn-sm" data-mcp-cancel>取消</button>`;
-    bindConfirmButtons(container, endpoint, payload);
+    bindConfirmButtons(container, dry.change_id);
+    if (dry.change_id) {
+      Ao.ChangeCenter?.open?.(dry.change_id)?.catch((error) => {
+        console.warn("change center unavailable", error);
+      });
+    }
   }
 
-  function bindConfirmButtons(container, endpoint, payload) {
+  function bindConfirmButtons(container, changeId) {
     const confirmBox = container.querySelector("#mcp-confirm");
     confirmBox.querySelector("[data-mcp-cancel]")?.addEventListener("click", () => {
       confirmBox.hidden = true;
@@ -194,11 +199,10 @@ window.AgenticOs = window.AgenticOs || {};
     confirmBox.querySelector("[data-mcp-apply]")?.addEventListener("click", async () => {
       confirmBox.innerHTML = '<p class="loading">寫入中…</p>';
       try {
-        const result = await Ao.postJson(Ao.buildEndpoint(endpoint), {
-          ...payload,
-          dry_run: false,
-        });
-        confirmBox.innerHTML = `<p class="status-ok">完成 ✓ patch：<code>${escapeHtml(result.patch_id)}</code></p>`;
+        const result = await Ao.postEmpty(
+          Ao.buildEndpoint("changeApply", { change_id: changeId }),
+        );
+        confirmBox.innerHTML = `<p class="status-ok">完成 ✓ patch：<code>${escapeHtml(result.backup_ref)}</code></p>`;
         setTimeout(() => render("tool-discovery-container"), 900);
       } catch (error) {
         confirmBox.innerHTML = `<p class="error-text">寫入失敗：${escapeHtml(error.message)}</p>
