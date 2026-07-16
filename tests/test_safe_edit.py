@@ -1,10 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from agentic_os.audit import AuditStore
 from agentic_os.backup_store import BackupStore
-from agentic_os.patch_engine import PatchOp
 from agentic_os.catalog import resolve_standalone_surface_path
+from agentic_os.patch_engine import PatchOp
 from agentic_os.safe_edit import PatchTarget, SafeEditEngine
 
 
@@ -136,3 +138,71 @@ def test_rollback_restores_skill_file(tmp_path: Path, monkeypatch) -> None:
     assert skill_path.read_text(encoding="utf-8") == "# Updated\n"
     engine.rollback(applied.patch_id, source="test")
     assert skill_path.read_text(encoding="utf-8") == "# Original\n"
+
+
+def test_observe_target_refuses_malformed_json(tmp_path: Path) -> None:
+    engine, target = _engine_and_target(tmp_path, file_format="json", content="{broken")
+
+    with pytest.raises(ValueError, match="config parse error"):
+        engine.observe_target(target)
+
+
+def test_observe_target_refuses_malformed_toml(tmp_path: Path) -> None:
+    engine, target = _engine_and_target(tmp_path, file_format="toml", content="broken = [")
+
+    with pytest.raises(ValueError, match="config parse error"):
+        engine.observe_target(target)
+
+
+def test_observe_target_returns_hash_mtime_and_document(tmp_path: Path) -> None:
+    engine, target = _engine_and_target(tmp_path, file_format="json", content="{}")
+
+    observed = engine.observe_target(target)
+
+    assert observed.exists is True
+    assert observed.content_sha256
+    assert observed.mtime_ns == target.file_path.stat().st_mtime_ns
+    assert observed.document == {}
+
+
+def test_apply_refuses_malformed_document(tmp_path: Path) -> None:
+    engine, target = _engine_and_target(tmp_path, file_format="json", content="{broken")
+
+    with pytest.raises(ValueError, match="config parse error"):
+        engine.apply(
+            target,
+            [PatchOp(op="merge", path="mcpServers.gh", value={"command": "npx"})],
+            source="test",
+        )
+
+    assert target.file_path.read_text(encoding="utf-8") == "{broken"
+
+
+def _engine_and_target(
+    tmp_path: Path,
+    *,
+    file_format: str,
+    content: str,
+) -> tuple[SafeEditEngine, PatchTarget]:
+    state_dir = tmp_path / ".agentic-os"
+    state_dir.mkdir(parents=True)
+    audit_store = AuditStore(state_dir / "agentic-os.db")
+    audit_store.init()
+    engine = SafeEditEngine(
+        state_dir=state_dir,
+        backup_store=BackupStore(state_dir),
+        audit_store=audit_store,
+    )
+    suffix = "json" if file_format == "json" else "toml"
+    file_path = tmp_path / f"config.{suffix}"
+    file_path.write_text(content, encoding="utf-8")
+    target = PatchTarget(
+        harness_id="codex",
+        cwd=tmp_path,
+        scope="user",
+        target_kind="config",
+        kind="mcp_server",
+        file_path=file_path,
+        file_format=file_format,
+    )
+    return engine, target

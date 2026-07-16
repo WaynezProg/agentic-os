@@ -194,7 +194,7 @@ git commit -m "feat: persist change plans"
 - Produces: `ObservedTarget`, `SafeEditEngine.observe_target()`.
 - Used by: Change preview, stale check, apply verification, rollback verification.
 
-- [ ] **Step 1: Write strict parsing tests**
+- [x] **Step 1: Write strict parsing tests**
 
 Add to `tests/test_safe_edit.py`:
 
@@ -212,7 +212,7 @@ def test_observe_target_returns_hash_and_mtime(engine, target) -> None:
     assert observed.document == {}
 ```
 
-- [ ] **Step 2: Verify current malformed-file failure**
+- [x] **Step 2: Verify current malformed-file failure**
 
 ```bash
 rtk uv run pytest tests/test_safe_edit.py -k observe_target -q
@@ -220,7 +220,7 @@ rtk uv run pytest tests/test_safe_edit.py -k observe_target -q
 
 Expected: failure because `observe_target` does not exist.
 
-- [ ] **Step 3: Implement strict observation**
+- [x] **Step 3: Implement strict observation**
 
 In `safe_edit.py` add:
 
@@ -252,14 +252,14 @@ def observe_target(self, target: PatchTarget) -> ObservedTarget:
 Use the same strict parser in `apply()` so malformed JSON/TOML can no longer
 fall back to `{}`.
 
-- [ ] **Step 4: Run safe-edit regression**
+- [x] **Step 4: Run safe-edit regression**
 
 ```bash
 rtk uv run pytest tests/test_safe_edit.py tests/test_harness_config_patch.py tests/test_mcp_alignment.py -q
 rtk uv run ruff check src/agentic_os/safe_edit.py
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agentic_os/safe_edit.py tests/test_safe_edit.py tests/test_harness_config_patch.py tests/test_mcp_alignment.py

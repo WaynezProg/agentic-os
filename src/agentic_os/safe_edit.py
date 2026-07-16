@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tomllib
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
 from agentic_os.audit import AuditStore
@@ -15,7 +16,7 @@ from agentic_os.jsonio import atomic_write_json
 from agentic_os.patch_engine import PatchEngine, PatchOp
 from agentic_os.schema_registry import SchemaRegistry
 from agentic_os.surface_ops import CompiledSurfacePatch
-from agentic_os.toml_io import atomic_write_toml, load_toml
+from agentic_os.toml_io import atomic_write_toml
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,14 @@ class PatchResult:
     backup: dict[str, Any] | None
     audit_event_id: int | None
     base_mtime: float | None = None
+
+
+@dataclass(frozen=True)
+class ObservedTarget:
+    exists: bool
+    mtime_ns: int | None
+    content_sha256: str
+    document: dict[str, Any]
 
 
 class ValidationError(Exception):
@@ -76,7 +85,7 @@ class SafeEditEngine:
         extra_validator: Callable[[dict[str, Any]], list[str]] | None = None,
     ) -> PatchResult:
         patch_id = f"p_{uuid.uuid4().hex}"
-        before = self._load_document(target)
+        before = self.observe_target(target).document
         for op in ops:
             if not self.schema_registry.is_path_allowed(target.harness_id, target.kind, op.path):
                 msg = f"forbidden path: {op.path}"
@@ -294,22 +303,45 @@ class SafeEditEngine:
             audit_event_id=event.id,
         )
 
+    def observe_target(self, target: PatchTarget) -> ObservedTarget:
+        if not target.file_path.exists():
+            return ObservedTarget(
+                exists=False,
+                mtime_ns=None,
+                content_sha256=hashlib.sha256(b"").hexdigest(),
+                document={},
+            )
+        raw = target.file_path.read_bytes()
+        try:
+            text = raw.decode("utf-8")
+            document = _parse_document(text, target.file_format)
+        except (UnicodeDecodeError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
+            raise ValueError(f"config parse error: {exc}") from exc
+        if not isinstance(document, dict):
+            raise ValueError("config parse error: document root must be an object")
+        return ObservedTarget(
+            exists=True,
+            mtime_ns=target.file_path.stat().st_mtime_ns,
+            content_sha256=hashlib.sha256(raw).hexdigest(),
+            document=document,
+        )
+
     def _load_document(self, target: PatchTarget) -> dict[str, Any]:
-        if target.file_format == "json":
-            if not target.file_path.exists():
-                return {}
-            try:
-                data = json.loads(target.file_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                return {}
-            return data if isinstance(data, dict) else {}
-        return load_toml(target.file_path)
+        return self.observe_target(target).document
 
     def _write_document(self, target: PatchTarget, doc: dict[str, Any]) -> None:
         if target.file_format == "json":
             atomic_write_json(target.file_path, doc)
         else:
             atomic_write_toml(target.file_path, doc)
+
+
+def _parse_document(text: str, file_format: str) -> object:
+    if file_format == "json":
+        return json.loads(text)
+    if file_format == "toml":
+        return tomllib.loads(text)
+    raise ValueError(f"unsupported config format: {file_format}")
 
 
 def _audit_metadata(
