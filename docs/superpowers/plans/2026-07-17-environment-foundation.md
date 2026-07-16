@@ -402,7 +402,7 @@ git commit -m "refactor: unify harness health probing"
 - Reuses: existing Claude/Codex parser functions.
 - Consumed by: live radar, transcript path validation, external discovery/bind.
 
-- [ ] **Step 1: Write normalization tests**
+- [x] **Step 1: Write normalization tests**
 
 Create `tests/test_native_session_service.py` with fixture writers imported from
 `tests/test_live_sessions.py` or copied as local helpers, then assert:
@@ -433,7 +433,7 @@ def test_scan_has_global_file_limit(tmp_path: Path) -> None:
     assert scan.files_examined <= 25
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 ```bash
 rtk uv run pytest tests/test_native_session_service.py -q
@@ -441,7 +441,7 @@ rtk uv run pytest tests/test_native_session_service.py -q
 
 Expected: missing module failure.
 
-- [ ] **Step 3: Implement service**
+- [x] **Step 3: Implement service**
 
 Create `src/agentic_os/native_session_service.py` with:
 
@@ -536,7 +536,7 @@ During implementation, move the actual global file-count enforcement into the
 shared traversal in `live_sessions.py`; the service-level cap alone must not be
 used as proof of bounded filesystem traversal.
 
-- [ ] **Step 4: Rewire routes**
+- [x] **Step 4: Rewire routes**
 
 Use one `NativeSessionService` instance in `create_app()`.
 
@@ -547,14 +547,14 @@ Use one `NativeSessionService` instance in `create_app()`.
 
 Keep `attach.py` command construction and execution unchanged.
 
-- [ ] **Step 5: Run regression**
+- [x] **Step 5: Run regression**
 
 ```bash
 rtk uv run pytest tests/test_native_session_service.py tests/test_live_sessions.py tests/test_attach_vibe_coding.py tests/test_api.py -k "live or discover or bind or transcript" -q
 rtk uv run ruff check src/agentic_os/native_session_service.py src/agentic_os/live_sessions.py src/agentic_os/attach.py src/agentic_os/api.py
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/agentic_os/native_session_service.py src/agentic_os/live_sessions.py src/agentic_os/attach.py src/agentic_os/api.py tests/test_native_session_service.py tests/test_live_sessions.py tests/test_attach_vibe_coding.py tests/test_api.py

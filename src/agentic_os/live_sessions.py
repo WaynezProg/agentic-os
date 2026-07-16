@@ -46,6 +46,18 @@ class LiveSession:
     resume_command: str
 
 
+@dataclass
+class _FileBudget:
+    maximum: int
+    examined: int = 0
+
+    def consume(self) -> bool:
+        if self.examined >= self.maximum:
+            return False
+        self.examined += 1
+        return True
+
+
 def live_session_dict(session: LiveSession) -> dict[str, object]:
     return asdict(session)
 
@@ -175,6 +187,7 @@ def scan_claude_sessions(
     *,
     within_hours: int = 72,
     now: datetime | None = None,
+    _budget: _FileBudget | None = None,
 ) -> list[LiveSession]:
     now_ts = _now_ts(now)
     cutoff = now_ts - within_hours * 3600
@@ -184,9 +197,11 @@ def scan_claude_sessions(
     for project_dir in sorted(root.iterdir()):
         if not project_dir.is_dir():
             continue
-        for jsonl in project_dir.glob("*.jsonl"):
+        for jsonl in sorted(project_dir.glob("*.jsonl")):
             if jsonl.name.startswith("agent-"):
                 continue  # subagent sidechain transcripts, not resumable sessions
+            if _budget is not None and not _budget.consume():
+                return results
             try:
                 stat = jsonl.stat()
             except OSError:
@@ -250,13 +265,16 @@ def scan_codex_sessions(
     *,
     within_hours: int = 72,
     now: datetime | None = None,
+    _budget: _FileBudget | None = None,
 ) -> list[LiveSession]:
     now_ts = _now_ts(now)
     cutoff = now_ts - within_hours * 3600
     results: list[LiveSession] = []
     if not root.is_dir():
         return results
-    for jsonl in root.glob("*/*/*/rollout-*.jsonl"):
+    for jsonl in sorted(root.glob("*/*/*/rollout-*.jsonl")):
+        if _budget is not None and not _budget.consume():
+            return results
         try:
             stat = jsonl.stat()
         except OSError:
@@ -317,22 +335,51 @@ def scan_live_sessions(
     within_hours: int = 72,
     limit: int = 50,
     now: datetime | None = None,
+    max_files: int = 500,
 ) -> tuple[list[LiveSession], list[dict[str, str]]]:
+    sessions, errors, _ = scan_live_sessions_with_stats(
+        roots,
+        within_hours=within_hours,
+        limit=limit,
+        now=now,
+        max_files=max_files,
+    )
+    return sessions, errors
+
+
+def scan_live_sessions_with_stats(
+    roots: dict[str, Path] | None = None,
+    *,
+    within_hours: int = 72,
+    limit: int = 50,
+    now: datetime | None = None,
+    max_files: int = 500,
+) -> tuple[list[LiveSession], list[dict[str, str]], int]:
     resolved = default_roots()
     if roots:
         resolved.update(roots)
     sessions: list[LiveSession] = []
     errors: list[dict[str, str]] = []
+    budget = _FileBudget(maximum=max(1, max_files))
     for tool, scanner in _SCANNERS.items():
         root = resolved.get(tool)
         if root is None:
             continue
         try:
-            sessions.extend(scanner(root, within_hours=within_hours, now=now))
+            sessions.extend(
+                scanner(
+                    root,
+                    within_hours=within_hours,
+                    now=now,
+                    _budget=budget,
+                )
+            )
         except Exception as exc:  # one bad store must not break the radar
             errors.append({"tool": tool, "error": str(exc)})
+        if budget.examined >= budget.maximum:
+            break
     sessions.sort(key=lambda s: s.last_activity_at, reverse=True)
-    return sessions[:limit], errors
+    return sessions[:limit], errors, budget.examined
 
 
 # --- Transcript tail preview (P41) ---

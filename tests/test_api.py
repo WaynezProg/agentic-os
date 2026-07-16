@@ -2916,6 +2916,45 @@ def test_live_sessions_endpoint(tmp_path: Path) -> None:
     assert "generated_at" in body
 
 
+def test_live_sessions_endpoint_uses_native_session_service(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from agentic_os.native_session_service import (
+        NativeSessionRecord,
+        NativeSessionScan,
+        NativeSessionService,
+    )
+
+    marker = NativeSessionRecord(
+        identity="codex:shared-1",
+        environment_id="codex",
+        session_id="shared-1",
+        workspace="/Users/w/shared",
+        title="shared service",
+        started_at=None,
+        last_activity_at="2026-06-12T10:00:00+00:00",
+        active=False,
+        source="test",
+        log_path="/tmp/shared-1.jsonl",
+        resume_command="codex resume shared-1",
+    )
+
+    def fake_scan(self, **kwargs):
+        return NativeSessionScan(sessions=[marker], files_examined=1)
+
+    monkeypatch.setattr(NativeSessionService, "scan", fake_scan)
+    registry = tmp_path / "agents.toml"
+    write_registry(registry)
+    client = TestClient(
+        create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry)
+    )
+
+    response = client.get("/sessions/live")
+
+    assert response.status_code == 200
+    assert response.json()["sessions"][0]["session_id"] == "shared-1"
+
+
 def test_live_sessions_endpoint_clamps_params(tmp_path: Path) -> None:
     client = _make_live_client(tmp_path)
     response = client.get("/sessions/live", params={"within_hours": 999999, "limit": 0})

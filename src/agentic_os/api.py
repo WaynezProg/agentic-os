@@ -85,7 +85,7 @@ from agentic_os.agentic_inventory import (
 )
 from agentic_os.tool_discovery import discover_all
 from agentic_os import profiles as profiles_module
-from agentic_os.attach import build_attach_command, discover_external_sessions, evaluate_attach
+from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
@@ -93,13 +93,7 @@ from agentic_os.health_prober import HealthProber
 from agentic_os.probe_service import ProbeService
 from agentic_os import mcp_alignment
 from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
-from agentic_os.live_sessions import (
-    default_roots,
-    live_session_dict,
-    open_terminal,
-    read_transcript_tail,
-    scan_live_sessions,
-)
+from agentic_os.live_sessions import open_terminal
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
 from agentic_os.memory_store import MemoryStore, SessionSummaryRecord
@@ -112,6 +106,7 @@ from agentic_os.models import (
     SessionRecord,
     SessionStatus,
 )
+from agentic_os.native_session_service import NativeSessionService
 from agentic_os.registry import (
     Registry,
     RenderedRun,
@@ -319,6 +314,10 @@ def create_app(
     run_template_store.init()
     probe_service = ProbeService()
     prober = HealthProber(fleet_store, probe_service=probe_service)
+    native_session_service = NativeSessionService(
+        roots=live_session_roots,
+        agents_provider=lambda: list(registry.list_agents()),
+    )
     logs = JsonlLogStore()
     evidence_store = EvidenceStore(state_dir)
     remote_access = RemoteAccessService(state_dir)
@@ -340,6 +339,7 @@ def create_app(
     app.state.control_plane = control_plane
     app.state.approval_store = approval_store
     app.state.usage_store = usage_store
+    app.state.native_session_service = native_session_service
     # tauri://localhost (macOS/Linux webview) and https://tauri.localhost
     # (Windows webview) are the packaged desktop app's origins — without
     # them every fetch from the app window is CORS-blocked and the
@@ -1052,12 +1052,13 @@ def create_app(
         """Scan real external session stores (P39). Read-only."""
         within_hours = max(1, min(within_hours, 720))
         limit = max(1, min(limit, 200))
-        live, errors = scan_live_sessions(
-            live_session_roots, within_hours=within_hours, limit=limit
+        scan = native_session_service.scan(
+            within_hours=within_hours,
+            limit=limit,
         )
         return {
-            "sessions": [live_session_dict(s) for s in live],
-            "errors": errors,
+            "sessions": [session.live_payload() for session in scan.sessions],
+            "errors": scan.errors,
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         }
 
@@ -1067,25 +1068,10 @@ def create_app(
     ) -> dict[str, object]:
         """Preview the tail of a discovered session transcript (P41). Read-only."""
         limit = max(1, min(limit, 200))
-        roots = dict(default_roots())
-        if live_session_roots:
-            roots.update(live_session_roots)
         try:
-            resolved = Path(log_path).expanduser().resolve()
-        except (OSError, ValueError) as exc:
+            messages = native_session_service.read_transcript(tool, log_path, limit=limit)
+        except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if resolved.suffix != ".jsonl":
-            raise HTTPException(status_code=400, detail="log_path must be a .jsonl file")
-        allowed = any(
-            resolved.is_relative_to(root.resolve())
-            for root in roots.values()
-            if root.exists()
-        )
-        if not allowed:
-            raise HTTPException(
-                status_code=400, detail="log_path outside known session roots"
-            )
-        messages = read_transcript_tail(resolved, tool, limit=limit)
         return {"messages": messages, "count": len(messages), "tool": tool}
 
     @app.post("/sessions/live/open-terminal")
@@ -1328,19 +1314,18 @@ def create_app(
                 status_code=400,
                 detail=f"workspace_path is not a directory: {request.workspace_path}",
             )
-        discovered = discover_external_sessions(
-            workspace_path=str(workspace),
-            agents=list(registry.list_agents()),
+        registered_ids = {agent.id for agent in registry.list_agents()}
+        scan = native_session_service.scan(
+            workspace=str(workspace),
+            within_hours=10**6,
+            limit=200,
+            include_registered=True,
         )
         return {
             "discovered": [
-                {
-                    "agent_id": d.agent_id,
-                    "external_session_id": d.external_session_id,
-                    "log_path": d.log_path,
-                    "started_at": d.started_at,
-                }
-                for d in discovered
+                session.discovery_payload()
+                for session in scan.sessions
+                if session.environment_id in registered_ids
             ],
         }
 
@@ -1368,11 +1353,7 @@ def create_app(
             raise HTTPException(
                 status_code=400, detail="log_path must be an existing .jsonl file"
             )
-        log_roots = [Path(p).expanduser() for p in agent.log_paths]
-        if not any(
-            root.is_dir() and resolved_log.is_relative_to(root.resolve())
-            for root in log_roots
-        ):
+        if not native_session_service.is_known_log_path(agent.id, resolved_log):
             raise HTTPException(
                 status_code=400,
                 detail=f"log_path outside {agent.id} log roots",

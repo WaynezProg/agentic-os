@@ -22,6 +22,12 @@ class DiscoveredSession:
     log_path: str
     started_at: str | None = None
 
+
+@dataclass(frozen=True)
+class DiscoveredSessionScan:
+    sessions: list[DiscoveredSession]
+    files_examined: int
+
 # Vibe coding agents: developer-driven, short iterations
 _VIBE_CODING = frozenset({"claude", "codex", "cursor", "opencode", "qwen"})
 
@@ -147,7 +153,21 @@ def discover_external_sessions(
     *,
     workspace_path: str,
     agents: list[AgentDefinition],
+    max_files: int = 500,
 ) -> list[DiscoveredSession]:
+    return scan_external_sessions(
+        workspace_path=workspace_path,
+        agents=agents,
+        max_files=max_files,
+    ).sessions
+
+
+def scan_external_sessions(
+    *,
+    workspace_path: str,
+    agents: list[AgentDefinition],
+    max_files: int = 500,
+) -> DiscoveredSessionScan:
     """Scan agent log_paths for external sessions recorded in workspace_path.
 
     Sessions whose JSONL head carries no resolvable cwd are excluded —
@@ -157,8 +177,10 @@ def discover_external_sessions(
     try:
         target = Path(workspace_path).expanduser().resolve()
     except (TypeError, ValueError, OSError):
-        return []
+        return DiscoveredSessionScan([], 0)
     results: list[DiscoveredSession] = []
+    files_examined = 0
+    bounded_max_files = max(1, max_files)
     for agent in agents:
         if agent.id not in _SUPPORTED:
             continue
@@ -169,9 +191,12 @@ def discover_external_sessions(
                 continue
             if not root.exists() or not root.is_dir():
                 continue
-            for jsonl in sorted(root.rglob("*.jsonl")):
+            for jsonl in root.rglob("*.jsonl"):
+                if files_examined >= bounded_max_files:
+                    return DiscoveredSessionScan(results, files_examined)
                 if not jsonl.is_file():
                     continue
+                files_examined += 1
                 try:
                     external_id = parse_external_session_id(agent.id, jsonl)
                 except Exception:  # parser must never crash the discover flow
@@ -195,7 +220,7 @@ def discover_external_sessions(
                         started_at=started_at,
                     )
                 )
-    return results
+    return DiscoveredSessionScan(results, files_examined)
 
 
 def _read_started_at(jsonl: Path) -> str | None:
