@@ -10,6 +10,7 @@ from agentic_os import catalog, config_scope, harness_config, profiles, registry
 from agentic_os.change_models import ChangePlan, ChangeVerification
 from agentic_os.change_payload_store import ChangePayloadStore
 from agentic_os.change_store import ChangeStore
+from agentic_os.control_plane import _redact_value
 from agentic_os.environment_adapters import get_adapter
 from agentic_os.mcp_alignment import (
     build_copy_patch,
@@ -76,7 +77,7 @@ class ChangeService:
             ],
             redacted_request=redacted_request,
             before_evidence=_observation_evidence(before),
-            diff=_operation_diff(built),
+            diff=_redact_patch_diff(result.diff),
             validation=result.validation,
             base_versions=self._base_versions(redacted_request),
             preview_result={
@@ -809,25 +810,33 @@ def _file_evidence(path: Path) -> dict[str, object]:
     }
 
 
-def _operation_diff(built: BuiltChange) -> dict[str, object]:
-    if built.is_standalone:
-        return {
-            "operations": [
-                {
-                    "op": "write",
-                    "path": built.surface_id or "surface",
-                }
-            ]
-        }
-    return {
-        "operations": [
-            {
-                "op": op.op,
-                "path": op.path,
-            }
-            for op in built.ops
-        ]
+_SENSITIVE_DIFF_KEYS = frozenset(
+    {
+        "args",
+        "authorization",
+        "command",
+        "content",
+        "entrypoint",
+        "env",
+        "headers",
+        "script",
+        "url",
     }
+)
+
+
+def _redact_patch_diff(value: Any, key: str | None = None) -> Any:
+    normalized_key = key.lower().replace("-", "_") if key is not None else None
+    if normalized_key in _SENSITIVE_DIFF_KEYS:
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {
+            str(child_key): _redact_patch_diff(child_value, str(child_key))
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_patch_diff(item) for item in value]
+    return _redact_value(value, key)
 
 
 _EXTERNAL_ACTIVATION_OPERATIONS = frozenset(

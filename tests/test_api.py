@@ -3363,6 +3363,7 @@ def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
     assert body["patch_id"].startswith("p_")
     assert body["backup"]["kind"] == "snapshot"
     assert body["backup_path"]
+    assert set(body["diff"]) == {"added", "modified", "removed"}
     assert body["change_id"]
     assert body["status"] == "previewed"
     assert body["summary"]["transport"] == "stdio"

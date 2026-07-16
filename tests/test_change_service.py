@@ -82,9 +82,9 @@ def test_mcp_copy_preview_apply_verify_and_rollback(
     assert plan.status == "previewed"
     assert plan.backup_ref is None
     assert plan.restart_requirements
-    assert plan.diff == {
-        "operations": [{"op": "merge", "path": "mcp_servers.github"}]
-    }
+    assert set(plan.diff) == {"added", "modified", "removed"}
+    assert plan.diff["modified"]
+    assert "gh-mcp" not in json.dumps(plan.diff)
 
     partial = service.apply(plan.id)
 
@@ -212,7 +212,6 @@ def test_persisted_plan_omits_command_url_and_secret_values(
 
     assert "gh-mcp" not in persisted
     assert "sk-FAKE-SECRET" not in persisted
-    assert "command" not in persisted
 
 
 def test_mcp_remove_round_trip(service: ChangeService, home: Path) -> None:
