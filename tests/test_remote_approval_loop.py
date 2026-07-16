@@ -85,6 +85,73 @@ def test_remote_stream_respects_cursor(tmp_path: Path) -> None:
     assert {row.event_type for row in rows} == {"approval_approved"}
 
 
+def test_event_poll_requires_bearer(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/events/poll", headers=GATEWAY_HEADERS)
+
+    assert response.status_code == 401
+
+
+def test_event_poll_returns_allowed_events_after_cursor(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    token = _pair_device(client)
+    audit = _audit(tmp_path)
+    first = audit.record(
+        "config_patch",
+        "agentic-os",
+        "config_patched",
+        "one",
+        {},
+    )
+    audit.record(
+        "governance",
+        "shell",
+        "policy_evaluated",
+        "hidden",
+        {},
+    )
+    third = audit.record(
+        "governance",
+        "shell",
+        "approval_requested",
+        "three",
+        {"approval_id": "ap_3"},
+    )
+
+    response = client.get(
+        f"/events/poll?after_id={first.id}",
+        headers={**GATEWAY_HEADERS, "Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [event["id"] for event in body["events"]] == [third.id]
+    assert body["after_id"] == third.id
+
+
+def test_event_poll_bounds_limit(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    token = _pair_device(client)
+    audit = _audit(tmp_path)
+    for index in range(3):
+        audit.record(
+            "config_patch",
+            "agentic-os",
+            "config_patched",
+            str(index),
+            {},
+        )
+
+    response = client.get(
+        "/events/poll?limit=1",
+        headers={**GATEWAY_HEADERS, "Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["events"]) == 1
+
+
 def test_gateway_client_can_list_approvals(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     token = _pair_device(client)

@@ -124,7 +124,7 @@ git commit -m "fix: unify desktop HTTP transport"
 - Adds `GET /events/poll?after_id=<int>&limit=<int>`.
 - Uses the same bearer validation and remote-event allowlist as SSE.
 
-- [ ] **Step 1: Write API tests**
+- [x] **Step 1: Write API tests**
 
 Add to `tests/test_remote_approval_loop.py`, reusing that file's `_audit()`,
 `_pair_device()`, `GATEWAY_HEADERS`, and `make_client()` helpers:
@@ -158,7 +158,7 @@ def test_event_poll_returns_allowed_events_after_cursor(tmp_path: Path) -> None:
     assert [event["id"] for event in response.json()["events"]] == [third.id]
 ```
 
-- [ ] **Step 2: Implement route**
+- [x] **Step 2: Implement route**
 
 In `remote_api.py` add:
 
@@ -178,14 +178,14 @@ def events_poll(
     }
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 rtk uv run pytest tests/test_remote_admin_routes.py tests/test_remote_approval_loop.py -q
 rtk uv run ruff check src/agentic_os/remote_api.py
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/agentic_os/remote_api.py tests/test_remote_admin_routes.py tests/test_remote_approval_loop.py

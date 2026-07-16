@@ -93,6 +93,19 @@ def register_remote_routes(
             raise HTTPException(status_code=404, detail="device_not_found")
         return rotated
 
+    @app.get("/events/poll")
+    def events_poll(
+        after_id: int = 0,
+        limit: int = 50,
+        device_id: str = Depends(require_remote_bearer),
+    ) -> dict[str, object]:
+        cursor = max(0, after_id)
+        bounded_limit = max(1, min(limit, 200))
+        rows = audit_store.list_remote_stream_events_after_id(cursor, limit=bounded_limit)
+        events = [_audit_event_payload(row, device_id=device_id) for row in rows]
+        next_cursor = rows[-1].id if rows else cursor
+        return {"events": events, "after_id": next_cursor}
+
     @app.get("/events")
     async def events_stream(
         request: Request,
