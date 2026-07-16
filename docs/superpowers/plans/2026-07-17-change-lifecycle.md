@@ -39,7 +39,7 @@
 - Produces: `ChangeRequest`, `ChangePlan`, `ChangeVerification`, `ChangeStore`.
 - Consumed by: Tasks 2–4.
 
-- [ ] **Step 1: Write failing store tests**
+- [x] **Step 1: Write failing store tests**
 
 Create `tests/test_change_store.py`:
 
@@ -86,7 +86,7 @@ def test_change_store_lists_newest_first(tmp_path) -> None:
     assert [item.id for item in store.list()] == [second.id, first.id]
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 ```bash
 rtk uv run pytest tests/test_change_store.py -q
@@ -94,7 +94,7 @@ rtk uv run pytest tests/test_change_store.py -q
 
 Expected: missing module failure.
 
-- [ ] **Step 3: Add models**
+- [x] **Step 3: Add models**
 
 Create `src/agentic_os/change_models.py` with:
 
@@ -154,7 +154,7 @@ class ChangePlan(BaseModel):
         return cls(status="previewed", **values)
 ```
 
-- [ ] **Step 4: Add SQLite store**
+- [x] **Step 4: Add SQLite store**
 
 Create `src/agentic_os/change_store.py`. `init()` creates:
 
@@ -173,14 +173,14 @@ CREATE TABLE IF NOT EXISTS change_plans (
 Serialize the full validated model into `payload_json`. `create()`, `update()`,
 `get()`, and `list(limit=200)` open short SQLite transactions.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 ```bash
 rtk uv run pytest tests/test_change_store.py -q
 rtk uv run ruff check src/agentic_os/change_models.py src/agentic_os/change_store.py
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/agentic_os/change_models.py src/agentic_os/change_store.py tests/test_change_store.py
