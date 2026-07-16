@@ -48,7 +48,7 @@
 - Produces: `Environment`, `SurfaceObservation`, `ObservationEvidence`.
 - Consumed by: Tasks 2–5.
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Create `tests/test_environment_adapters.py`:
 
@@ -81,7 +81,7 @@ def test_unknown_adapter_is_explicit() -> None:
     assert get_adapter("shell", required=False) is None
 ```
 
-- [ ] **Step 2: Run tests and confirm the missing module**
+- [x] **Step 2: Run tests and confirm the missing module**
 
 Run:
 
@@ -91,7 +91,7 @@ rtk uv run pytest tests/test_environment_adapters.py -q
 
 Expected: collection fails with `ModuleNotFoundError: agentic_os.environment_adapters`.
 
-- [ ] **Step 3: Add normalized models**
+- [x] **Step 3: Add normalized models**
 
 Create `src/agentic_os/environment_models.py` with these public contracts:
 
@@ -149,7 +149,7 @@ class Environment(BaseModel):
     observed_at: str = Field(default_factory=observed_now)
 ```
 
-- [ ] **Step 4: Add the static adapter table**
+- [x] **Step 4: Add the static adapter table**
 
 Create `src/agentic_os/environment_adapters.py`:
 
@@ -200,7 +200,7 @@ def get_adapter(
     return adapter
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run:
 
@@ -211,7 +211,7 @@ rtk uv run ruff check src/agentic_os/environment_models.py src/agentic_os/enviro
 
 Expected: all tests pass and Ruff reports no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/agentic_os/environment_models.py src/agentic_os/environment_adapters.py tests/test_environment_adapters.py
