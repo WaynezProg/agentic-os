@@ -826,8 +826,19 @@ def test_product_smoke_script_exists() -> None:
     script = ROOT / "scripts" / "smoke-product.sh"
     assert script.is_file()
     content = script.read_text(encoding="utf-8")
-    assert "run_model_in_argv" in content
-    assert "report.json" in content
+    for token in [
+        "run_model_in_argv",
+        "environment_inventory",
+        'api GET "/environments"',
+        'api GET "/environments/claude"',
+        "verified_change_round_trip",
+        'api POST "/changes/preview"',
+        'api POST "/changes/${change_id}/apply"',
+        'api POST "/changes/${change_id}/rollback"',
+        "STEP_DETAIL_JOINED",
+        "report.json",
+    ]:
+        assert token in content
 
 
 def test_readme_documents_product_smoke() -> None:

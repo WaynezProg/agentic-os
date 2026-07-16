@@ -48,7 +48,7 @@ record_step() {
 }
 
 write_reports() {
-  local overall="pass"
+  local overall="pass" step_ids_joined step_status_joined step_detail_joined
   if [[ -n "$FIRST_FAILURE" ]]; then
     overall="fail"
   fi
@@ -64,15 +64,19 @@ write_reports() {
     done
   } >"$REPORT_TXT"
 
+  step_ids_joined="$(IFS=' '; printf '%s' "${STEP_IDS[*]-}")"
+  step_status_joined="$(IFS=' '; printf '%s' "${STEP_STATUS[*]-}")"
+  step_detail_joined="$(IFS='|'; printf '%s' "${STEP_DETAIL[*]-}")"
   ROOT_DIR="$ROOT_DIR" REPORT_JSON="$REPORT_JSON" OVERALL="$overall" FIRST_FAILURE="$FIRST_FAILURE" \
-    STEP_IDS="${STEP_IDS[*]-}" STEP_STATUS="${STEP_STATUS[*]-}" STEP_DETAIL="${STEP_DETAIL[*]-}" \
+    STEP_IDS="$step_ids_joined" STEP_STATUS="$step_status_joined" \
+    STEP_DETAIL_JOINED="$step_detail_joined" \
     LOG_FILE="$LOG_FILE" uv run python - <<'PY'
 import json
 import os
 
 ids = os.environ.get("STEP_IDS", "").split()
 statuses = os.environ.get("STEP_STATUS", "").split()
-details = os.environ.get("STEP_DETAIL", "").split("|")
+details = os.environ.get("STEP_DETAIL_JOINED", "").split("|")
 steps = []
 for idx, step_id in enumerate(ids):
     steps.append(
@@ -170,6 +174,84 @@ PY
     return 1
   fi
   record_step "daemon_health" "pass" "agentd healthy at ${API_BASE}"
+}
+
+step_environment_inventory() {
+  local listing detail count kinds
+  if ! listing="$(api GET "/environments")"; then
+    record_step "environment_inventory" "fail" "environment list request failed"
+    return
+  fi
+  count="$(printf '%s' "$listing" | pyjson 'import json,sys; print(json.load(sys.stdin).get("count", 0))')"
+  if ((count < 7)); then
+    record_step "environment_inventory" "fail" "expected at least 7 built-in adapters, got ${count}"
+    return
+  fi
+  if ! detail="$(api GET "/environments/claude")"; then
+    record_step "environment_inventory" "fail" "Claude environment detail request failed"
+    return
+  fi
+  kinds="$(printf '%s' "$detail" | pyjson '
+import json,sys
+payload=json.load(sys.stdin)
+print(",".join(sorted({surface["kind"] for surface in payload.get("surfaces", [])})))
+')"
+  if [[ "$kinds" != "capability,cli,config,desktop,ide,runtime" ]]; then
+    record_step "environment_inventory" "fail" "Claude surface kinds incomplete: ${kinds}"
+    return
+  fi
+  record_step "environment_inventory" "pass" "${count} adapters; Claude exposes six evidence surfaces"
+}
+
+step_verified_change_round_trip() {
+  local target before after_preview after_rollback preview change_id preview_status
+  local applied apply_status verification_status applied_port rolled_back rollback_status
+  local rollback_verified
+  target="$REPO_DIR/.agentic-os/config.toml"
+  mkdir -p "$(dirname "$target")"
+  printf '%s' $'[daemon]\nport = 8767\n' >"$target"
+  before="$(cat "$target")"
+
+  preview="$(api POST "/changes/preview" -d "{
+    \"operation\": \"config.patch\",
+    \"environment_id\": \"agentic_os\",
+    \"scope\": \"project\",
+    \"cwd\": \"${REPO_DIR}\",
+    \"ops\": [{\"op\": \"merge\", \"path\": \"daemon.port\", \"value\": 8768}]
+  }")"
+  change_id="$(printf '%s' "$preview" | pyjson 'import json,sys; print(json.load(sys.stdin).get("id",""))')"
+  preview_status="$(printf '%s' "$preview" | pyjson 'import json,sys; print(json.load(sys.stdin).get("status",""))')"
+  after_preview="$(cat "$target")"
+  if [[ -z "$change_id" || "$preview_status" != "previewed" || "$before" != "$after_preview" ]]; then
+    record_step "verified_change_round_trip" "fail" "preview was not non-mutating (status=${preview_status})"
+    return
+  fi
+
+  applied="$(api POST "/changes/${change_id}/apply")"
+  apply_status="$(printf '%s' "$applied" | pyjson 'import json,sys; print(json.load(sys.stdin).get("status",""))')"
+  verification_status="$(printf '%s' "$applied" | pyjson '
+import json,sys
+verification=json.load(sys.stdin).get("verification") or {}
+print(verification.get("status",""))
+')"
+  applied_port="$(python3 -c 'import sys,tomllib; print(tomllib.loads(open(sys.argv[1], encoding="utf-8").read())["daemon"]["port"])' "$target")"
+  if [[ "$apply_status" != "verified" || "$verification_status" != "verified" || "$applied_port" != "8768" ]]; then
+    record_step "verified_change_round_trip" "fail" "apply verification failed (status=${apply_status}, verification=${verification_status}, port=${applied_port})"
+    return
+  fi
+
+  rolled_back="$(api POST "/changes/${change_id}/rollback")"
+  rollback_status="$(printf '%s' "$rolled_back" | pyjson 'import json,sys; print(json.load(sys.stdin).get("status",""))')"
+  rollback_verified="$(printf '%s' "$rolled_back" | pyjson '
+import json,sys
+print(str(bool((json.load(sys.stdin).get("rollback") or {}).get("verified"))).lower())
+')"
+  after_rollback="$(cat "$target")"
+  if [[ "$rollback_status" != "rolled_back" || "$rollback_verified" != "true" || "$before" != "$after_rollback" ]]; then
+    record_step "verified_change_round_trip" "fail" "rollback did not restore exact bytes (status=${rollback_status})"
+    return
+  fi
+  record_step "verified_change_round_trip" "pass" "preview/apply/verify/rollback restored exact bytes"
 }
 
 step_run_model_in_argv() {
@@ -372,6 +454,8 @@ main() {
   : >"$LOG_FILE"
   log "smoke root: $SMOKE_ROOT"
   start_daemon || true
+  if [[ -z "$FIRST_FAILURE" ]]; then step_environment_inventory; fi
+  if [[ -z "$FIRST_FAILURE" ]]; then step_verified_change_round_trip; fi
   if [[ -z "$FIRST_FAILURE" ]]; then step_run_model_in_argv; fi
   if [[ -z "$FIRST_FAILURE" ]]; then step_profile_switch_and_rollback; fi
   if [[ -z "$FIRST_FAILURE" ]]; then step_catalog_round_trip; fi
