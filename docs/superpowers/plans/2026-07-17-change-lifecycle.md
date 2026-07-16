@@ -486,19 +486,19 @@ git commit -m "feat: expose verified change APIs"
 
 ### Task 6: Full verification and documentation
 
-- [ ] **Step 1: Run complete backend gates**
+- [x] **Step 1: Run complete backend gates**
 
 ```bash
 rtk uv run pytest -q
 rtk uv run ruff check .
 ```
 
-- [ ] **Step 2: Record implementation decisions**
+- [x] **Step 2: Record implementation decisions**
 
 Append exact schema, operation list, verification rules, and compatibility
 behavior to `decision_log.md`. Add a README phase row for verified Changes.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md decision_log.md

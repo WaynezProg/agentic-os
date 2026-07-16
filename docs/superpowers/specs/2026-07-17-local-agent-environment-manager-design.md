@@ -3,9 +3,10 @@
 Date: 2026-07-17
 Status: Approved
 
-Implementation status: Delivery slice 1, Environment foundation, is complete
-on `codex/local-agent-environment-manager-impl`; 824 Python tests and Ruff pass.
-Change reconciliation, Desktop transport, operator UX, and release proof remain.
+Implementation status: Delivery slices 1–2, Environment foundation and verified
+Change reconciliation, are complete on
+`codex/local-agent-environment-manager-impl`; 847 Python tests and Ruff pass.
+Desktop transport, operator UX, and release proof remain.
 
 ## 1. Product decision
 

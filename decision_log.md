@@ -82,3 +82,69 @@ existing API contract.
 - `rtk uv run ruff check .` — passed.
 - Compatibility tests retain the existing endpoint keys and status codes, and
   adapter coverage is asserted against `SEMANTIC_HARNESS_IDS`.
+
+## 2026-07-17 — Add durable verified Changes
+
+### Purpose
+
+Make every supported external config mutation reviewable, stale-safe,
+post-verified, and rollback-verifiable without replacing the existing
+`SafeEditEngine` writer or breaking legacy API clients.
+
+### Decision and rationale
+
+- Add the additive `change_plans` SQLite table with `id`, `operation`,
+  `environment_id`, `status`, validated `payload_json`, `created_at`, and
+  `updated_at`.
+- Support explicit operations only: `mcp.copy`, `mcp.remove`, `catalog.patch`,
+  `config.patch`, `harness_config.patch`, `profile.patch`, and
+  `registry.patch`.
+- Persist only identifiers, structural patch paths, hashes, timestamps,
+  validation, and verification in plans. Raw command, URL, env, config, profile,
+  and registry values never enter the plan or API response.
+- Keep restart-durable raw preview payloads under
+  `.agentic-os/change-payloads/` with directory mode `0700` and file mode
+  `0600`; delete each payload after apply, stale rejection, or terminal failure.
+  This is inside the same local trust boundary as the target config and existing
+  P10 backups.
+- Reject malformed JSON/TOML before preview or apply. A preview becomes `stale`
+  if target hash/mtime changes; MCP copy also tracks the source config hash and
+  mtime.
+- After apply, re-read the target and compare the parsed document or standalone
+  content hash to the expected result. After rollback, require the original
+  existence/hash/mtime evidence to match.
+- Refuse rollback when the applied target changed afterward, preventing a
+  rollback from clobbering newer edits.
+- Keep each catalog semantic op as one Change plan; a legacy batch request is
+  projected as multiple explicit plans.
+- Route legacy MCP, catalog, agentic config, harness config, profile, and
+  registry endpoints through `ChangeService`. They retain legacy fields and add
+  `change_id`, `status`, and `verification`; historical P10 patch rollback
+  remains available as fallback.
+
+### Alternatives considered
+
+- Store full patch values in SQLite: rejected because plan history and API
+  serialization would create a second durable secret store.
+- Keep pending values only in process memory: rejected because Desktop restart
+  would make approved previews impossible to apply.
+- Add a generic mutation registry or reflection-based DSL: rejected because
+  explicit operation builders are easier to audit and preserve owner-module
+  validation.
+- Roll back without checking post-apply drift: rejected because it can silently
+  overwrite a newer operator edit.
+
+### Verification
+
+- `rtk uv run pytest -q` — 847 passed.
+- `rtk uv run ruff check .` — passed.
+- Focused API/CLI/E2E compatibility gate — 298 passed.
+- Unit coverage proves restart-durable private payloads, no secret values in
+  SQLite plans, target/source stale rejection, all seven operation families,
+  standalone catalog writes, verified apply, and verified rollback.
+
+### Re-evaluation conditions
+
+Replace the local `0600` payload store with encryption or Keychain-backed
+envelopes before adding multi-user access, cloud synchronization, or a threat
+model where another local account can read the operator's files.
