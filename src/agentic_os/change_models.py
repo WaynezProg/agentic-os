@@ -47,6 +47,7 @@ class ChangePlan(BaseModel):
     diff: dict[str, object]
     validation: dict[str, object]
     base_versions: dict[str, object] = Field(default_factory=dict)
+    preview_result: dict[str, object] = Field(default_factory=dict)
     restart_requirements: list[str] = Field(default_factory=list)
     backup_ref: str | None = None
     apply_result: dict[str, object] | None = None

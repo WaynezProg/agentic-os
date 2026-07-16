@@ -79,6 +79,12 @@ class ChangeService:
             diff=_operation_diff(built),
             validation=result.validation,
             base_versions=self._base_versions(redacted_request),
+            preview_result={
+                "patch_id": result.patch_id,
+                "applied": result.applied,
+                "backup": result.backup,
+                "base_mtime": result.base_mtime,
+            },
             restart_requirements=_restart_requirements(operation, environment_id),
         )
         self.payload_store.write(plan.id, request)

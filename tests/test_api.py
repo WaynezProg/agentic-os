@@ -2233,6 +2233,9 @@ def test_catalog_patch_dry_run_does_not_mutate(tmp_path: Path, monkeypatch) -> N
     assert response.status_code == 200
     body = response.json()
     assert body["applied"] is False
+    assert body["patch_id"].startswith("p_")
+    assert body["backup"]["path"]
+    assert body["base_mtime"] is not None
     assert settings.read_text(encoding="utf-8") == "{}"
 
 
@@ -3357,6 +3360,9 @@ def test_mcp_copy_dry_run_default_no_write(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["applied"] is False
+    assert body["patch_id"].startswith("p_")
+    assert body["backup"]["kind"] == "snapshot"
+    assert body["backup_path"]
     assert body["change_id"]
     assert body["status"] == "previewed"
     assert body["summary"]["transport"] == "stdio"

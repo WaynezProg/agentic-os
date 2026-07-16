@@ -433,31 +433,38 @@ def create_app(
             if plan.backup_ref is not None
             else None
         )
-        before_mtime_ns = plan.before_evidence.get("mtime_ns")
-        base_mtime = (
-            before_mtime_ns / 1_000_000_000
-            if isinstance(before_mtime_ns, int)
-            else None
+        preview_backup = plan.preview_result.get("backup")
+        if not isinstance(preview_backup, dict):
+            preview_backup = None
+        backup = (
+            {
+                "kind": backup_entry.backup_kind,
+                "path": backup_entry.backup_paths[0],
+            }
+            if backup_entry is not None
+            else preview_backup
         )
+        before_mtime_ns = plan.before_evidence.get("mtime_ns")
+        preview_base_mtime = plan.preview_result.get("base_mtime")
+        base_mtime = preview_base_mtime
+        if not isinstance(base_mtime, int | float):
+            base_mtime = (
+                before_mtime_ns / 1_000_000_000
+                if isinstance(before_mtime_ns, int)
+                else None
+            )
         apply_result = plan.apply_result or {}
+        preview_patch_id = plan.preview_result.get("patch_id")
         return {
-            "patch_id": plan.backup_ref or plan.id,
+            "patch_id": (
+                plan.backup_ref
+                or (preview_patch_id if isinstance(preview_patch_id, str) else plan.id)
+            ),
             "applied": plan.status in {"verified", "partial"},
             "diff": plan.diff,
             "validation": plan.validation,
-            "backup": (
-                {
-                    "kind": backup_entry.backup_kind,
-                    "path": backup_entry.backup_paths[0],
-                }
-                if backup_entry is not None
-                else None
-            ),
-            "backup_path": (
-                backup_entry.backup_paths[0]
-                if backup_entry is not None
-                else None
-            ),
+            "backup": backup,
+            "backup_path": backup.get("path") if backup is not None else None,
             "audit_event_id": apply_result.get("audit_event_id"),
             "base_mtime": base_mtime,
             "change_id": plan.id,
