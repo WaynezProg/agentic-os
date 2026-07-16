@@ -10,6 +10,10 @@ class EnvironmentAdapter:
     id: str
     label: str
     tool_kind: str
+    binary_name: str
+    config_relative_path: str
+    desktop_app_names: tuple[str, ...] = ()
+    ide_app_names: tuple[str, ...] = ()
     cli: bool = True
     config: bool = True
     capabilities: bool = True
@@ -21,48 +25,67 @@ class EnvironmentAdapter:
 
 _ADAPTERS = (
     EnvironmentAdapter(
-        "claude",
-        "Claude Code",
-        "vibe_coding",
+        id="claude",
+        label="Claude Code",
+        tool_kind="vibe_coding",
+        binary_name="claude",
+        config_relative_path=".claude",
+        desktop_app_names=("Claude.app",),
         desktop=True,
         native_sessions=True,
     ),
     EnvironmentAdapter(
-        "codex",
-        "Codex",
-        "vibe_coding",
+        id="codex",
+        label="Codex",
+        tool_kind="vibe_coding",
+        binary_name="codex",
+        config_relative_path=".codex",
+        desktop_app_names=("Codex.app", "ChatGPT.app"),
         desktop=True,
         native_sessions=True,
     ),
     EnvironmentAdapter(
-        "cursor",
-        "Cursor",
-        "vibe_coding",
+        id="cursor",
+        label="Cursor",
+        tool_kind="vibe_coding",
+        binary_name="cursor",
+        config_relative_path=".cursor",
+        desktop_app_names=("Cursor.app",),
+        ide_app_names=("Cursor.app",),
         desktop=True,
         ide=True,
     ),
     EnvironmentAdapter(
-        "hermes",
-        "Hermes",
-        "agentic_runtime",
+        id="hermes",
+        label="Hermes",
+        tool_kind="agentic_runtime",
+        binary_name="hermes",
+        config_relative_path=".hermes",
         runtime=True,
     ),
     EnvironmentAdapter(
-        "openclaw",
-        "OpenClaw",
-        "agentic_runtime",
+        id="openclaw",
+        label="OpenClaw",
+        tool_kind="agentic_runtime",
+        binary_name="openclaw",
+        config_relative_path=".openclaw",
         runtime=True,
     ),
     EnvironmentAdapter(
-        "opencode",
-        "OpenCode",
-        "vibe_coding",
+        id="opencode",
+        label="OpenCode",
+        tool_kind="vibe_coding",
+        binary_name="opencode",
+        config_relative_path=".config/opencode",
+        desktop_app_names=("OpenCode.app",),
         desktop=True,
     ),
     EnvironmentAdapter(
-        "qwen",
-        "Qwen",
-        "vibe_coding",
+        id="qwen",
+        label="Qwen",
+        tool_kind="vibe_coding",
+        binary_name="qwen",
+        config_relative_path=".qwen",
     ),
 )
 _BY_ID = {adapter.id: adapter for adapter in _ADAPTERS}

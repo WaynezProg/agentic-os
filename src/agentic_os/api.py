@@ -77,13 +77,11 @@ from agentic_os.adapter_contract import (
     contract_from_agent,
     contract_from_agent_v2,
 )
-from agentic_os.config_inventory import read_config_summary
+from agentic_os.environment_service import EnvironmentService
 from agentic_os.agentic_inventory import (
     build_agentic_inventory,
-    build_all_agentic_inventory,
     inventory_result_dict,
 )
-from agentic_os.tool_discovery import discover_all
 from agentic_os import profiles as profiles_module
 from agentic_os.attach import build_attach_command, evaluate_attach
 from agentic_os.diagnostics import resource_snapshot
@@ -92,7 +90,7 @@ from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
 from agentic_os.probe_service import ProbeService
 from agentic_os import mcp_alignment
-from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
+from agentic_os.capability_inventory import capabilities_dict
 from agentic_os.live_sessions import open_terminal
 from agentic_os.logs import JsonlLogStore, StreamName
 from agentic_os.memory import build_session_summary
@@ -318,6 +316,12 @@ def create_app(
         roots=live_session_roots,
         agents_provider=lambda: list(registry.list_agents()),
     )
+    environment_service = EnvironmentService(
+        registry=registry,
+        capability_home=capability_home,
+        native_sessions=native_session_service,
+        fleet_store=fleet_store,
+    )
     logs = JsonlLogStore()
     evidence_store = EvidenceStore(state_dir)
     remote_access = RemoteAccessService(state_dir)
@@ -340,6 +344,7 @@ def create_app(
     app.state.approval_store = approval_store
     app.state.usage_store = usage_store
     app.state.native_session_service = native_session_service
+    app.state.environment_service = environment_service
     # tauri://localhost (macOS/Linux webview) and https://tauri.localhost
     # (Windows webview) are the packaged desktop app's origins — without
     # them every fetch from the app window is CORS-blocked and the
@@ -423,10 +428,37 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/environments")
+    def list_environments() -> dict[str, object]:
+        environments = environment_service.observe()
+        return {
+            "environments": [
+                environment.model_dump(mode="json") for environment in environments
+            ],
+            "count": len(environments),
+        }
+
+    @app.post("/environments/refresh")
+    def refresh_environments() -> dict[str, object]:
+        environment_service.refresh()
+        return list_environments()
+
+    @app.post("/environments/{environment_id}/refresh")
+    def refresh_environment(environment_id: str) -> dict[str, object]:
+        environment_service.refresh()
+        return show_environment(environment_id)
+
+    @app.get("/environments/{environment_id}")
+    def show_environment(environment_id: str) -> dict[str, object]:
+        try:
+            return environment_service.observe(environment_id)[0].model_dump(mode="json")
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/tools/discovery")
     def tools_discovery() -> dict[str, object]:
         """Discover installed tools and their versions (P34). Read-only."""
-        results = discover_all(registry)
+        results = environment_service.compatibility_discovery()
         return {
             "tools": [
                 {
@@ -444,10 +476,8 @@ def create_app(
     @app.get("/tools/inventory")
     def tools_inventory() -> dict[str, object]:
         """Read non-secret config summaries for installed tools (P34). Read-only."""
-        agents = [a for a in registry.list_agents() if a.enabled and a.config_path]
         summaries = []
-        for agent in agents:
-            summary = read_config_summary(agent.id, agent.config_path)
+        for agent, summary in environment_service.compatibility_config_inventory():
             summaries.append(
                 {
                     "agent_id": agent.id,
@@ -465,7 +495,10 @@ def create_app(
     def tools_capabilities() -> dict[str, object]:
         """Read real skills/MCP/plugin/memory names per tool (P40). Read-only."""
         return {
-            "tools": [capabilities_dict(c) for c in read_all_capabilities(capability_home)],
+            "tools": [
+                capabilities_dict(capability)
+                for capability in environment_service.compatibility_capabilities()
+            ],
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         }
 
@@ -596,7 +629,7 @@ def create_app(
     @app.get("/agentic/inventory")
     def agentic_inventory() -> dict[str, object]:
         """Read agentic runtime inventory (P37). Read-only."""
-        results = build_all_agentic_inventory(registry.list_agents())
+        results = environment_service.compatibility_agentic_inventory()
         return {"agents": [inventory_result_dict(result) for result in results]}
 
     @app.get("/agentic/inventory/{agent_id}")

@@ -10,6 +10,9 @@ def test_built_in_adapters_are_the_semantic_harness_set() -> None:
 def test_adapter_declares_independent_surfaces() -> None:
     adapter = get_adapter("codex")
 
+    assert adapter.binary_name == "codex"
+    assert adapter.config_relative_path == ".codex"
+    assert adapter.desktop_app_names == ("Codex.app", "ChatGPT.app")
     assert adapter.cli is True
     assert adapter.config is True
     assert adapter.capabilities is True

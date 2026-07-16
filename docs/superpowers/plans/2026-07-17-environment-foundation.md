@@ -569,7 +569,7 @@ git commit -m "refactor: unify native session observation"
   native-session service, fleet health.
 - Produces: `EnvironmentService.observe()` and Environment endpoints.
 
-- [ ] **Step 1: Write service and API tests**
+- [x] **Step 1: Write service and API tests**
 
 Create `tests/test_environment_service.py`:
 
@@ -607,7 +607,7 @@ def test_environments_list_and_detail(client) -> None:
     assert detail.json()["id"] == environment_id
 ```
 
-- [ ] **Step 2: Implement `EnvironmentService`**
+- [x] **Step 2: Implement `EnvironmentService`**
 
 Create `src/agentic_os/environment_service.py`. Its constructor receives
 `Registry`, capability home, `NativeSessionService`, and `FleetStore`. Implement:
@@ -637,7 +637,7 @@ class EnvironmentService:
   `auth_required`, `degraded`, `stale`, `missing`, `configured_only`, `healthy`,
   `unknown`, `unsupported`.
 
-- [ ] **Step 3: Wire composition and routes**
+- [x] **Step 3: Wire composition and routes**
 
 In `create_app()` instantiate one Environment service and add:
 
@@ -661,20 +661,20 @@ def show_environment(environment_id: str) -> dict[str, object]:
 
 Add refresh POST routes that invalidate discovery cache before observing.
 
-- [ ] **Step 4: Convert compatibility endpoints**
+- [x] **Step 4: Convert compatibility endpoints**
 
 Change `/tools/discovery`, `/tools/inventory`, `/tools/capabilities`, and
 `/agentic/inventory` to project from Environment service data while preserving
 their existing JSON field names and redaction tests.
 
-- [ ] **Step 5: Run focused and full domain tests**
+- [x] **Step 5: Run focused and full domain tests**
 
 ```bash
 rtk uv run pytest tests/test_environment_service.py tests/test_tool_discovery.py tests/test_config_inventory.py tests/test_capability_inventory.py tests/test_agentic_inventory.py tests/test_api.py -q
 rtk uv run ruff check src/agentic_os/environment_service.py src/agentic_os/api.py
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/agentic_os/environment_service.py src/agentic_os/api.py tests/test_environment_service.py tests/test_api.py

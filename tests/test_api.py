@@ -2870,6 +2870,41 @@ config_path = "/nonexistent/path"
         assert "tool_kind" in tool
 
 
+def test_environments_list_detail_and_refresh(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/environments")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 7
+    assert {item["id"] for item in body["environments"]} == {
+        "claude",
+        "codex",
+        "cursor",
+        "hermes",
+        "openclaw",
+        "opencode",
+        "qwen",
+    }
+    detail = client.get("/environments/codex")
+    assert detail.status_code == 200
+    assert detail.json()["id"] == "codex"
+    assert {surface["kind"] for surface in detail.json()["surfaces"]} == {
+        "cli",
+        "config",
+        "capability",
+        "runtime",
+        "desktop",
+        "ide",
+    }
+
+    refreshed = client.post("/environments/codex/refresh")
+    assert refreshed.status_code == 200
+    assert refreshed.json()["id"] == "codex"
+    assert client.get("/environments/missing").status_code == 404
+
+
 # --- P39 live session radar ---
 
 
