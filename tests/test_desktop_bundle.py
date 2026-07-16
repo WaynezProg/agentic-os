@@ -43,7 +43,7 @@ def test_tauri_window_and_csp_are_production_safe() -> None:
     assert "connect-src" in csp
     assert "ipc:" in csp
     assert "http://127.0.0.1:*" in csp
-    assert "https:" in csp
+    assert "https:" not in csp
     assert config["bundle"]["macOS"]["signingIdentity"] == "-"
 
 
