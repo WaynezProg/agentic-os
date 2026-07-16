@@ -85,7 +85,11 @@ window.AgenticOs = window.AgenticOs || {};
 
   async function loadFleetSummary() {
     try {
-      const healthData = await Ao.apiFetch(Ao.buildEndpoint("fleetHealth"));
+      const healthData = await Ao.DataCache.get(
+        "fleet-health",
+        () => Ao.apiFetch(Ao.buildEndpoint("fleetHealth")),
+        1500,
+      );
       const instances = Array.isArray(healthData.instances) ? healthData.instances : [];
       const upCount = instances.filter((item) => item.state === "up").length;
       const downCount = instances.filter((item) => item.state === "down").length;
@@ -99,7 +103,11 @@ window.AgenticOs = window.AgenticOs || {};
     }
 
     try {
-      const capData = await Ao.apiFetch(Ao.buildEndpoint("fleetCapacity"));
+      const capData = await Ao.DataCache.get(
+        "fleet-capacity",
+        () => Ao.apiFetch(Ao.buildEndpoint("fleetCapacity")),
+        1500,
+      );
       byId("overview-capacity-body").textContent = t("overviewCapacity", {
         running: capData.running_sessions,
         max: capData.max_running_sessions,
@@ -109,7 +117,11 @@ window.AgenticOs = window.AgenticOs || {};
     }
 
     try {
-      const appData = await Ao.apiFetch(`${Ao.buildEndpoint("approvals")}?status=pending`);
+      const appData = await Ao.DataCache.get(
+        "approvals-pending",
+        () => Ao.apiFetch(`${Ao.buildEndpoint("approvals")}?status=pending`),
+        1000,
+      );
       const pending = Array.isArray(appData.approvals) ? appData.approvals.length : 0;
       byId("overview-approvals-body").textContent = t("overviewApprovalsPending", { pending });
     } catch {
@@ -124,7 +136,11 @@ window.AgenticOs = window.AgenticOs || {};
       workspaceCard.textContent = t("loading");
     }
     try {
-      const body = await Ao.apiFetch(`${Ao.buildEndpoint("workspacesDashboard")}${cwdQuery()}`);
+      const body = await Ao.DataCache.get(
+        "workspace-dashboard",
+        () => Ao.apiFetch(`${Ao.buildEndpoint("workspacesDashboard")}${cwdQuery()}`),
+        1000,
+      );
       renderDashboard(body);
       byId("overview-sessions-body").textContent = t("overviewSessions", {
         running: body.sessions?.running ?? 0,
@@ -188,6 +204,7 @@ window.AgenticOs = window.AgenticOs || {};
 
   function bindControls() {
     document.addEventListener("workspace-changed", () => {
+      Ao.DataCache.invalidate("workspace-dashboard");
       if (document.getElementById("panel-overview")?.classList.contains("is-active")) {
         loadDashboard();
       }
@@ -200,6 +217,7 @@ window.AgenticOs = window.AgenticOs || {};
       handleQuickAction(button.dataset.action);
     });
     byId("dashboard-refresh")?.addEventListener("click", () => {
+      Ao.DataCache.invalidate();
       loadDashboard();
     });
   }

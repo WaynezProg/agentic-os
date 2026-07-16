@@ -67,7 +67,11 @@ window.AgenticOs = window.AgenticOs || {};
     const cwd = resolvedCwd();
     const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
     try {
-      const dashboard = await Ao.apiFetch(`${Ao.buildEndpoint("workspacesDashboard")}${query}`);
+      const dashboard = await Ao.DataCache.get(
+        "workspace-dashboard",
+        () => Ao.apiFetch(`${Ao.buildEndpoint("workspacesDashboard")}${query}`),
+        1000,
+      );
       const profile = dashboard.active_profile || "-";
       const provider = dashboard.provider || "-";
       const model = dashboard.model || "-";
@@ -90,7 +94,11 @@ window.AgenticOs = window.AgenticOs || {};
   async function loadLastSession() {
     const cwd = resolvedCwd();
     try {
-      const data = await Ao.apiFetch(Ao.buildEndpoint("sessions"));
+      const data = await Ao.DataCache.get(
+        "sessions",
+        () => Ao.apiFetch(Ao.buildEndpoint("sessions")),
+        1000,
+      );
       const sessions = Array.isArray(data.sessions) ? data.sessions : [];
       const filtered = cwd
         ? sessions.filter((session) => String(session.cwd || "") === cwd)

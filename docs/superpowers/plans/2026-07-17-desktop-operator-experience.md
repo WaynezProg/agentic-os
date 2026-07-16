@@ -169,12 +169,12 @@ git commit -m "feat: replace sidebar with six operator areas"
 - Produces: `Ao.DataCache.get(key, loader, ttlMs)`, `invalidate(prefix)`.
 - Used by Home, Environment, provider switchboard, and dashboards.
 
-- [ ] **Step 1: Add static contract tests**
+- [x] **Step 1: Add static contract tests**
 
 Assert `data-cache.js` is loaded and dashboard modules call
 `Ao.DataCache.get()` for sessions, approvals, fleet, and workspace dashboard.
 
-- [ ] **Step 2: Create module**
+- [x] **Step 2: Create module**
 
 Create `apps/web/ui/data-cache.js`:
 
@@ -214,7 +214,7 @@ Create `apps/web/ui/data-cache.js`:
 })();
 ```
 
-- [ ] **Step 3: Rewire repeated reads**
+- [x] **Step 3: Rewire repeated reads**
 
 Use stable keys:
 
@@ -228,7 +228,7 @@ Use stable keys:
 
 Invalidate relevant prefixes after mutation actions.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 node --check apps/web/ui/data-cache.js
@@ -237,7 +237,7 @@ node --check apps/web/ui/dashboard-v2.js
 rtk uv run pytest tests/test_web.py -q
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/ui/data-cache.js apps/web/ui/daily-dashboard.js apps/web/ui/dashboard-v2.js apps/web/ui/provider-switchboard.js apps/web/index.html tests/test_web.py

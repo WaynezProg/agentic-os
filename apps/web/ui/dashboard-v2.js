@@ -183,7 +183,7 @@ window.AgenticOs = window.AgenticOs || {};
 
   async function loadVibeCodingColumn() {
     const [sessionsData, templatesData, agentsData] = await Promise.all([
-      fetchJson(Ao.buildEndpoint("sessions")),
+      Ao.DataCache.get("sessions", () => fetchJson(Ao.buildEndpoint("sessions")), 1000),
       fetchJson(`${Ao.buildEndpoint("runTemplates")}${cwdQuery()}`),
       fetchJson(`${Ao.buildEndpoint("agents")}?tool_kind=vibe_coding`),
     ]);
@@ -208,8 +208,12 @@ window.AgenticOs = window.AgenticOs || {};
   async function loadAgenticColumn() {
     const [inventoryData, approvalsData, sessionsData] = await Promise.all([
       fetchJson(Ao.buildEndpoint("agenticInventory")),
-      fetchJson(`${Ao.buildEndpoint("approvals")}?status=pending`),
-      fetchJson(Ao.buildEndpoint("sessions")),
+      Ao.DataCache.get(
+        "approvals-pending",
+        () => fetchJson(`${Ao.buildEndpoint("approvals")}?status=pending`),
+        1000,
+      ),
+      Ao.DataCache.get("sessions", () => fetchJson(Ao.buildEndpoint("sessions")), 1000),
     ]);
 
     const inventory = inventoryData?.agents || [];

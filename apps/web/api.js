@@ -173,8 +173,13 @@ window.AgenticOs = window.AgenticOs || {};
   }
 
   Ao.apiFetch = async function apiFetch(path, options = {}) {
+    const method = (options.method || "GET").toUpperCase();
     if (connectionProfile?.mode === "remote" && window.__TAURI__?.core?.invoke) {
-      return apiFetchViaDesktop(path, options);
+      const payload = await apiFetchViaDesktop(path, options);
+      if (method !== "GET") {
+        Ao.DataCache?.invalidate();
+      }
+      return payload;
     }
     const headers = {
       Accept: "application/json",
@@ -191,6 +196,9 @@ window.AgenticOs = window.AgenticOs || {};
       error.status = response.status;
       error.payload = payload;
       throw error;
+    }
+    if (method !== "GET") {
+      Ao.DataCache?.invalidate();
     }
     return payload;
   };

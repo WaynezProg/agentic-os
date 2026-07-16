@@ -10,6 +10,7 @@ INDEX_HTML = WEB_DIR / "index.html"
 STYLES_CSS = WEB_DIR / "styles.css"
 APP_JS = WEB_DIR / "app.js"
 API_JS = WEB_DIR / "api.js"
+DATA_CACHE_JS = WEB_DIR / "ui" / "data-cache.js"
 CATALOG_EDITOR_JS = WEB_DIR / "ui" / "catalog-editor.js"
 CONFIG_EDITOR_JS = WEB_DIR / "ui" / "config-editor.js"
 PROFILE_EDITOR_JS = WEB_DIR / "ui" / "profile-editor.js"
@@ -69,6 +70,24 @@ def test_navigation_module_is_loaded_before_app() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
     assert html.index('src="ui/navigation.js"') < html.index('src="app.js"')
+
+
+def test_shared_data_cache_deduplicates_dashboard_reads() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    daily = DAILY_DASHBOARD_JS.read_text(encoding="utf-8")
+    dashboard_v2 = (WEB_DIR / "ui" / "dashboard-v2.js").read_text(encoding="utf-8")
+    switchboard = PROVIDER_SWITCHBOARD_JS.read_text(encoding="utf-8")
+    api_js = API_JS.read_text(encoding="utf-8")
+
+    assert DATA_CACHE_JS.is_file()
+    assert html.index('src="ui/data-cache.js"') < html.index('src="ui/daily-dashboard.js"')
+    for key in ["workspace-dashboard", "fleet-health", "fleet-capacity", "approvals-pending"]:
+        assert re.search(rf'Ao\.DataCache\.get\(\s*"{re.escape(key)}"', daily)
+    assert 'Ao.DataCache.get("sessions"' in dashboard_v2
+    assert re.search(r'Ao\.DataCache\.get\(\s*"approvals-pending"', dashboard_v2)
+    assert re.search(r'Ao\.DataCache\.get\(\s*"workspace-dashboard"', switchboard)
+    assert re.search(r'Ao\.DataCache\.get\(\s*"sessions"', switchboard)
+    assert "Ao.DataCache?.invalidate" in api_js
 
 
 def test_daemon_api_override_input_exists() -> None:
