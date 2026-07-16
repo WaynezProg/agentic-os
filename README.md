@@ -81,9 +81,9 @@ Phase positioning:
 | P42 | **complete** — MCP alignment | cross-tool MCP matrix + safe copy/remove via P10 safe-edit (dry-run default, backup, rollback; values never leave the daemon) | `mcp_alignment.py`, `/tools/mcp/*`, 工具 tab matrix | creating/editing servers, skills/plugins writes, bulk sync |
 | P43 | **complete** — chat launcher | chat-shaped front on the policy-gated run path: message → `POST /sessions`, reply = session stdout with status + log links; denials render as system bubbles | `ui/chat-launcher.js`, 聊天 tab, sidebar `.tab-desc` sublabels | new endpoints, LLM routing, multi-turn process state, server-side chat history |
 | P44 | **complete** — Environment foundation | one built-in adapter table, normalized CLI/config/capability/runtime/Desktop/IDE evidence, shared health probes and native-session observation, unified launch decisions | `environment_*`, `probe_service.py`, `native_session_service.py`, `launch_decision.py`, `/environments` | dynamic adapters, automatic config reconciliation |
-| P45 | **complete** — verified Changes | durable redacted plans with preview, stale checks, apply, re-observation, verification, and rollback across MCP/config/catalog/profile/registry writes | `change_*`, `/changes`, compatibility mutation routes, P10 `SafeEditEngine` | generic mutation DSL, cloud approval, secret values in plan/API payloads |
+| P45 | **complete** — verified Changes | durable redacted plans with preview, stale checks, deterministic pre-write backup linkage, activation-aware verification, and drift-safe rollback across MCP/config/catalog/profile/registry writes | `change_*`, `/changes`, compatibility mutation routes, P10 `SafeEditEngine` | generic mutation DSL, cloud approval, secret values in plan/API payloads |
 | P46 | **complete** — Desktop operator experience | six daily-use areas with Environment Manager, Change Center, owner-linked Settings, attention routing, keyboard focus, and responsive layouts | `ui/navigation.js`, `environment-manager.js`, `change-center.js`, `settings-home.js`, shared data cache | frontend framework, hidden legacy navigation, duplicated write controls |
-| P47 | **complete** — packaged release proof | reproducible arm64 `.app`, verified bundled Python, ad-hoc resource seal, product/remote smoke, tray lifecycle, crash-orphan recovery | app-only `desktop:build`, package tests, `codesign --verify`, live packaged-app checks | Developer ID/notarization, DMG, updater feed, Intel/Windows/Linux release validation |
+| P47 | **complete** — packaged release proof | reproducible arm64 `.app`, source-only bundled Python, ad-hoc resource seal that remains valid after daemon launch, product/remote smoke, tray lifecycle, crash-orphan recovery | app-only `desktop:build`, package tests, `codesign --verify`, live packaged-app checks | Developer ID/notarization, DMG, updater feed, Intel/Windows/Linux release validation |
 
 **Current (2026-07-17):** P44–P47 consolidate the mature substrate into a
 Local Agent Environment Manager, route supported mutations through durable
@@ -144,7 +144,9 @@ open apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app
 ```
 
 The packaged app serves UI assets directly from Tauri, so port `5173` does not
-open. After tray Quit, both `8767` and `5173` must have no listeners.
+open. Its bundled daemon runs Python with bytecode writes disabled so launch
+does not mutate signed resources. After tray Quit, both `8767` and `5173` must
+have no listeners.
 
 Local builds use Tauri's ad-hoc identity `-`, which seals the bundle but does
 not establish a publisher identity. Downloaded builds can still require manual

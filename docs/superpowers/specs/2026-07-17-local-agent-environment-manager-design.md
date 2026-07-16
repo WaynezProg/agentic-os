@@ -3,10 +3,13 @@
 Date: 2026-07-17
 Status: Approved
 
-Implementation status: Delivery slices 1–2, Environment foundation and verified
-Change reconciliation, are complete on
-`codex/local-agent-environment-manager-impl`; 847 Python tests and Ruff pass.
-Desktop transport, operator UX, and release proof remain.
+Implementation status: Complete on
+`codex/local-agent-environment-manager-impl`. All five delivery slices are
+implemented: Environment foundation, verified Change reconciliation, Desktop
+transport, six-area operator UX, and packaged release proof. Final gates cover
+877 Python tests, 33 Rust tests, Ruff, every Web JavaScript file, product and
+remote smoke, and an actual packaged-app lifecycle with post-launch strict
+codesign verification.
 
 ## 1. Product decision
 

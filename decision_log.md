@@ -417,3 +417,71 @@ proved from the packaged artifact.
 Developer ID signing, notarization, DMG publication, and updater delivery must
 remain unclaimed until those credentials and endpoints are supplied and
 exercised.
+
+## 2026-07-17 — Close independent Desktop delivery review
+
+### Purpose
+
+Close the data-integrity, transport, release-seal, compatibility, and
+observability gaps found by an independent review before treating the Local
+Agent Environment Manager Desktop as complete.
+
+### Decision and rationale
+
+- Persist the deterministic `backup_ref` and the expected post-write SHA-256
+  before mutation. JSON and TOML hashes use the same serializers as the actual
+  writers, and every later Change state retains the hash. Rollback fails closed
+  before restore when the current target differs, including an `applying`
+  record left by a post-write database failure.
+- Keep external config changes `partial` until declared reload/restart work is
+  observed. Pending-change counts come from durable Change status, not a UI
+  placeholder.
+- Preserve real HTTP status and structured bodies across the Tauri bridge;
+  reserve status `0` for transport failure. Remove blanket `https:` from the
+  Desktop CSP.
+- Run packaged Python with `-B` and `PYTHONDONTWRITEBYTECODE`, remove staged
+  bytecode caches, and prove strict deep codesign still passes after the actual
+  packaged daemon runs.
+- Retain the legacy PatchResult metadata and top-level redacted diff shape while
+  keeping command, args, env, URL, header, script, and secret values out of
+  durable plans and responses.
+- Add the implementation-plan index linking Environment, Change, transport, and
+  operator-UX delivery plans.
+
+### Alternatives considered
+
+- Infer interrupted apply state only from post-apply verification: rejected
+  because the database failure can occur before that observation is persisted.
+- Store the full expected document in SQLite: rejected because it would create
+  a second durable secret-bearing config store; a whole-file hash is sufficient
+  for the rollback guard.
+- Restore a backup when the applied state is unknown: rejected because a
+  fail-open rollback can overwrite a newer operator edit.
+- Treat a successful file write as verified activation: rejected because many
+  agent tools require a new session, reload, or restart.
+
+### Verification
+
+- The new interrupted-apply regression first failed on the missing
+  `expected_content_sha256`, then passed after the guard. It simulates the
+  second `ChangeStore.update` failing after the write, adds a manual edit, and
+  proves rollback returns `target_changed_since_apply` without changing bytes.
+- Focused Change, SafeEdit, JSON, and TOML regression suite: 26 passed; focused
+  Ruff passed.
+- Final automated gates: 877 Python tests, Ruff, every Web JavaScript syntax
+  check, and 33 Rust tests pass. Product smoke passes all 11 steps.
+- The packaged arm64 app starts its bundled daemon with bytecode writes
+  disabled, returns health and all seven environments, remains strictly
+  codesign-valid while running and after exit, and leaves ports 8767/5173
+  clear after tray Quit.
+- The packaged daemon passes Caddy internal-TLS remote smoke, including
+  structured non-2xx behavior, authenticated events, token revoke, and
+  post-revoke `401`; ports 8767/8443 are clear afterward.
+- Independent closure review found no remaining code finding; its sole P2 was
+  this required append-only Decision Log entry.
+
+### External release boundary
+
+No Developer ID identity, notarization profile, DMG publication workflow,
+updater key/feed, Intel build, Windows build, or Linux build was available.
+Those remain external release work and are not claimed complete.
