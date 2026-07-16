@@ -353,14 +353,14 @@ git commit -m "security: harden desktop window and CSP"
 
 ### Task 6: Complete transport verification
 
-- [ ] **Step 1: Run transport suites**
+- [x] **Step 1: Run transport suites**
 
 ```bash
 rtk uv run pytest tests/test_remote_admin_routes.py tests/test_remote_approval_loop.py tests/test_remote_token_lifecycle.py tests/test_web.py tests/test_desktop_bundle.py tests/test_desktop_scripts.py -q
 cd apps/desktop/src-tauri && cargo test
 ```
 
-- [ ] **Step 2: Run remote smoke**
+- [x] **Step 2: Run remote smoke**
 
 Start the local daemon and reference gateway, pair a temporary device, then run:
 

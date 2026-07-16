@@ -199,6 +199,56 @@ fn gateway_request_with_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn capture_request(method: &str, body: Option<&str>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut raw = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let count = stream.read(&mut buffer).unwrap();
+                if count == 0 {
+                    break;
+                }
+                raw.extend_from_slice(&buffer[..count]);
+                let text = String::from_utf8_lossy(&raw);
+                let Some(header_end) = text.find("\r\n\r\n") else {
+                    continue;
+                };
+                let content_length = text[..header_end]
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .and_then(|value| value.trim().parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                if raw.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .unwrap();
+            String::from_utf8(raw).unwrap()
+        });
+
+        let response = request(
+            &format!("http://{address}"),
+            method,
+            "transport",
+            body,
+            Some("desktop-secret"),
+        )
+        .unwrap();
+        assert_eq!(response, "{}");
+        server.join().unwrap()
+    }
 
     #[test]
     fn supported_methods_include_put_and_patch() {
@@ -206,6 +256,19 @@ mod tests {
             assert!(is_supported_method(method));
         }
         assert!(!is_supported_method("TRACE"));
+    }
+
+    #[test]
+    fn request_dispatches_all_supported_methods_with_bearer() {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] {
+            let body = matches!(method, "POST" | "PUT" | "PATCH").then_some(r#"{"ok":true}"#);
+            let raw = capture_request(method, body);
+            assert!(raw.starts_with(&format!("{method} /transport HTTP/1.1\r\n")));
+            assert!(raw.contains("authorization: Bearer desktop-secret\r\n"));
+            if body.is_some() {
+                assert!(raw.ends_with(r#"{"ok":true}"#));
+            }
+        }
     }
 
     #[test]

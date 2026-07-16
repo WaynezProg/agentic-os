@@ -150,3 +150,17 @@ def test_desktop_reconcile_clears_stale_pid(tmp_path, monkeypatch) -> None:
     )
     assert not pid_file.exists()
     assert payload["health"] in ("ok", "down")
+
+
+def test_remote_smoke_covers_transport_and_policy_boundaries() -> None:
+    script = (ROOT / "scripts/smoke-remote-client.sh").read_text(encoding="utf-8")
+
+    for token in [
+        'request_code GET "/health"',
+        'request_code POST "/fleet/probe"',
+        'request_code PUT "/workspaces/active"',
+        'request_code PATCH "/health"',
+        'request_code DELETE "/run-templates/smoke-transport"',
+        'request_code GET "/events/poll?limit=1"',
+    ]:
+        assert token in script
