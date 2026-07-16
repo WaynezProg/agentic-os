@@ -90,6 +90,7 @@ from agentic_os.diagnostics import resource_snapshot
 from agentic_os.evidence import EvidenceSeverity, EvidenceStore
 from agentic_os.fleet import FleetEvent, FleetStore, HealthRecord
 from agentic_os.health_prober import HealthProber
+from agentic_os.probe_service import ProbeService
 from agentic_os import mcp_alignment
 from agentic_os.capability_inventory import capabilities_dict, read_all_capabilities
 from agentic_os.live_sessions import (
@@ -146,7 +147,6 @@ from agentic_os.usage import UsageStore, usage_record_to_dict
 
 
 SESSION_START_APPROVAL_TOOL = "session.start"
-_HEALTH_OUTPUT_MAX = 2048
 
 
 def _require_contract_version(version: str) -> None:
@@ -317,7 +317,8 @@ def create_app(
     workspace_store.init()
     run_template_store = RunTemplateStore(state_dir / "agentic-os.db")
     run_template_store.init()
-    prober = HealthProber(fleet_store)
+    probe_service = ProbeService()
+    prober = HealthProber(fleet_store, probe_service=probe_service)
     logs = JsonlLogStore()
     evidence_store = EvidenceStore(state_dir)
     remote_access = RemoteAccessService(state_dir)
@@ -651,7 +652,7 @@ def create_app(
         if agent.health_command is None:
             return {"id": agent.id, "state": "unknown", "message": "no health command defined"}
         fleet_store.record_event(harness_id, "health_probe_requested", "health probe requested")
-        result = _run_health_check(agent)
+        result = probe_service.probe(agent).api_payload(agent.id)
         event_type = "health_probe_completed"
         fleet_store.record_event(
             harness_id,
@@ -3423,73 +3424,6 @@ def _harness_profile(agent: AgentDefinition) -> dict[str, object]:
         "log_paths": list(agent.log_paths),
         "default_provider": agent.default_provider,
     }
-
-
-def _run_health_check(agent: AgentDefinition) -> dict[str, object]:
-    """Execute health_command and return structured result with bounded output."""
-    cmd = agent.health_command
-    start = time.monotonic()
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        duration_ms = round((time.monotonic() - start) * 1000)
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-        stdout_preview, s_trunc = _truncate_output(stdout)
-        stderr_preview, e_trunc = _truncate_output(stderr)
-        truncated = s_trunc or e_trunc
-        state = "up" if proc.returncode == 0 else "down"
-        message = stdout_preview or (stderr_preview or "OK")
-        return {
-            "id": agent.id,
-            "state": state,
-            "message": message,
-            "exit_code": proc.returncode,
-            "duration_ms": duration_ms,
-            "stdout_preview": stdout_preview,
-            "stderr_preview": stderr_preview,
-            "truncated": truncated,
-        }
-    except subprocess.TimeoutExpired:
-        duration_ms = round((time.monotonic() - start) * 1000)
-        return {
-            "id": agent.id,
-            "state": "down",
-            "message": "health check timed out",
-            "exit_code": None,
-            "duration_ms": duration_ms,
-            "stdout_preview": "",
-            "stderr_preview": "",
-            "truncated": False,
-        }
-    except Exception as exc:
-        duration_ms = round((time.monotonic() - start) * 1000)
-        return {
-            "id": agent.id,
-            "state": "down",
-            "message": str(exc),
-            "exit_code": None,
-            "duration_ms": duration_ms,
-            "stdout_preview": "",
-            "stderr_preview": "",
-            "truncated": False,
-        }
-
-
-def _truncate_output(text: str) -> tuple[str, bool]:
-    """Truncate output to _HEALTH_OUTPUT_MAX bytes, return (preview, truncated)."""
-    encoded = text.encode("utf-8")
-    if len(encoded) <= _HEALTH_OUTPUT_MAX:
-        return text.strip(), False
-    # Truncate to valid UTF-8 boundary to avoid partial multibyte characters
-    truncated = encoded[:_HEALTH_OUTPUT_MAX]
-    # Find the last complete UTF-8 character by decoding and re-encoding
-    decoded = truncated.decode("utf-8", errors="ignore")
-    return decoded.strip(), True
 
 
 def _timeline_entry(

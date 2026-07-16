@@ -226,7 +226,7 @@ git commit -m "feat: add built-in environment adapter model"
 - Produces: `ProbeResult`, `ProbeService.probe()`, `ProbeService.info()`.
 - Used by: `HealthProber` and `/harnesses/{id}/health`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_probe_service.py`:
 
@@ -264,7 +264,7 @@ def test_probe_without_command_is_unknown() -> None:
     assert result.error == "health command not configured"
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run:
 
@@ -274,7 +274,7 @@ rtk uv run pytest tests/test_probe_service.py -q
 
 Expected: missing module failure.
 
-- [ ] **Step 3: Implement `ProbeService`**
+- [x] **Step 3: Implement `ProbeService`**
 
 Create `src/agentic_os/probe_service.py` with:
 
@@ -369,7 +369,7 @@ class ProbeService:
         return (completed.stdout or completed.stderr).strip()[:_OUTPUT_LIMIT] or None
 ```
 
-- [ ] **Step 4: Rewire fleet and immediate health**
+- [x] **Step 4: Rewire fleet and immediate health**
 
 Modify `src/agentic_os/health_prober.py` so `probe_one()` executes
 `ProbeService.probe()` with `asyncio.to_thread`, then calls
@@ -378,7 +378,7 @@ Modify `src/agentic_os/health_prober.py` so `probe_one()` executes
 Modify `src/agentic_os/api.py` so `_run_health_check()` serializes the same
 `ProbeResult` instead of invoking `subprocess.run` itself.
 
-- [ ] **Step 5: Run focused regression**
+- [x] **Step 5: Run focused regression**
 
 ```bash
 rtk uv run pytest tests/test_probe_service.py tests/test_health_prober.py tests/test_api.py -k "health or probe" -q
@@ -387,7 +387,7 @@ rtk uv run ruff check src/agentic_os/probe_service.py src/agentic_os/health_prob
 
 Expected: all focused tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/agentic_os/probe_service.py src/agentic_os/health_prober.py src/agentic_os/api.py tests/test_probe_service.py tests/test_health_prober.py tests/test_api.py

@@ -1523,6 +1523,38 @@ health_command = [{sys.executable!r}, "-c", "print('healthy')"]
     assert data["truncated"] is False
 
 
+def test_harness_health_uses_shared_probe_service(tmp_path: Path, monkeypatch) -> None:
+    from agentic_os.probe_service import ProbeResult, ProbeService
+
+    registry = tmp_path / "agents.toml"
+    registry.write_text(
+        """
+[[agents]]
+id = "shell"
+label = "Shell"
+command = ["/usr/bin/printf", "OK"]
+health_command = ["/usr/bin/false"]
+""",
+        encoding="utf-8",
+    )
+
+    def fake_probe(self, agent):
+        return ProbeResult(
+            state="up",
+            message="shared-probe-marker",
+            duration_ms=3,
+            exit_code=0,
+        )
+
+    monkeypatch.setattr(ProbeService, "probe", fake_probe)
+    client = TestClient(create_app(state_dir=tmp_path / ".agentic-os", registry_path=registry))
+
+    response = client.get("/harnesses/shell/health")
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "shared-probe-marker"
+
+
 def test_harness_health_no_command(tmp_path: Path) -> None:
     """GET /harnesses/{id}/health returns unknown when no health_command is defined."""
     client = make_client(tmp_path)

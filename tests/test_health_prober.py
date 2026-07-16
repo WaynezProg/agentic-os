@@ -1,12 +1,11 @@
 from pathlib import Path
-import asyncio
 
 import pytest
 
 from agentic_os.fleet import FleetStore, HealthState
-from agentic_os import health_prober
 from agentic_os.health_prober import HealthProber
 from agentic_os.models import AgentDefinition
+from agentic_os.probe_service import ProbeResult
 
 
 def _make_fleet_store(tmp_path: Path) -> FleetStore:
@@ -91,41 +90,28 @@ async def test_probe_one_collects_version(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_info_command_timeout_kills_child(monkeypatch, tmp_path):
-    class HangingProc:
-        returncode = None
-
-        def __init__(self) -> None:
-            self.killed = False
-            self.waited = False
-
-        async def communicate(self):
-            await asyncio.sleep(10)
-
-        def kill(self) -> None:
-            self.killed = True
-
-        async def wait(self) -> None:
-            self.waited = True
-
-    proc = HangingProc()
-
-    async def fake_create_subprocess_exec(*args, **kwargs):
-        return proc
-
-    monkeypatch.setattr(
-        health_prober.asyncio,
-        "create_subprocess_exec",
-        fake_create_subprocess_exec,
-    )
+async def test_probe_one_persists_shared_probe_result(tmp_path):
+    class FakeProbeService:
+        def probe(self, agent: AgentDefinition) -> ProbeResult:
+            assert agent.id == "shell"
+            return ProbeResult(
+                state="up",
+                message="shared result",
+                duration_ms=2,
+                exit_code=0,
+                version="9.9.9",
+                config_fingerprint="fp_shared",
+            )
 
     fleet = _make_fleet_store(tmp_path)
-    prober = HealthProber(fleet, timeout_seconds=0.01)
-    result = await prober._run_info_command(["fake-version"])
+    prober = HealthProber(fleet, probe_service=FakeProbeService())
+    await prober.probe_one(_agent(health_command=["not-executed"]))
 
-    assert result is None
-    assert proc.killed is True
-    assert proc.waited is True
+    record = fleet.get_health("shell")
+    assert record is not None
+    assert record.message == "shared result"
+    assert record.version == "9.9.9"
+    assert record.config_fingerprint == "fp_shared"
 
 
 @pytest.mark.asyncio
