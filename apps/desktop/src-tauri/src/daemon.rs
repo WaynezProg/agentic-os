@@ -297,6 +297,9 @@ pub fn hardened_path() -> String {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    static BUNDLE_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn ensure_path_includes_homebrew_dirs() {
@@ -308,6 +311,7 @@ mod tests {
 
     #[test]
     fn runtime_root_prefers_bundle_env() {
+        let _guard = BUNDLE_ENV_LOCK.lock().unwrap();
         let temp = std::env::temp_dir().join(format!(
             "agentic-os-runtime-root-{}",
             std::process::id()
@@ -322,6 +326,7 @@ mod tests {
 
     #[test]
     fn script_path_joins_under_runtime_root() {
+        let _guard = BUNDLE_ENV_LOCK.lock().unwrap();
         let temp = std::env::temp_dir().join(format!(
             "agentic-os-script-path-{}",
             std::process::id()
