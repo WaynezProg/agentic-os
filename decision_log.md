@@ -51,3 +51,34 @@ Revisit the boundary only if the product must execute its own agent loop,
 support third-party runtime-loaded adapters, provide organization/cloud control,
 or author visual multi-agent workflows.
 
+## 2026-07-17 — Implement the Environment foundation
+
+### Purpose
+
+Replace duplicated tool discovery, health probing, native-session scanning, and
+launch checks with one normalized environment substrate while preserving every
+existing API contract.
+
+### Decision and rationale
+
+- Add one static adapter table for Claude, Codex, Cursor, Hermes, OpenClaw,
+  OpenCode, and Qwen, keyed by `SEMANTIC_HARNESS_IDS`.
+- Keep CLI, config, capability, runtime, Desktop, and IDE observations
+  independent so one healthy surface never proves another.
+- Route fleet health and direct health checks through `ProbeService`.
+- Route live-session radar, discovery, transcript lookup, and bind through
+  `NativeSessionService` with bounded file scanning.
+- Route new launch, retry, approval execution, and explicit policy evaluation
+  through `LaunchDecisionService`.
+- Preserve the established safety distinction: ordinary launch is open with a
+  warning when no policy exists, while explicit evaluation and approval
+  revalidation require a policy and deny when it is missing.
+- Keep `/tools/discovery`, `/tools/inventory`, `/tools/capabilities`, and
+  `/agentic/inventory` as compatibility projections of the normalized service.
+
+### Verification
+
+- `rtk uv run pytest -q` — 824 passed.
+- `rtk uv run ruff check .` — passed.
+- Compatibility tests retain the existing endpoint keys and status codes, and
+  adapter coverage is asserted against `SEMANTIC_HARNESS_IDS`.

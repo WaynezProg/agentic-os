@@ -765,12 +765,12 @@ git commit -m "refactor: unify launch decisions"
 
 ### Task 6: Compatibility and complete verification
 
-- [ ] **Step 1: Add compatibility contract tests**
+- [x] **Step 1: Add compatibility contract tests**
 
 Assert old endpoint keys and status codes remain unchanged, and adapter IDs
 match `SEMANTIC_HARNESS_IDS`.
 
-- [ ] **Step 2: Run complete Python gates**
+- [x] **Step 2: Run complete Python gates**
 
 ```bash
 rtk uv run pytest -q
@@ -779,13 +779,13 @@ rtk uv run ruff check .
 
 Expected: full suite passes and Ruff reports no errors.
 
-- [ ] **Step 3: Update architecture docs**
+- [x] **Step 3: Update architecture docs**
 
 Append implementation evidence to `decision_log.md` and add a README phase row
 for Environment foundation. Keep the design document unchanged except for a
 short implemented-status note.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md decision_log.md docs/superpowers/specs/2026-07-17-local-agent-environment-manager-design.md

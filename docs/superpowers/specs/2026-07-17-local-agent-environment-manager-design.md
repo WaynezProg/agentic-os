@@ -3,6 +3,10 @@
 Date: 2026-07-17
 Status: Approved
 
+Implementation status: Delivery slice 1, Environment foundation, is complete
+on `codex/local-agent-environment-manager-impl`; 824 Python tests and Ruff pass.
+Change reconciliation, Desktop transport, operator UX, and release proof remain.
+
 ## 1. Product decision
 
 `agentic-os` becomes a **Local Agent Environment Manager** for heterogeneous
@@ -442,4 +446,3 @@ Manual/visual gates:
 4. Operator UX: six-area navigation, Environment and Change views, reused
    mature subviews.
 5. Release proof: complete automated, visual, packaged, and blocker audit.
-
