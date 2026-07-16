@@ -380,7 +380,7 @@ git commit -m "feat: add verified change center"
 
 ### Task 5: Group mature subviews under the six areas
 
-- [ ] **Step 1: Map all legacy views**
+- [x] **Step 1: Map all legacy views**
 
 Use exactly:
 
@@ -406,7 +406,7 @@ const LEGACY_VIEW_AREA = Object.freeze({
 
 Remove the old advanced-navigation group.
 
-- [ ] **Step 2: Settings home**
+- [x] **Step 2: Settings home**
 
 Add a Settings panel linking to:
 
@@ -421,7 +421,7 @@ Add a Settings panel linking to:
 Reuse current controls and Tauri settings window; do not duplicate their write
 logic.
 
-- [ ] **Step 3: Home attention model**
+- [x] **Step 3: Home attention model**
 
 Home prioritizes:
 
@@ -433,13 +433,13 @@ Home prioritizes:
 
 Use cached endpoints and link each item to its owning area/view.
 
-- [ ] **Step 4: Verify reachability**
+- [x] **Step 4: Verify reachability**
 
 Extend `tests/test_web.py` to assert every old panel ID appears in
 `LEGACY_VIEW_AREA` or is directly owned by Home/Settings. No feature may become
 unreachable.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/index.html apps/web/app.js apps/web/ui/navigation.js apps/web/ui/daily-dashboard.js apps/web/styles.css tests/test_web.py

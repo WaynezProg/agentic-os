@@ -54,6 +54,29 @@ fn save_desktop_settings(settings: DesktopSettings) -> Result<(), String> {
     settings::save_settings(&settings)
 }
 
+fn show_desktop_settings(app: &AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("settings") {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        app,
+        "settings",
+        tauri::WebviewUrl::App("desktop-settings.html".into()),
+    )
+    .title("Desktop Settings")
+    .inner_size(480.0, 420.0)
+    .build()
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn open_desktop_settings(app: AppHandle) -> Result<(), String> {
+    show_desktop_settings(&app)
+}
+
 #[tauri::command]
 fn start_remote_pairing() -> Result<String, String> {
     remote::post_json("/remote/pairing/start", None)
@@ -211,6 +234,7 @@ pub fn run() {
             ui_stop,
             get_desktop_settings,
             save_desktop_settings,
+            open_desktop_settings,
             start_remote_pairing,
             complete_remote_pairing,
             list_remote_devices,
@@ -298,19 +322,7 @@ pub fn run() {
                         refresh_tray_title(app);
                     }
                     "settings" => {
-                        if let Some(window) = app.get_webview_window("settings") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        } else {
-                            let _ = tauri::WebviewWindowBuilder::new(
-                                app,
-                                "settings",
-                                tauri::WebviewUrl::App("desktop-settings.html".into()),
-                            )
-                            .title("Desktop Settings")
-                            .inner_size(480.0, 420.0)
-                            .build();
-                        }
+                        let _ = show_desktop_settings(app);
                     }
                     "quit" => {
                         supervisor::SHUTDOWN.store(true, Ordering::SeqCst);

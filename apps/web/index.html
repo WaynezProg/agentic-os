@@ -10,6 +10,7 @@
     <script src="ui/data-cache.js"></script>
     <script src="ui/environment-manager.js"></script>
     <script src="ui/change-center.js"></script>
+    <script src="ui/settings-home.js"></script>
     <script src="ui/rollback.js"></script>
     <script src="ui/catalog-editor.js"></script>
     <script src="ui/config-editor.js"></script>
@@ -1309,7 +1310,79 @@
             <h2>設定</h2>
           </div>
         </div>
-        <p class="message">連線、工作區、profiles 與診斷入口準備中。</p>
+        <p id="settings-message" class="message" aria-live="polite">
+          這裡只提供入口；實際設定仍由原本的 owner surface 管理。
+        </p>
+        <div class="settings-grid">
+          <article class="settings-card">
+            <h3>Desktop 連線與配對裝置</h3>
+            <p id="settings-connection-summary">讀取目前連線模式中…</p>
+            <div class="actions">
+              <button id="settings-open-desktop" type="button" class="btn-primary">開啟 Desktop Settings</button>
+              <button
+                type="button"
+                data-settings-area="home"
+                data-settings-view="overview"
+                data-settings-target="remote-console"
+              >查看連線狀態</button>
+            </div>
+          </article>
+          <article class="settings-card">
+            <h3>工作區</h3>
+            <p id="settings-workspace-summary">尚未選擇工作區。</p>
+            <button type="button" data-settings-target="workspace-select">選擇工作區</button>
+          </article>
+          <article class="settings-card">
+            <h3>Provider / Model</h3>
+            <p>使用既有 profile switchboard 切換 active profile。</p>
+            <button
+              type="button"
+              data-settings-area="environments"
+              data-settings-view="agents"
+              data-settings-target="provider-switchboard-section"
+            >開啟切換器</button>
+          </article>
+          <article class="settings-card">
+            <h3>Run Profiles</h3>
+            <p>編輯 provider、model、harness 與 project 綁定。</p>
+            <button
+              type="button"
+              data-settings-area="environments"
+              data-settings-view="agents"
+              data-settings-target="profile-editor-section"
+            >管理 Profiles</button>
+          </article>
+          <article class="settings-card">
+            <h3>Run Templates</h3>
+            <p>管理可重複使用的 session 啟動範本。</p>
+            <button
+              type="button"
+              data-settings-area="environments"
+              data-settings-view="agents"
+              data-settings-target="run-template-section"
+            >管理 Templates</button>
+          </article>
+          <article class="settings-card">
+            <h3>專案設定匯出 / 匯入</h3>
+            <p>沿用既有 dry-run、套用與 bundle 驗證流程。</p>
+            <button
+              type="button"
+              data-settings-area="home"
+              data-settings-view="overview"
+              data-settings-target="setup-import-export"
+            >開啟 Setup 工具</button>
+          </article>
+          <article class="settings-card">
+            <h3>診斷、日誌與版本</h3>
+            <p>查看版本、資源診斷、修復設定與日誌 bundle。</p>
+            <button
+              type="button"
+              data-settings-area="home"
+              data-settings-view="overview"
+              data-settings-target="desktop-polish"
+            >開啟產品診斷</button>
+          </article>
+        </div>
       </section>
 
       <section id="panel-overview" class="panel is-active" role="region" aria-label="首頁" data-view="overview">
@@ -1317,6 +1390,18 @@
           <h2>總覽</h2>
           <button id="dashboard-refresh" type="button">重新整理儀表板</button>
         </div>
+        <section id="home-attention" class="subpanel card home-attention" aria-labelledby="home-attention-heading">
+          <div class="home-attention__head">
+            <div>
+              <p class="eyebrow">Operator Attention</p>
+              <h3 id="home-attention-heading">現在需要處理</h3>
+            </div>
+            <span id="home-attention-count" class="badge">0</span>
+          </div>
+          <div id="home-attention-list" class="home-attention-list" aria-live="polite">
+            <p class="empty-state">載入需處理事項中…</p>
+          </div>
+        </section>
         <section id="dashboard-v2" class="subpanel card">
           <h3>雙軌操作台</h3>
           <div class="dashboard-v2-layout" id="dashboard-v2-layout"></div>

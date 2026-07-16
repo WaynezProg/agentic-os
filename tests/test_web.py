@@ -27,6 +27,7 @@ RUN_TEMPLATE_LAUNCHER_JS = WEB_DIR / "ui" / "run-template-launcher.js"
 DAILY_DASHBOARD_JS = WEB_DIR / "ui" / "daily-dashboard.js"
 ENVIRONMENT_MANAGER_JS = WEB_DIR / "ui" / "environment-manager.js"
 CHANGE_CENTER_JS = WEB_DIR / "ui" / "change-center.js"
+SETTINGS_HOME_JS = WEB_DIR / "ui" / "settings-home.js"
 
 
 def _web_javascript_paths() -> list[Path]:
@@ -153,6 +154,67 @@ def test_verified_change_center_contract_and_editor_handoff() -> None:
         assert "change_id" in editor, editor_path.name
         assert "changeApply" in editor, editor_path.name
         assert "Ao.ChangeCenter" in editor, editor_path.name
+
+
+def test_settings_home_links_to_existing_owners_and_desktop_settings() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert SETTINGS_HOME_JS.is_file()
+    settings = SETTINGS_HOME_JS.read_text(encoding="utf-8")
+    assert html.index('src="ui/settings-home.js"') < html.index('src="app.js"')
+    for target in [
+        "workspace-select",
+        "provider-switchboard-section",
+        "profile-editor-section",
+        "run-template-section",
+        "setup-import-export",
+        "desktop-polish",
+    ]:
+        assert f'data-settings-target="{target}"' in html
+    assert 'id="settings-open-desktop"' in html
+    assert 'invoke("open_desktop_settings")' in settings
+    assert "Ao.Navigation.show" in settings
+    assert "scrollIntoView" in settings
+
+    desktop_lib = (
+        ROOT / "apps" / "desktop" / "src-tauri" / "src" / "lib.rs"
+    ).read_text(encoding="utf-8")
+    assert "fn open_desktop_settings" in desktop_lib
+    assert "open_desktop_settings," in desktop_lib
+
+
+def test_home_attention_model_uses_owner_endpoints_in_priority_order() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    dashboard = DAILY_DASHBOARD_JS.read_text(encoding="utf-8")
+    panel = html[html.index('id="panel-overview"') :]
+
+    assert 'id="home-attention"' in panel
+    assert panel.index('id="home-attention"') < panel.index('id="dashboard-v2"')
+    for cache_key in ["environments", "changes", "approvals-pending", "sessions"]:
+        assert re.search(rf'Ao\.DataCache\.get\(\s*"{re.escape(cache_key)}"', dashboard)
+    priority_tokens = [
+        "environment-attention",
+        "change-attention",
+        "approval-attention",
+        "session-attention",
+        "verified-change",
+    ]
+    assert [dashboard.index(token) for token in priority_tokens] == sorted(
+        dashboard.index(token) for token in priority_tokens
+    )
+    assert "Ao.EnvironmentManager" in dashboard
+    assert "Ao.ChangeCenter" in dashboard
+
+
+def test_every_panel_view_remains_reachable_from_navigation() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    navigation = (WEB_DIR / "ui" / "navigation.js").read_text(encoding="utf-8")
+    views = re.findall(r'<section id="panel-[^"]+"[^>]+data-view="([^"]+)"', html)
+
+    assert len(views) == 18
+    for view in views:
+        assert f'"{view}"' in navigation, view
+    assert ".nav-group" not in STYLES_CSS.read_text(encoding="utf-8")
 
 
 def test_daemon_api_override_input_exists() -> None:

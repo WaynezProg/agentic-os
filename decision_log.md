@@ -270,3 +270,34 @@ cross-agent configuration changes while keeping the legacy editors usable.
 - Ruff passed for the remote-affordance and API test changes.
 - A regression test proves a legacy MCP dry-run `change_id` can be applied
   through the unified endpoint and reaches `verified`.
+
+## 2026-07-17 — Organize the Desktop around operator ownership
+
+### Purpose
+
+Make the six-area navigation useful for daily operation without copying mature
+controls into new surfaces or making old panels unreachable.
+
+### Decision and rationale
+
+- Keep every legacy panel as a subview owned by Home, Environments, Sessions,
+  Capabilities, or Changes; remove the dead advanced-navigation CSS.
+- Make Settings a read-only hub of links. Each card opens the existing owner
+  surface for workspaces, profiles, provider/model, templates, setup bundles,
+  diagnostics, logs, and version checks.
+- Expose the existing Tauri Desktop Settings window through one
+  `open_desktop_settings` command, shared with the tray menu, instead of
+  duplicating endpoint, pairing, device, or Keychain controls in the main UI.
+- Put an attention list first on Home. Its fixed priority is environment
+  degradation, stale/partial changes, pending approvals, active sessions, then
+  recent verified changes; every row routes to the owning view.
+- Reuse the shared environment, change, approval, and session cache keys so the
+  attention model does not multiply daemon reads.
+
+### Verification
+
+- `tests/test_web.py` — 87 passed.
+- All Web JavaScript syntax checks passed.
+- Rust Desktop tests — 32 passed.
+- `cargo fmt --check` still reports pre-existing formatting drift in untouched
+  Desktop files; no unrelated mechanical reformat was included.

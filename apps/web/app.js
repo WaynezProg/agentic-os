@@ -43,6 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.DashboardV2?.init?.();
   Ao.EnvironmentManager?.init?.();
   Ao.ChangeCenter?.init?.();
+  Ao.SettingsHome?.init?.();
   Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindNavigation();
@@ -172,6 +173,8 @@ function loadActiveTab() {
     Ao.EnvironmentManager?.load?.();
   } else if (state.activeTab === "change-center") {
     Ao.ChangeCenter?.load?.();
+  } else if (state.activeTab === "settings-home") {
+    Ao.SettingsHome?.load?.();
   } else if (state.activeTab === "agents") {
     loadAgents();
     Ao.ProviderSwitchboard?.refresh?.();
