@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::daemon;
 use crate::settings;
@@ -109,7 +109,7 @@ pub fn after_attempt(prev: &SupervisorState, succeeded: bool, now_secs: u64) -> 
     }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct ConnectionStatePayload {
     pub state: String,
     pub detail: String,
@@ -120,10 +120,36 @@ pub struct ConnectionStatePayload {
 /// Owns the supervisor handle managed in Tauri state (manual retry resets it).
 pub struct SupervisorHandle(pub Arc<Mutex<SupervisorState>>);
 
+/// Latest connection payload, readable by the WebView after it subscribes.
+pub struct ConnectionStateStore(pub Mutex<ConnectionStatePayload>);
+
+pub fn startup_payload(
+    result: &daemon::StackStartResult,
+    api_url: String,
+    pid: Option<u32>,
+) -> ConnectionStatePayload {
+    let ready = result.daemon_started && result.detail == "ok";
+    ConnectionStatePayload {
+        state: if ready { "connected" } else { "failed" }.to_string(),
+        detail: result.detail.clone(),
+        api_url,
+        pid,
+    }
+}
+
+pub fn emit_connection_state(app: &AppHandle, payload: ConnectionStatePayload) {
+    if let Some(store) = app.try_state::<ConnectionStateStore>() {
+        if let Ok(mut current) = store.0.lock() {
+            *current = payload.clone();
+        }
+    }
+    let _ = app.emit(CONNECTION_EVENT, payload);
+}
+
 fn emit(app: &AppHandle, last: &mut Option<String>, payload: ConnectionStatePayload) {
     let key = format!("{}|{}", payload.state, payload.detail);
     if last.as_deref() != Some(key.as_str()) {
-        let _ = app.emit(CONNECTION_EVENT, payload);
+        emit_connection_state(app, payload);
         *last = Some(key);
     }
 }
@@ -296,5 +322,33 @@ mod tests {
         assert_eq!(state.phase, Phase::Failed);
         assert_eq!(state.fail_count, MAX_RESTART_ATTEMPTS);
         assert_eq!(state.next_attempt_secs, None);
+    }
+
+    #[test]
+    fn startup_payload_surfaces_immediate_failure() {
+        let payload = startup_payload(
+            &daemon::StackStartResult {
+                daemon_started: false,
+                detail: "port_occupied:4242".to_string(),
+            },
+            "http://127.0.0.1:8767".to_string(),
+            Some(4242),
+        );
+        assert_eq!(payload.state, "failed");
+        assert_eq!(payload.detail, "port_occupied:4242");
+        assert_eq!(payload.pid, Some(4242));
+    }
+
+    #[test]
+    fn startup_payload_requires_clean_success() {
+        let payload = startup_payload(
+            &daemon::StackStartResult {
+                daemon_started: true,
+                detail: "desktop-ui: failed".to_string(),
+            },
+            "http://127.0.0.1:8767".to_string(),
+            None,
+        );
+        assert_eq!(payload.state, "failed");
     }
 }

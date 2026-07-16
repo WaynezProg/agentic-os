@@ -99,14 +99,25 @@ window.AgenticOs = window.AgenticOs || {};
       }
 
       if (listen) {
-        // Seed initial state immediately (events emitted before we subscribed are missed),
-        // then react to subsequent transitions.
+        let liveEventReceived = false;
         render("connecting", "");
-        pollHealth();
-        listen("connection-state", (event) => {
+        const subscription = listen("connection-state", (event) => {
+          liveEventReceived = true;
           const payload = event.payload || {};
           render(payload.state, payload.detail);
         });
+        if (invoke) {
+          Promise.resolve(subscription)
+            .then(() => invoke("get_initial_connection_state"))
+            .then((payload) => {
+              if (!liveEventReceived) {
+                render(payload.state, payload.detail);
+              }
+            })
+            .catch(() => pollHealth());
+        } else {
+          pollHealth();
+        }
       } else {
         startPolling();
       }

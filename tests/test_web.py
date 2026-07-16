@@ -761,6 +761,15 @@ def test_remote_approval_events_use_authenticated_bridge() -> None:
     assert "setTimeout" in workbench
 
 
+def test_connection_gate_reads_startup_state_after_subscribing() -> None:
+    connection_gate = (WEB_DIR / "ui" / "connection-gate.js").read_text(encoding="utf-8")
+
+    assert 'invoke("get_initial_connection_state")' in connection_gate
+    assert connection_gate.index('listen("connection-state"') < connection_gate.index(
+        'invoke("get_initial_connection_state")'
+    )
+
+
 def test_remote_console_modules_exist() -> None:
     assert REMOTE_CONSOLE_JS.is_file()
     html = INDEX_HTML.read_text(encoding="utf-8")

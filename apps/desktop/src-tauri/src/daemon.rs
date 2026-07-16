@@ -6,6 +6,13 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 static BUNDLE_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
+const START_DETAIL_LIMIT: usize = 512;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StackStartResult {
+    pub daemon_started: bool,
+    pub detail: String,
+}
 
 pub fn repo_root() -> PathBuf {
     if let Ok(root) = std::env::var("AGENTIC_OS_ROOT") {
@@ -89,14 +96,85 @@ fn run_script_at(script_path: &Path, working_dir: &Path, command: &str) -> Resul
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub fn reconcile_stack() {
-    let _ = run_script("desktop-ui.sh", "reconcile");
-    let _ = run_script("desktop-daemon.sh", "reconcile");
+fn bounded_script_error(error: &str) -> String {
+    let detail = error.trim();
+    let detail = if detail.is_empty() {
+        "desktop lifecycle script failed"
+    } else {
+        detail
+    };
+    detail.chars().take(START_DETAIL_LIMIT).collect()
 }
 
-pub fn start_stack() {
-    let _ = run_script("desktop-ui.sh", "start");
-    let _ = run_script("desktop-daemon.sh", "start");
+fn failed_stack_result(error: &str, occupied_pid: Option<u32>) -> StackStartResult {
+    let detail = occupied_pid
+        .map(|pid| format!("port_occupied:{pid}"))
+        .unwrap_or_else(|| bounded_script_error(error));
+    StackStartResult {
+        daemon_started: false,
+        detail,
+    }
+}
+
+fn reconcile_result_from_script(
+    result: Result<String, String>,
+    occupied_pid: Option<u32>,
+) -> StackStartResult {
+    match result {
+        Ok(raw) => match parse_status(&raw) {
+            Ok(status) => StackStartResult {
+                daemon_started: status.is_healthy(),
+                detail: "ok".to_string(),
+            },
+            Err(error) => failed_stack_result(
+                &format!("invalid daemon reconcile status: {error}"),
+                occupied_pid,
+            ),
+        },
+        Err(error) => failed_stack_result(&error, occupied_pid),
+    }
+}
+
+fn with_ui_result(
+    mut result: StackStartResult,
+    ui_result: Result<String, String>,
+) -> StackStartResult {
+    if result.detail == "ok" {
+        if let Err(error) = ui_result {
+            result.detail = bounded_script_error(&format!("desktop-ui: {error}"));
+        }
+    }
+    result
+}
+
+pub fn reconcile_stack() -> StackStartResult {
+    let ui_result = run_script("desktop-ui.sh", "reconcile");
+    let daemon_result = run_script("desktop-daemon.sh", "reconcile");
+    let occupied_pid = daemon_result
+        .as_ref()
+        .err()
+        .and_then(|_| listener_pid(8767));
+    with_ui_result(
+        reconcile_result_from_script(daemon_result, occupied_pid),
+        ui_result,
+    )
+}
+
+pub fn start_stack() -> StackStartResult {
+    let ui_result = run_script("desktop-ui.sh", "start");
+    let daemon_result = run_script("desktop-daemon.sh", "start");
+    let result = match daemon_result {
+        Err(error) => failed_stack_result(&error, listener_pid(8767)),
+        Ok(_) => match status() {
+            Ok(status) if status.is_healthy() => StackStartResult {
+                daemon_started: true,
+                detail: "ok".to_string(),
+            },
+            Ok(_) => failed_stack_result("daemon did not become healthy", listener_pid(8767)),
+            Err(error) => failed_stack_result(&error, listener_pid(8767)),
+        },
+    };
+    with_ui_result(result, ui_result)
 }
 
 pub fn stop_stack() {
@@ -297,5 +375,41 @@ mod tests {
             &[std::path::PathBuf::from("/bundle/runtime/.venv/bin")],
         );
         assert!(out.starts_with("/bundle/runtime/.venv/bin:"));
+    }
+
+    #[test]
+    fn reconcile_result_parses_daemon_health() {
+        let result = reconcile_result_from_script(
+            Ok(
+                r#"{"running": true, "managed": true, "pid": 4242, "api_url": "http://127.0.0.1:8767", "health": "ok"}"#
+                    .to_string(),
+            ),
+            None,
+        );
+        assert_eq!(
+            result,
+            StackStartResult {
+                daemon_started: true,
+                detail: "ok".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn script_failure_prefers_port_occupied_detail() {
+        let result = failed_stack_result("bind failed", Some(4242));
+        assert_eq!(
+            result,
+            StackStartResult {
+                daemon_started: false,
+                detail: "port_occupied:4242".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn script_failure_detail_is_bounded() {
+        let result = failed_stack_result(&"x".repeat(600), None);
+        assert_eq!(result.detail.chars().count(), START_DETAIL_LIMIT);
     }
 }

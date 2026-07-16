@@ -262,7 +262,7 @@ git commit -m "fix: bridge remote approval events through Keychain auth"
 
 - Tauri setup emits `connection-state` with startup failure detail immediately.
 
-- [ ] **Step 1: Extract startup outcome**
+- [x] **Step 1: Extract startup outcome**
 
 Change `daemon::reconcile_stack()` and `daemon::start_stack()` to return a
 typed result:
@@ -277,23 +277,23 @@ pub struct StackStartResult {
 
 The result reports `ok`, `port_occupied:<pid>`, or the bounded script error.
 
-- [ ] **Step 2: Emit setup result**
+- [x] **Step 2: Emit setup result**
 
 In `lib.rs` setup, emit an initial `connection-state` payload before spawning
 the supervisor. Do not discard startup errors.
 
-- [ ] **Step 3: Add Rust unit tests**
+- [x] **Step 3: Add Rust unit tests**
 
 Test result parsing and ensure error detail is bounded to 512 characters.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 cd apps/desktop/src-tauri
 cargo test
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/desktop/src-tauri/src/daemon.rs apps/desktop/src-tauri/src/lib.rs apps/desktop/src-tauri/src/supervisor.rs

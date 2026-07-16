@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use settings::DesktopSettings;
-use supervisor::{SupervisorHandle, SupervisorState};
+use supervisor::{ConnectionStatePayload, ConnectionStateStore, SupervisorHandle, SupervisorState};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent};
@@ -125,6 +125,17 @@ fn retry_daemon(state: tauri::State<SupervisorHandle>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_initial_connection_state(
+    state: tauri::State<ConnectionStateStore>,
+) -> Result<ConnectionStatePayload, String> {
+    state
+        .0
+        .lock()
+        .map(|payload| payload.clone())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn open_daemon_log() -> Result<(), String> {
     let path = daemon::daemon_log_path();
     std::process::Command::new("/usr/bin/open")
@@ -209,6 +220,7 @@ pub fn run() {
             connection_api_fetch,
             probe_remote_connection,
             retry_daemon,
+            get_initial_connection_state,
             open_daemon_log,
         ])
         .setup(|app| {
@@ -221,8 +233,29 @@ pub fn run() {
             }
 
             daemon::init_bundle_root(app.handle());
-            daemon::reconcile_stack();
-            daemon::start_stack();
+            let reconcile_result = daemon::reconcile_stack();
+            if reconcile_result.detail != "ok" {
+                log::warn!(
+                    "desktop stack reconcile failed: {}",
+                    reconcile_result.detail
+                );
+            }
+            let start_result = daemon::start_stack();
+            let status = daemon::status().ok();
+            let api_url = status
+                .as_ref()
+                .map(|status| status.api_url.clone())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| DesktopSettings::default().local.api_url);
+            let pid = status.as_ref().and_then(|status| status.pid).or_else(|| {
+                start_result
+                    .detail
+                    .strip_prefix("port_occupied:")
+                    .and_then(|value| value.parse().ok())
+            });
+            let initial_payload = supervisor::startup_payload(&start_result, api_url, pid);
+            app.manage(ConnectionStateStore(Mutex::new(initial_payload.clone())));
+            supervisor::emit_connection_state(app.handle(), initial_payload);
 
             let daemon_start_item =
                 MenuItem::with_id(app, "daemon_start", "Start daemon", true, None::<&str>)?;
