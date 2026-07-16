@@ -370,12 +370,12 @@ bash scripts/smoke-remote-client.sh https://127.0.0.1:8443 "$TOKEN"
 
 Verify GET, POST, PUT, DELETE, and `/events/poll` through the Desktop bridge.
 
-- [ ] **Step 3: Record evidence**
+- [x] **Step 3: Record evidence**
 
 Append the exact test outputs and any credential-independent release boundary to
 `decision_log.md`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add decision_log.md

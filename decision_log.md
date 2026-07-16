@@ -148,3 +148,63 @@ post-verified, and rollback-verifiable without replacing the existing
 Replace the local `0600` payload store with encryption or Keychain-backed
 envelopes before adding multi-user access, cloud synchronization, or a threat
 model where another local account can read the operator's files.
+
+## 2026-07-17 — Harden and verify Desktop transport
+
+### Purpose
+
+Make local and remote Desktop connections behaviorally consistent, restore
+authenticated remote events without exposing bearer tokens to JavaScript,
+surface launch failures immediately, and enable a production CSP.
+
+### Decision and rationale
+
+- Route local and remote Desktop HTTP through one Rust request builder that
+  supports GET, POST, PUT, PATCH, and DELETE. Local mode uses the configured
+  `settings.local.api_url`; remote mode adds the Keychain-backed bearer in Rust.
+- Keep SSE for native clients, but use authenticated bounded
+  `GET /events/poll` through the Rust bridge for the WebView. Direct
+  `EventSource` cannot attach the Keychain bearer safely.
+- Return typed startup results from Desktop lifecycle scripts. Store the latest
+  `connection-state` payload so the WebView can subscribe first and then read
+  the current state without losing a setup-time failure event.
+- Enable a restrictive Tauri CSP with packaged-only scripts/styles, Tauri IPC,
+  loopback API connections, and HTTPS connection targets. Remove Google Fonts
+  and inline style attributes so the packaged UI remains offline-capable
+  without broadening script or style origins.
+- Treat remote PUT/DELETE `403` and PATCH `/health` `405` as expected policy
+  evidence, not transport failures. Those requests reached the daemon; the
+  localhost-only route guard and FastAPI method contract rejected them.
+
+### Alternatives considered
+
+- Put the bearer token in JavaScript or `desktop.toml`: rejected because it
+  breaks the Keychain trust boundary.
+- Keep direct remote `EventSource`: rejected because browser EventSource has no
+  safe bearer injection path here.
+- Leave `csp: null` or allow remote font styles: rejected because the Desktop
+  app should not require network-loaded executable/style content.
+- Infer verb support from a method allowlist alone: rejected; a loopback HTTP
+  server test now proves the shared Rust client sends all five verbs, bearer
+  headers, and request bodies.
+
+### Verification
+
+- Focused Desktop/remote suite:
+  `145 passed in 5.11s`.
+- Rust Desktop suite:
+  `32 passed; 0 failed`.
+- Live isolated `agentd` + Caddy internal-TLS gateway:
+  `smoke-remote-client: ok`.
+- Temporary device result:
+  `gateway_smoke device=Ffao7Y8ISCvoAu-6lTr3hA result=ok`; the device was
+  revoked, both processes were stopped, and ports 8767/8443 had no listener.
+- The live smoke covered GET health, POST fleet probe, PUT/PATCH/DELETE policy
+  boundaries, authenticated `/events/poll`, and SSE.
+
+### Release boundary
+
+This evidence is credential-independent and covers source behavior, the local
+TLS gateway, and Desktop transport. Apple Developer ID signing, notarization,
+and updater publication require external credentials and are not claimed by
+this entry.
