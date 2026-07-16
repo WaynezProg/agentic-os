@@ -273,7 +273,7 @@ git commit -m "fix: refuse malformed config observations"
 - Produces: `ChangeService.preview()`, `apply()`, `rollback()`.
 - Initial operations: `mcp.copy`, `mcp.remove`.
 
-- [ ] **Step 1: Write state-machine tests**
+- [x] **Step 1: Write state-machine tests**
 
 Create `tests/test_change_service.py`:
 
@@ -309,7 +309,7 @@ def test_apply_refuses_stale_preview(service, home) -> None:
     assert stale.status == "stale"
 ```
 
-- [ ] **Step 2: Implement operation dispatch**
+- [x] **Step 2: Implement operation dispatch**
 
 Create `src/agentic_os/change_service.py`. Use an explicit `if/elif` switch:
 
@@ -342,14 +342,14 @@ ops)`, stores verification, and records `verified`, `partial`, or `failed`.
 `rollback()` invokes engine rollback, re-observes, compares to the original
 before document, and records verified rollback.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 rtk uv run pytest tests/test_change_service.py tests/test_mcp_alignment.py tests/test_safe_edit.py -q
 rtk uv run ruff check src/agentic_os/change_service.py
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/agentic_os/change_service.py tests/test_change_service.py
