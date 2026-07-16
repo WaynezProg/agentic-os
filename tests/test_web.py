@@ -91,6 +91,16 @@ def test_first_screen_is_control_panel_not_marketing_page() -> None:
         assert forbidden not in html
 
 
+def test_packaged_web_has_no_remote_fonts_or_inline_style_attributes() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    javascript = _web_javascript_sources()
+
+    assert "fonts.googleapis.com" not in html
+    assert "fonts.gstatic.com" not in html
+    assert "style=" not in html
+    assert "style=" not in javascript
+
+
 def test_agents_table_contract_exists() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
     js = APP_JS.read_text(encoding="utf-8")

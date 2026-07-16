@@ -302,7 +302,7 @@ git commit -m "fix: surface desktop startup failures"
 
 ### Task 5: Window and CSP hardening
 
-- [ ] **Step 1: Add config assertions**
+- [x] **Step 1: Add config assertions**
 
 Extend `tests/test_desktop_bundle.py`:
 
@@ -320,7 +320,7 @@ def test_tauri_window_and_csp_are_production_safe() -> None:
     assert "connect-src" in csp
 ```
 
-- [ ] **Step 2: Update Tauri config**
+- [x] **Step 2: Update Tauri config**
 
 Set:
 
@@ -337,14 +337,14 @@ Use a CSP verified against current Tauri 2 documentation. It must allow
 packaged scripts/styles/images, Tauri IPC, loopback API connections, and HTTPS
 remote gateways while rejecting arbitrary script origins.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 rtk uv run pytest tests/test_desktop_bundle.py -q
 cd apps/desktop/src-tauri && cargo test
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/desktop/src-tauri/tauri.conf.json tests/test_desktop_bundle.py

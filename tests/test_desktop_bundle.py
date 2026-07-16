@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -11,6 +12,26 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGING = ROOT / "apps/desktop/src-tauri/bundle-resources/agentic-os"
+
+
+def test_tauri_window_and_csp_are_production_safe() -> None:
+    config = json.loads(
+        (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+    )
+    window = config["app"]["windows"][0]
+    assert window["width"] == 1280
+    assert window["height"] == 820
+    assert window["minWidth"] == 960
+    assert window["minHeight"] == 640
+
+    csp = config["app"]["security"]["csp"]
+    assert csp
+    assert "default-src 'self'" in csp
+    assert "script-src 'self'" in csp
+    assert "connect-src" in csp
+    assert "ipc:" in csp
+    assert "http://127.0.0.1:*" in csp
+    assert "https:" in csp
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="stages a macOS app bundle")

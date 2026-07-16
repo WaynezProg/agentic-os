@@ -4,12 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>agentic-os · Harness 管理</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Lora:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="styles.css?v=zh-hant" />
     <script src="i18n.js"></script>
     <script src="api.js"></script>
@@ -297,7 +291,7 @@
             <label for="run-command-preview">將執行的指令</label>
             <pre id="run-command-preview" class="command-preview" aria-live="polite">—</pre>
           </div>
-          <div class="actions" style="margin-top:0.5rem">
+          <div class="actions actions--compact">
             <button id="run-submit" type="button">執行</button>
             <button id="run-cancel" type="button">取消</button>
           </div>
@@ -1275,7 +1269,7 @@
             <option value="fleet">Fleet</option>
           </select>
           <label for="audit-limit">筆數上限</label>
-          <input id="audit-limit" type="number" value="500" min="1" max="5000" style="width:80px" />
+          <input id="audit-limit" class="field--narrow" type="number" value="500" min="1" max="5000" />
           <button id="load-audit" type="button">載入</button>
         </div>
         <div class="table-shell">

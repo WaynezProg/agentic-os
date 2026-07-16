@@ -27,9 +27,9 @@
   --focus: #3898ec;
   --shadow-card: 0 8px 32px rgba(20, 20, 19, 0.06), 0 0 0 1px rgba(20, 20, 19, 0.04);
   --shadow-lift: 0 14px 40px rgba(20, 20, 19, 0.1);
-  --font-serif: "Lora", Georgia, "Times New Roman", serif;
-  --font-sans: "DM Sans", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-serif: "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
   --sidebar-width: 252px;
   --topbar-height: 76px;
   --radius-sm: 10px;
@@ -604,6 +604,14 @@ tbody tr:last-child td {
   font-size: 12px;
 }
 
+.actions--compact {
+  margin-top: 0.5rem;
+}
+
+.field--narrow {
+  width: 80px;
+}
+
 .control-row,
 .eval-grid,
 .detail-grid,
@@ -621,6 +629,10 @@ tbody tr:last-child td {
 .eval-grid {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
+}
+
+.eval-grid--compact {
+  margin-bottom: 0.5rem;
 }
 
 .eval-grid label,

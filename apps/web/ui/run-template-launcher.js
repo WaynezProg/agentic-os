@@ -66,7 +66,7 @@ window.AgenticOs = window.AgenticOs || {};
     container.innerHTML = vars
       .map(
         (name) => `
-        <div class="eval-grid" style="margin-bottom:0.5rem">
+        <div class="eval-grid eval-grid--compact">
           <label for="rt-var-${escapeHtml(name)}">${escapeHtml(name)}</label>
           <input id="rt-var-${escapeHtml(name)}" type="text" data-rt-var="${escapeHtml(name)}" spellcheck="false" />
         </div>`,
