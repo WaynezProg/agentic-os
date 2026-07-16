@@ -301,3 +301,38 @@ controls into new surfaces or making old panels unreachable.
 - Rust Desktop tests — 32 passed.
 - `cargo fmt --check` still reports pre-existing formatting drift in untouched
   Desktop files; no unrelated mechanical reformat was included.
+
+## 2026-07-17 — Close Desktop accessibility and responsive gaps
+
+### Purpose
+
+Make the six-area shell keyboard-usable and prevent the new master-detail
+surfaces from clipping at the minimum supported Desktop width.
+
+### Decision and rationale
+
+- Add a first-focus skip link targeting the focusable main content.
+- Use a visible 3px focus outline for buttons, links, form fields, summaries,
+  and programmatically focusable elements; retain text labels alongside every
+  status and icon.
+- Keep primary actions at least 44px high and collapse Environment, Change,
+  run, and split two-column layouts below 1100px.
+- Hide page-level horizontal overflow while preserving horizontal scrolling in
+  explicit table containers.
+- Extend reduced-motion handling to disable smooth scrolling and repeated
+  animation.
+
+### Verification
+
+- Web contracts and syntax: 89 passed; every loaded JavaScript file parsed.
+- Chrome headless screenshots covered Home, Environments, Sessions,
+  Capabilities, Changes, Settings, plus Home and Environments at 960px.
+- All captured views reported zero runtime errors and no page-level horizontal
+  overflow.
+- At 960px, Environment and Change layouts each resolved to one grid column.
+- The first Tab focused `跳到主要內容`; computed outline was 3px
+  `rgb(56, 152, 236)` and the link was visible at top 8px.
+- Settings-to-template, Settings-to-workspace, and Home-attention-to-Environment
+  links were clicked and reached their expected owner surface.
+- QA services and Chrome were stopped; ports 8767, 5173, and 9223 had no
+  listeners afterward.

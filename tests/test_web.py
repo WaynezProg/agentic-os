@@ -217,6 +217,43 @@ def test_every_panel_view_remains_reachable_from_navigation() -> None:
     assert ".nav-group" not in STYLES_CSS.read_text(encoding="utf-8")
 
 
+def test_desktop_shell_accessibility_contracts() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    navigation = (WEB_DIR / "ui" / "navigation.js").read_text(encoding="utf-8")
+
+    assert '<a class="skip-link" href="#main-content">跳到主要內容</a>' in html
+    assert '<main id="main-content" class="workspace" tabindex="-1">' in html
+    assert html.count("<h1>") == 1
+    assert '<aside class="shell-sidebar" aria-label="導覽">' in html
+    assert 'aria-current="page"' in html
+    assert 'button.textContent = VIEW_LABELS[view] || view' in navigation
+    assert 'button.setAttribute("aria-pressed"' in navigation
+
+    buttons = re.findall(r"<button\b([^>]*)>(.*?)</button>", html, flags=re.DOTALL)
+    assert buttons
+    for attributes, body in buttons:
+        visible_text = re.sub(r"<[^>]+>", "", body).strip()
+        assert visible_text or "aria-label=" in attributes
+
+    environment = ENVIRONMENT_MANAGER_JS.read_text(encoding="utf-8")
+    changes = CHANGE_CENTER_JS.read_text(encoding="utf-8")
+    assert "STATUS_LABELS" in environment and "STATUS_LABELS" in changes
+    assert "statusLabel(" in environment and "statusLabel(" in changes
+
+
+def test_desktop_shell_focus_and_responsive_contracts() -> None:
+    css = STYLES_CSS.read_text(encoding="utf-8")
+
+    assert ".skip-link" in css
+    assert ":focus-visible" in css
+    assert "outline: 3px solid var(--focus)" in css
+    assert re.search(r"\.btn-primary\s*\{[^}]*min-height:\s*44px", css, re.DOTALL)
+    assert "@media (max-width: 1100px)" in css
+    assert "overflow-x: hidden" in css
+    assert ".table-shell" in css and "overflow-x: auto" in css
+    assert "@media (prefers-reduced-motion: reduce)" in css
+
+
 def test_daemon_api_override_input_exists() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
@@ -227,7 +264,7 @@ def test_daemon_api_override_input_exists() -> None:
 def test_first_screen_is_control_panel_not_marketing_page() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8").lower()
 
-    assert '<main class="workspace">' in html
+    assert '<main id="main-content" class="workspace" tabindex="-1">' in html
     assert 'id="panel-agents"' in html
     assert 'class="panel is-active"' in html
     assert 'id="api-status"' in html
@@ -1074,7 +1111,11 @@ def test_agents_panel_leads_with_table_and_folds_editors() -> None:
 
 def test_topbar_keeps_only_daily_controls() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    topbar = html[html.index('class="shell-topbar"') : html.index('<main class="workspace">')]
+    topbar = html[
+        html.index('class="shell-topbar"') : html.index(
+            '<main id="main-content" class="workspace" tabindex="-1">'
+        )
+    ]
     advanced = topbar[topbar.index('class="topbar-advanced"') :]
     # Workspace add lives behind 進階; only select + status stay permanent.
     assert 'id="workspace-path-input"' in advanced

@@ -36,6 +36,7 @@
     <script src="app.js" defer></script>
   </head>
   <body>
+    <a class="skip-link" href="#main-content">跳到主要內容</a>
     <div id="connection-gate" hidden>
       <div class="connection-gate__card">
         <div class="connection-gate__spinner" aria-hidden="true"></div>
@@ -144,7 +145,7 @@
 
         <nav id="area-view-switcher" class="view-switcher" aria-label="區域檢視" hidden></nav>
 
-        <main class="workspace">
+        <main id="main-content" class="workspace" tabindex="-1">
       <section id="panel-environment-list" class="panel" role="region" aria-label="環境總覽" data-view="environment-list" hidden>
         <div class="panel-head">
           <div>

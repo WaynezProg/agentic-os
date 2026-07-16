@@ -448,7 +448,7 @@ git commit -m "refactor: group desktop features by operator workflow"
 
 ### Task 6: Accessibility and responsive QA
 
-- [ ] **Step 1: Add static accessibility contracts**
+- [x] **Step 1: Add static accessibility contracts**
 
 Assert:
 
@@ -460,7 +460,7 @@ Assert:
 - main content has one visible `h1`;
 - skip link targets main content.
 
-- [ ] **Step 2: Add CSS**
+- [x] **Step 2: Add CSS**
 
 Implement:
 
@@ -471,7 +471,7 @@ Implement:
 - no horizontal page overflow at 960 px;
 - reduced-motion media query.
 
-- [ ] **Step 3: Run headless visual checks**
+- [x] **Step 3: Run headless visual checks**
 
 Start local services, then capture:
 
@@ -483,7 +483,7 @@ chrome --headless=new --window-size=960,700 --screenshot=/tmp/agentic-os-narrow.
 Inspect Home, Environment detail, Sessions, Capabilities, Changes, and Settings.
 Repair clipped content, hidden actions, broken focus order, or unreadable status.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 node --check apps/web/app.js
@@ -491,7 +491,7 @@ for file in apps/web/ui/*.js; do node --check "$file"; done
 rtk uv run pytest tests/test_web.py -q
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/index.html apps/web/styles.css apps/web/app.js apps/web/ui tests/test_web.py
