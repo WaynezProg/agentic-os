@@ -500,7 +500,7 @@ git commit -m "fix: complete desktop accessibility and responsive states"
 
 ### Task 7: Product smoke and packaged macOS release proof
 
-- [ ] **Step 1: Extend product smoke**
+- [x] **Step 1: Extend product smoke**
 
 Update `scripts/smoke-product.sh` to verify:
 
@@ -511,7 +511,7 @@ Update `scripts/smoke-product.sh` to verify:
 - rollback verifies restoration;
 - sessions and approvals remain operational.
 
-- [ ] **Step 2: Run all automated gates**
+- [x] **Step 2: Run all automated gates**
 
 ```bash
 rtk uv run pytest -q
@@ -523,7 +523,7 @@ bash scripts/smoke-remote-client.sh
 pnpm desktop:build
 ```
 
-- [ ] **Step 3: Inspect package artifact**
+- [x] **Step 3: Inspect package artifact**
 
 Verify:
 
@@ -536,7 +536,7 @@ codesign -dv --verbose=4 apps/desktop/src-tauri/target/release/bundle/macos/agen
 If no Developer ID identity exists, record that the build is locally signed or
 unsigned and do not claim notarization.
 
-- [ ] **Step 4: Lifecycle smoke**
+- [x] **Step 4: Lifecycle smoke**
 
 Open the packaged app, verify health, quit from tray, and assert:
 
@@ -547,7 +547,7 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN
 
 Both commands must return no managed listeners after Quit. Relaunch and repeat.
 
-- [ ] **Step 5: Signing/notarization/updater audit**
+- [x] **Step 5: Signing/notarization/updater audit**
 
 Check:
 
@@ -560,7 +560,7 @@ Only run notarization or publish an updater manifest when valid credentials and
 an update endpoint are present. Otherwise add exact blockers to README and
 `decision_log.md`.
 
-- [ ] **Step 6: Final documentation and commit**
+- [x] **Step 6: Final documentation and commit**
 
 Update README daily-use instructions, phase table, test evidence, package path,
 and release blockers. Append final architecture and verification evidence to

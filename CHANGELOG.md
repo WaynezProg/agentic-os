@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased — 2026-07-17
+
+### Local Agent Environment Manager
+
+- Added one built-in adapter model for Claude, Codex, Cursor, Hermes,
+  OpenClaw, OpenCode, and Qwen. Each environment reports CLI, config,
+  capability, runtime, Desktop, and IDE evidence independently.
+- Added durable Verified Changes for MCP, catalog, agentic-os config,
+  harness config, profile, and registry writes: non-mutating preview, stale
+  rejection, post-apply verification, protected backup, and verified rollback.
+- Replaced the fragmented top-level Desktop navigation with Home,
+  Environments, Sessions, Capabilities, Changes, and Settings while preserving
+  the mature editors as reachable subviews.
+
+### Desktop and release hardening
+
+- Unified local and remote WebView HTTP transport in Rust, restored
+  authenticated remote event polling without exposing Keychain bearer tokens
+  to JavaScript, and added immediate startup-failure state.
+- Added Environment Manager, Change Center, attention routing, Settings owner
+  links, keyboard skip/focus behavior, reduced motion, and responsive
+  master-detail layouts down to the 960px minimum window width.
+- Fixed packaged Python staging to copy the uv-managed standalone runtime
+  instead of the project venv. Package tests now reject missing `libpython`,
+  absolute runtime symlinks, repo path leaks, and false relocation checks.
+- `pnpm desktop:build` now produces the documented `.app` without invoking the
+  GUI-dependent DMG helper. Tauri applies an ad-hoc `-` signature so the local
+  bundle has a valid resource seal.
+
+### Verification
+
+- 869 Python tests, Ruff, all Web JavaScript syntax checks, and 32 Rust tests
+  pass. A nondeterministic Rust test race on process-global bundle environment
+  state was reproduced and serialized.
+- Product smoke passes 11 behavior steps, including seven adapters, six
+  environment surfaces, verified Change round-trip, sessions, and approvals.
+  Packaged remote transport passes the live Caddy internal-TLS smoke and token
+  revoke check.
+- The arm64 `.app` passed bundled-Python execution and strict deep codesign
+  verification, two clean tray Quit cycles, crash-orphan termination, and
+  relaunch recovery. Developer ID signing, notarization, DMG publication, and
+  updater delivery remain external release work.
+
 ## v1.0.1 — 2026-06-12
 
 Hardening release driven by an external code review (codex).

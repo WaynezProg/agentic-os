@@ -1,7 +1,7 @@
 # agentic-os
 
-Local Harness Manager substrate for managing local coding and orchestration
-harnesses.
+Local Agent Environment Manager for observing and safely changing heterogeneous
+coding and orchestration environments on one Mac.
 
 `agentic-os` is not a harness, not a second OpenClaw, and not an agent runtime.
 It is the management layer underneath harnesses such as OpenClaw, Hermes, Codex,
@@ -9,7 +9,8 @@ Claude Code, Gemini CLI, and OpenCode: it records configured harness instances,
 starts and observes harness runs, stores local run evidence, exposes a thin
 control UI, and evaluates launch-time policy.
 
-P0-P3.6 are the substrate for a Harness Manager. Existing API and CLI labels
+The Desktop app is organized around Home, Environments, Sessions, Capabilities,
+Changes, and Settings. Existing API and CLI labels
 such as `agents`, `sessions`, `skills`, `mcp`, and `policy` remain stable
 interface names for now, but the product language is:
 
@@ -45,7 +46,7 @@ Phase positioning:
 | P9+ | harness dashboard v2 | daily operator control surface over all daemon APIs | organized views, session timeline, approval queue, catalog display | chat UI, IDE integration, agent loop execution |
 | P10 | safe native config editing | safe write layer for workflow surfaces, harness-native config, and agentic-os config | dry-run patch, schema validation, hybrid backup, rollback, surface/config writers, audit | harness runtime, P7 approval for config writes, desktop app (P11), iOS remote (P12), cloud sync |
 | P11 | desktop app shell | macOS-validated Tauri dev shell over static web UI with local daemon lifecycle | tray, embedded UI server, `desktop-daemon.sh`, `desktop.toml` settings placeholders | packaged `.app` (done P11.5), iOS app (P12.5) |
-| P11.5 | **complete** — packaged macOS app | standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, Tauri bundle resources, release path resolution | code signing, auto-update, Keychain token (P12.5) |
+| P11.5 | **complete** — packaged macOS app | ad-hoc-signed standalone `.app` with bundled agentd/UI resources and convergent lifecycle | `prepare-desktop-bundle.sh`, relocatable managed CPython, Tauri bundle resources, release path resolution | Developer ID signing, notarization, DMG distribution, auto-update |
 | P12 | **complete** — remote access adapter | Remote Access Adapter: remote gateway / reverse tunnel, pairing, token, revoke, event stream; `agentd` stays on `127.0.0.1` | `desktop.toml` remote wire-up, reference gateway, SSE client, pairing UX with gateway Bearer boundary | specific tunnel product (frp/Tailscale/CF/ngrok), Keychain persistence (P12.5), iOS app (P12.5), cloud sync |
 | P12.5 | **complete** — keychain + iOS companion | secure `auth_token` persistence, desktop remote reconnect, iOS remote client skeleton | macOS Keychain token storage, `connection.mode=remote` Bearer proxy, iOS SwiftUI companion + Keychain | App Store release, push notifications, full iOS UI polish |
 | P13 | **complete** — remote approval loop | surface P7 approval lifecycle on the remote `/events` stream; explicit, tested remote approve/reject over the gateway Bearer boundary | `governance` approval events in remote stream, gateway-reachable `/approvals` contract + tests, conscious remote-approve security posture | new approval state machine (P7 owns it), RBAC, push notifications, iOS UI polish (P14+) |
@@ -79,10 +80,15 @@ Phase positioning:
 | P41 | **complete** — transcript preview | tail preview of any discovered session's conversation | `read_transcript_tail`, `/sessions/live/transcript`, radar inline panel | sending messages, full-transcript search |
 | P42 | **complete** — MCP alignment | cross-tool MCP matrix + safe copy/remove via P10 safe-edit (dry-run default, backup, rollback; values never leave the daemon) | `mcp_alignment.py`, `/tools/mcp/*`, 工具 tab matrix | creating/editing servers, skills/plugins writes, bulk sync |
 | P43 | **complete** — chat launcher | chat-shaped front on the policy-gated run path: message → `POST /sessions`, reply = session stdout with status + log links; denials render as system bubbles | `ui/chat-launcher.js`, 聊天 tab, sidebar `.tab-desc` sublabels | new endpoints, LLM routing, multi-turn process state, server-side chat history |
-| P44 | **complete** — Environment foundation | one built-in adapter table, normalized CLI/config/capability/runtime/Desktop/IDE evidence, shared health probes and native-session observation, unified launch decisions | `environment_*`, `probe_service.py`, `native_session_service.py`, `launch_decision.py`, `/environments` | dynamic adapters, config reconciliation, Desktop navigation redesign |
+| P44 | **complete** — Environment foundation | one built-in adapter table, normalized CLI/config/capability/runtime/Desktop/IDE evidence, shared health probes and native-session observation, unified launch decisions | `environment_*`, `probe_service.py`, `native_session_service.py`, `launch_decision.py`, `/environments` | dynamic adapters, automatic config reconciliation |
 | P45 | **complete** — verified Changes | durable redacted plans with preview, stale checks, apply, re-observation, verification, and rollback across MCP/config/catalog/profile/registry writes | `change_*`, `/changes`, compatibility mutation routes, P10 `SafeEditEngine` | generic mutation DSL, cloud approval, secret values in plan/API payloads |
+| P46 | **complete** — Desktop operator experience | six daily-use areas with Environment Manager, Change Center, owner-linked Settings, attention routing, keyboard focus, and responsive layouts | `ui/navigation.js`, `environment-manager.js`, `change-center.js`, `settings-home.js`, shared data cache | frontend framework, hidden legacy navigation, duplicated write controls |
+| P47 | **complete** — packaged release proof | reproducible arm64 `.app`, verified bundled Python, ad-hoc resource seal, product/remote smoke, tray lifecycle, crash-orphan recovery | app-only `desktop:build`, package tests, `codesign --verify`, live packaged-app checks | Developer ID/notarization, DMG, updater feed, Intel/Windows/Linux release validation |
 
-**Main (2026-06-07):** P11.5–P33 add remote access, editors, approval workbench, workspace scoping, switchboard, templates, and daily dashboard. Remote mode gates writes via affordances + localhost-only HTTP guards on workspace/template writes. Profile `resolved_model` / `resolved_provider` thread into harness argv/env when registry entries define `model_arg` / `provider_env`.
+**Current (2026-07-17):** P44–P47 consolidate the mature substrate into a
+Local Agent Environment Manager, route supported mutations through durable
+Verified Changes, replace the fragmented top-level UI with six operator areas,
+and prove the packaged macOS lifecycle.
 
 Session Evidence v1 clarifies ownership: agentic-os owns harness-run evidence, evidence paths,
 bounded logs, and summary/review pointers. session2memory owns formal memory compilation,
@@ -115,9 +121,11 @@ Optional overrides:
 AGENTIC_OS_PORT=8797 AGENTIC_OS_UI_PORT=5181 rtk bash scripts/start-local.sh
 ```
 
-## Desktop app (P11 / P11.5)
+## Desktop app (P11 / P11.5 / P46 / P47)
 
-macOS-validated Tauri shell. Requires pnpm + Rust toolchain.
+macOS arm64-validated Tauri app. Requires pnpm + Rust toolchain to build.
+The packaged UI exposes Home, Environments, Sessions, Capabilities, Changes,
+and Settings; mature editors remain available as subviews.
 
 **P11 — dev shell** (merge gate: `desktop:dev`):
 
@@ -129,11 +137,21 @@ pnpm desktop:dev      # tray + ui:5173 + agentd:8767 + webview
 **P11.5 — packaged `.app`** (merge gate: `desktop:build` smoke):
 
 ```bash
-pnpm desktop:build
+pnpm desktop:build  # builds the .app only; no Finder-dependent DMG step
+codesign --verify --deep --strict --verbose=4 \
+  apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app
 open apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app
 ```
 
-After Quit, `8767` and `5173` must have no listeners. Windows/Linux builds are not validated.
+The packaged app serves UI assets directly from Tauri, so port `5173` does not
+open. After tray Quit, both `8767` and `5173` must have no listeners.
+
+Local builds use Tauri's ad-hoc identity `-`, which seals the bundle but does
+not establish a publisher identity. Downloaded builds can still require manual
+approval in macOS Privacy & Security. Public distribution remains blocked on a
+Developer ID Application certificate, notarization credentials, a DMG release
+step, and an updater endpoint. Intel macOS, Windows, and Linux packages are not
+validated. See [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/).
 
 **P12 — remote access** (merge gate: pairing + SSE auth + gateway smoke):
 
@@ -451,8 +469,10 @@ P1-P9 intentionally do not include:
 
 ## How to verify the product (P28)
 
-Run the behavior-level smoke harness (starts an isolated `agentd`, exercises
-launch/config/import/remote/approval flows, and writes text + JSON reports):
+Run the behavior-level smoke harness. It starts an isolated `agentd`, verifies
+all built-in Environment adapters and six-surface detail, exercises a
+non-mutating Change preview through verified apply and exact rollback, then
+checks launch/config/import/remote/approval flows:
 
 ```bash
 bash scripts/smoke-product.sh
@@ -462,11 +482,17 @@ On failure the script exits non-zero and prints the first failing step plus
 report paths (`report.txt`, `report.json`, `smoke.log` under a temp directory).
 Override the smoke workspace with `SMOKE_PRODUCT_DIR=/tmp/my-smoke`.
 
-CI gate before merge remains:
+Release gate before merge:
 
 ```bash
-uv run pytest -q && uv run ruff check .
+rtk uv run pytest -q
+rtk uv run ruff check .
 cd apps/desktop/src-tauri && cargo test
+cd ../../..
+bash scripts/smoke-product.sh
+pnpm desktop:build
+codesign --verify --deep --strict --verbose=4 \
+  apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app
 ```
 
 ## Development
