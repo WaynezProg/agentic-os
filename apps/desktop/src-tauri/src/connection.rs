@@ -41,12 +41,16 @@ pub fn connection_profile() -> Result<ConnectionProfile, String> {
     }
 }
 
-pub fn api_request(method: &str, path: &str, body: Option<&str>) -> Result<String, String> {
+pub fn api_request(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<remote::ApiResponse, String> {
     let settings = settings::load_settings()?;
     if settings.connection.mode == "remote" {
-        remote::gateway_request(&settings, method, path, body)
+        remote::gateway_request_envelope(&settings, method, path, body)
     } else {
-        remote::request(&settings.local.api_url, method, path, body, None)
+        remote::request_envelope(&settings.local.api_url, method, path, body, None)
     }
 }
 

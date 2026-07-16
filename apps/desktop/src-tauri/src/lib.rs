@@ -131,7 +131,7 @@ fn connection_api_fetch(
     method: String,
     path: String,
     body: Option<String>,
-) -> Result<String, String> {
+) -> Result<remote::ApiResponse, String> {
     connection::api_request(&method, &path, body.as_deref())
 }
 

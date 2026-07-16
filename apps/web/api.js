@@ -169,6 +169,14 @@ window.AgenticOs = window.AgenticOs || {};
     return JSON.stringify(detail);
   }
 
+  function httpError(status, payload, statusText = "") {
+    const detail = normalizeErrorDetail(payload.detail || statusText);
+    const error = new Error(`${status} ${detail}`);
+    error.status = status;
+    error.payload = payload;
+    return error;
+  }
+
   async function apiFetchViaDesktop(path, options = {}) {
     const method = (options.method || "GET").toUpperCase();
     const body =
@@ -177,13 +185,13 @@ window.AgenticOs = window.AgenticOs || {};
         : typeof options.body === "string"
           ? options.body
           : JSON.stringify(options.body);
+    let response;
     try {
-      const text = await window.__TAURI__.core.invoke("connection_api_fetch", {
+      response = await window.__TAURI__.core.invoke("connection_api_fetch", {
         method,
         path,
         body,
       });
-      return text ? parseJson(text) : {};
     } catch (error) {
       const message = String(error);
       const errorObject = new Error(message);
@@ -191,6 +199,19 @@ window.AgenticOs = window.AgenticOs || {};
       errorObject.payload = { detail: message };
       throw errorObject;
     }
+    const status = Number(response?.status);
+    const text = typeof response?.body === "string" ? response.body : "";
+    const payload = text ? parseJson(text) : {};
+    if (!Number.isInteger(status) || status < 100) {
+      const error = new Error("invalid Desktop API response");
+      error.status = 0;
+      error.payload = { detail: error.message };
+      throw error;
+    }
+    if (status < 200 || status >= 300) {
+      throw httpError(status, payload);
+    }
+    return payload;
   }
 
   Ao.apiFetch = async function apiFetch(path, options = {}) {
@@ -212,11 +233,7 @@ window.AgenticOs = window.AgenticOs || {};
     const payload = text ? parseJson(text) : {};
 
     if (!response.ok) {
-      const detail = normalizeErrorDetail(payload.detail || response.statusText);
-      const error = new Error(`${response.status} ${detail}`);
-      error.status = response.status;
-      error.payload = payload;
-      throw error;
+      throw httpError(response.status, payload, response.statusText);
     }
     if (method !== "GET") {
       Ao.DataCache?.invalidate();

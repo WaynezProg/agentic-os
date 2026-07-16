@@ -1,7 +1,21 @@
 use std::io::Read;
 
+use serde::Serialize;
+
 const GATEWAY_TRANSPORT_ERROR: &str =
     "remote gateway must use https; http:// is allowed only for localhost";
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ApiResponse {
+    pub status: u16,
+    pub body: String,
+}
+
+impl ApiResponse {
+    fn is_success(&self) -> bool {
+        (200..300).contains(&self.status)
+    }
+}
 
 pub fn is_supported_method(method: &str) -> bool {
     matches!(
@@ -72,13 +86,21 @@ fn response_error(response: reqwest::blocking::Response) -> String {
     response.text().unwrap_or_else(|_| status.to_string())
 }
 
-pub fn request(
+fn envelope_error(response: &ApiResponse) -> String {
+    if response.body.trim().is_empty() {
+        response.status.to_string()
+    } else {
+        response.body.clone()
+    }
+}
+
+pub fn request_envelope(
     base_url: &str,
     method: &str,
     path: &str,
     body: Option<&str>,
     bearer: Option<&str>,
-) -> Result<String, String> {
+) -> Result<ApiResponse, String> {
     if !is_supported_method(method) {
         return Err(format!(
             "unsupported method: {}",
@@ -103,10 +125,23 @@ pub fn request(
             .body(raw.to_string());
     }
     let response = request.send().map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(response_error(response));
+    let status = response.status().as_u16();
+    let body = response.text().map_err(|error| error.to_string())?;
+    Ok(ApiResponse { status, body })
+}
+
+pub fn request(
+    base_url: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    bearer: Option<&str>,
+) -> Result<String, String> {
+    let response = request_envelope(base_url, method, path, body, bearer)?;
+    if !response.is_success() {
+        return Err(envelope_error(&response));
     }
-    response.text().map_err(|error| error.to_string())
+    Ok(response.body)
 }
 
 pub fn post_json(path: &str, body: Option<&str>) -> Result<String, String> {
@@ -133,16 +168,16 @@ fn gateway_url(settings: &crate::settings::DesktopSettings) -> Result<String, St
     validate_remote_gateway(&settings.remote.remote_gateway)
 }
 
-pub fn gateway_request(
+pub fn gateway_request_envelope(
     settings: &crate::settings::DesktopSettings,
     method: &str,
     path: &str,
     body: Option<&str>,
-) -> Result<String, String> {
+) -> Result<ApiResponse, String> {
     let gateway = gateway_url(settings)?;
     let token = crate::keychain::load_remote_token(&gateway, &settings.remote.device_id)?
         .ok_or_else(|| "missing remote token in Keychain".to_string())?;
-    gateway_request_with_token(&gateway, method, path, body, &token)
+    gateway_request_with_token_envelope(&gateway, method, path, body, &token)
 }
 
 pub fn gateway_get_with_token(gateway: &str, path: &str, token: &str) -> Result<String, String> {
@@ -194,6 +229,17 @@ fn gateway_request_with_token(
 ) -> Result<String, String> {
     let gateway = validate_remote_gateway(gateway)?;
     request(&gateway, method, path, body, Some(token))
+}
+
+fn gateway_request_with_token_envelope(
+    gateway: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    token: &str,
+) -> Result<ApiResponse, String> {
+    let gateway = validate_remote_gateway(gateway)?;
+    request_envelope(&gateway, method, path, body, Some(token))
 }
 
 #[cfg(test)]
@@ -250,6 +296,32 @@ mod tests {
         server.join().unwrap()
     }
 
+    fn response_envelope(status: &str, body: &str) -> ApiResponse {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0_u8; 1024];
+            let _ = stream.read(&mut buffer).unwrap();
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+
+        let envelope = request_envelope(
+            &format!("http://{address}"),
+            "GET",
+            "/contract",
+            None,
+            Some("desktop-secret"),
+        )
+        .unwrap();
+        server.join().unwrap();
+        envelope
+    }
+
     #[test]
     fn supported_methods_include_put_and_patch() {
         for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] {
@@ -268,6 +340,22 @@ mod tests {
             if body.is_some() {
                 assert!(raw.ends_with(r#"{"ok":true}"#));
             }
+        }
+    }
+
+    #[test]
+    fn request_envelope_preserves_non_success_status_and_body() {
+        for (status_line, expected_status) in [
+            ("401 Unauthorized", 401),
+            ("403 Forbidden", 403),
+            ("409 Conflict", 409),
+            ("422 Unprocessable Entity", 422),
+        ] {
+            let body = format!(r#"{{"detail":"status-{expected_status}"}}"#);
+            let response = response_envelope(status_line, &body);
+
+            assert_eq!(response.status, expected_status);
+            assert_eq!(response.body, body);
         }
     }
 
