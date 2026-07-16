@@ -48,28 +48,27 @@ def test_static_web_files_exist() -> None:
     assert (WEB_DIR / "i18n.js").is_file()
 
 
-def test_five_tabs_are_present() -> None:
+def test_six_operator_areas_are_present() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert html.count('role="tab"') == 15
-    for tab in [
-        "代理",
-        "執行",
-        "日誌",
-        "記憶",
-        "技能 / MCP",
-        "機群",
-        "Harness",
-        "介面",
-        "核准",
-        "稽核",
-        "總覽",
-        "聊天",
-        "工具",
-        "Vibe Coding",
-        "Agentic",
+    assert html.count('data-area="') == 6
+    for area, label in [
+        ("home", "首頁"),
+        ("environments", "環境"),
+        ("sessions", "工作階段"),
+        ("capabilities", "能力"),
+        ("changes", "變更"),
+        ("settings", "設定"),
     ]:
-        assert re.search(rf">\s*{re.escape(tab)}\s*<", html)
+        assert f'data-area="{area}"' in html
+        assert label in html
+    assert html.count('role="tab"') != 15
+
+
+def test_navigation_module_is_loaded_before_app() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+
+    assert html.index('src="ui/navigation.js"') < html.index('src="app.js"')
 
 
 def test_daemon_api_override_input_exists() -> None:
@@ -355,10 +354,11 @@ def test_javascript_does_not_pass_endpoint_keys_directly_to_api_fetch() -> None:
     assert re.search(r'apiFetch\("[A-Za-z][A-Za-z0-9]*"', js) is None
 
 
-def test_fleet_tab_and_panel_exist() -> None:
+def test_fleet_view_and_panel_exist() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    assert 'data-tab="fleet"' in html
-    assert 'id="panel-fleet"' in html
+    navigation = (WEB_DIR / "ui" / "navigation.js").read_text(encoding="utf-8")
+    assert 'data-view="fleet"' in html
+    assert 'fleet: "environments"' in navigation
     assert 'id="fleet-health-table"' in html
     assert 'id="fleet-health-body"' in html
     assert 'id="fleet-events-table"' in html
@@ -834,12 +834,10 @@ def test_live_session_radar_wired() -> None:
     assert ".tool-badge" in styles
 
 
-def test_overview_is_default_landing_tab() -> None:
+def test_overview_is_default_home_view() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    assert (
-        '<button id="tab-overview" class="tab is-active" type="button" role="tab" aria-selected="true"'
-        in html
-    )
+    assert 'id="area-home" class="tab is-active"' in html
+    assert 'data-area="home" aria-current="page"' in html
     assert '<section id="panel-overview" class="panel is-active"' in html
     app_js = APP_JS.read_text(encoding="utf-8")
     assert 'activeTab: "overview"' in app_js
@@ -894,21 +892,21 @@ def test_empty_states_explain_and_redirect() -> None:
     assert "managed run" in i18n
 
 
-def test_sidebar_nav_groups_orient_the_user() -> None:
+def test_sidebar_operator_areas_orient_the_user() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    # Three labelled groups split daily-use, run management, and governance.
-    for label in ["日常使用", "執行管理", "治理與進階"]:
-        assert label in html
-    # 總覽 (default landing) leads the nav; governance tabs come last.
-    assert html.index('id="tab-overview"') < html.index('id="tab-agents"')
-    assert html.index('id="tab-agents"') < html.index('id="tab-skills"')
-    # Governance group collapses by default behind an expandable toggle.
-    assert 'class="nav-group nav-group--advanced is-collapsed" id="nav-advanced"' in html
-    assert 'id="nav-advanced-toggle"' in html
-    assert 'aria-expanded="false"' in html
-    app_js = APP_JS.read_text(encoding="utf-8")
-    # Activating a governance tab programmatically must expand the group.
-    assert "revealNavGroupFor" in app_js
+    expected_order = [
+        'id="area-home"',
+        'id="area-environments"',
+        'id="area-sessions"',
+        'id="area-capabilities"',
+        'id="area-changes"',
+        'id="area-settings"',
+    ]
+    assert [html.index(token) for token in expected_order] == sorted(
+        html.index(token) for token in expected_order
+    )
+    assert "nav-advanced" not in html
+    assert 'id="area-view-switcher"' in html
 
 
 def test_agents_panel_leads_with_table_and_folds_editors() -> None:
@@ -941,8 +939,9 @@ def test_topbar_keeps_only_daily_controls() -> None:
 
 def test_chat_launcher_wired() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    # 聊天 tab + panel exist and panel carries the composer contract.
-    assert 'id="tab-chat"' in html
+    navigation = (WEB_DIR / "ui" / "navigation.js").read_text(encoding="utf-8")
+    # 聊天是工作階段 subview，panel 保留 composer contract。
+    assert '"chat", "vibe-coding", "sessions", "logs", "memory"' in navigation
     assert 'id="panel-chat"' in html
     for element in ["chat-thread", "chat-agent", "chat-input", "chat-send", "chat-clear"]:
         assert f'id="{element}"' in html
@@ -961,11 +960,11 @@ def test_chat_launcher_wired() -> None:
     assert ".chat-composer" in styles
 
 
-def test_sidebar_tabs_carry_orientation_sublabels() -> None:
+def test_sidebar_areas_carry_orientation_sublabels() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
-    # Every nav tab explains itself with a one-line sublabel.
-    assert html.count('class="tab-desc"') == 15
-    for desc in ["傳訊息啟動工具", "治理事件紀錄", "workflow surface 目錄"]:
+    # Every operator area explains itself with a one-line sublabel.
+    assert html.count('class="tab-desc"') == 6
+    for desc in ["健康、提醒與快速操作", "啟動、監看、日誌與記憶", "預覽、驗證、核准與稽核"]:
         assert desc in html
     styles = STYLES_CSS.read_text(encoding="utf-8")
     assert ".tab-desc" in styles

@@ -44,7 +44,7 @@
 - Produces: `Ao.Navigation.init()`, `show(area, view)`, `current()`.
 - Consumes: existing loader functions exposed by `app.js` and UI modules.
 
-- [ ] **Step 1: Replace the old tab-count test**
+- [x] **Step 1: Replace the old tab-count test**
 
 Update `tests/test_web.py`:
 
@@ -73,13 +73,13 @@ def test_navigation_module_is_loaded_before_app() -> None:
     assert html.index('src="ui/navigation.js"') < html.index('src="app.js"')
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 ```bash
 rtk uv run pytest tests/test_web.py -k "six_operator_areas or navigation_module" -q
 ```
 
-- [ ] **Step 3: Create navigation module**
+- [x] **Step 3: Create navigation module**
 
 Create `apps/web/ui/navigation.js`:
 
@@ -138,7 +138,7 @@ Create `apps/web/ui/navigation.js`:
 })();
 ```
 
-- [ ] **Step 4: Refactor markup without deleting mature panels**
+- [x] **Step 4: Refactor markup without deleting mature panels**
 
 Replace sidebar buttons with six `data-area` buttons. Convert existing
 `panel-*` sections to `data-view="<old-id>"`; retain their IDs and controls.
@@ -147,7 +147,7 @@ Add subview switchers inside Environments, Sessions, Capabilities, and Changes.
 Initialize `Ao.Navigation` from `DOMContentLoaded`. Replace direct `showTab()`
 calls with a compatibility function mapping old view IDs to the correct area.
 
-- [ ] **Step 5: Verify syntax and contracts**
+- [x] **Step 5: Verify syntax and contracts**
 
 ```bash
 node --check apps/web/ui/navigation.js
@@ -155,7 +155,7 @@ node --check apps/web/app.js
 rtk uv run pytest tests/test_web.py -q
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/index.html apps/web/app.js apps/web/ui/navigation.js tests/test_web.py

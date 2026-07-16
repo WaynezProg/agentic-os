@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.DashboardV2?.init?.();
   Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
-  bindTabs();
+  bindNavigation();
   bindControls();
   const mode = state.connectionProfile?.mode || "local";
   if (mode === "remote") {
@@ -85,31 +85,14 @@ function byId(id) {
   return element;
 }
 
-function bindTabs() {
-  document.querySelectorAll("[data-tab]").forEach((button) => {
-    button.addEventListener("click", () => {
-      showTab(button.dataset.tab);
-    });
-  });
-  const advancedToggle = document.getElementById("nav-advanced-toggle");
-  advancedToggle?.addEventListener("click", () => {
-    const group = document.getElementById("nav-advanced");
-    if (!group) {
-      return;
+function bindNavigation() {
+  document.addEventListener("agentic-os:navigation", (event) => {
+    state.activeTab = event.detail.view;
+    if (!event.detail.skipLoad) {
+      loadActiveTab();
     }
-    const collapsed = group.classList.toggle("is-collapsed");
-    advancedToggle.setAttribute("aria-expanded", String(!collapsed));
   });
-}
-
-function revealNavGroupFor(tabName) {
-  const button = document.querySelector(`[data-tab="${tabName}"]`);
-  const group = button?.closest("#nav-advanced");
-  if (!group) {
-    return;
-  }
-  group.classList.remove("is-collapsed");
-  document.getElementById("nav-advanced-toggle")?.setAttribute("aria-expanded", "true");
+  Ao.Navigation.init();
 }
 
 function bindControls() {
@@ -173,21 +156,11 @@ function bindControls() {
 }
 
 function showTab(tabName, options = {}) {
-  state.activeTab = tabName;
-  revealNavGroupFor(tabName);
-  document.querySelectorAll("[data-tab]").forEach((button) => {
-    const isActive = button.dataset.tab === tabName;
-    button.classList.toggle("is-active", isActive);
-    button.setAttribute("aria-selected", String(isActive));
-  });
-  document.querySelectorAll("[role='tabpanel']").forEach((panel) => {
-    const isActive = panel.id === `panel-${tabName}`;
-    panel.classList.toggle("is-active", isActive);
-    panel.hidden = !isActive;
-  });
-  if (!options.skipLoad) {
-    loadActiveTab();
+  const area = Ao.Navigation.areaForView(tabName);
+  if (!area) {
+    throw new Error(`Unknown legacy view: ${tabName}`);
   }
+  Ao.Navigation.show(area, tabName, options);
 }
 
 Ao.showTab = showTab;

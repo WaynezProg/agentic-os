@@ -356,6 +356,39 @@ textarea {
   display: none;
 }
 
+.view-switcher {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-shell) 88%, white);
+  padding: 10px var(--space-lg);
+}
+
+.view-switcher[hidden] {
+  display: none;
+}
+
+.view-switcher__button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.view-switcher__button:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+.view-switcher__button.is-active {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
 .workspace {
   flex: 1;
   padding: var(--space-lg);
