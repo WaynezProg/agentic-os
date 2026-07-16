@@ -12,11 +12,11 @@ from typing import Any
 from agentic_os.audit import AuditStore
 from agentic_os.backup_store import BackupStore
 from agentic_os.control_plane import _redact_value
-from agentic_os.jsonio import atomic_write_json
+from agentic_os.jsonio import atomic_write_json, serialize_json
 from agentic_os.patch_engine import PatchEngine, PatchOp
 from agentic_os.schema_registry import SchemaRegistry
 from agentic_os.surface_ops import CompiledSurfacePatch
-from agentic_os.toml_io import atomic_write_toml
+from agentic_os.toml_io import atomic_write_toml, serialize_toml
 
 
 @dataclass(frozen=True)
@@ -327,6 +327,19 @@ class SafeEditEngine:
             content_sha256=hashlib.sha256(raw).hexdigest(),
             document=document,
         )
+
+    def expected_content_sha256(
+        self,
+        target: PatchTarget,
+        document: dict[str, Any],
+    ) -> str:
+        if target.file_format == "json":
+            serialized = serialize_json(document)
+        elif target.file_format == "toml":
+            serialized = serialize_toml(document)
+        else:
+            raise ValueError(f"unsupported config format: {target.file_format}")
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     def _load_document(self, target: PatchTarget) -> dict[str, Any]:
         return self.observe_target(target).document

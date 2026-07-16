@@ -125,11 +125,17 @@ class ChangeService:
             if built.target is not None
             else None
         )
-        expected_hash = (
-            hashlib.sha256((built.standalone_content or "").encode("utf-8")).hexdigest()
-            if built.is_standalone
-            else None
-        )
+        if built.is_standalone:
+            expected_hash = hashlib.sha256(
+                (built.standalone_content or "").encode("utf-8")
+            ).hexdigest()
+        elif built.target is not None and expected_document is not None:
+            expected_hash = self.safe_edit_engine.expected_content_sha256(
+                built.target,
+                expected_document,
+            )
+        else:
+            raise ValueError("change has no target")
         patch_id = _patch_id_for_change(plan.id)
         applying = self.store.update(
             plan.with_updates(
@@ -139,6 +145,7 @@ class ChangeService:
                     "patch_id": patch_id,
                     "applied": False,
                     "phase": "prepared",
+                    "expected_content_sha256": expected_hash,
                 },
             )
         )
@@ -167,6 +174,7 @@ class ChangeService:
                     "applied": result.applied,
                     "audit_event_id": result.audit_event_id,
                     "phase": "applied_pending_verification",
+                    "expected_content_sha256": expected_hash,
                 },
                 verification=ChangeVerification(
                     status="partial",
@@ -243,6 +251,7 @@ class ChangeService:
                     "patch_id": result.patch_id,
                     "applied": result.applied,
                     "audit_event_id": result.audit_event_id,
+                    "expected_content_sha256": expected_hash,
                     "phase": (
                         "verified"
                         if verification_status == "verified"
@@ -266,11 +275,23 @@ class ChangeService:
         target = self._target_for_plan(plan)
         current = self._observe_reference(target)
         applied_hash = (
-            plan.verification.observed.get("content_sha256")
-            if plan.verification is not None
+            plan.apply_result.get("expected_content_sha256")
+            if plan.apply_result is not None
             else None
         )
-        if isinstance(applied_hash, str) and current.content_sha256 != applied_hash:
+        if not isinstance(applied_hash, str) and plan.verification is not None:
+            applied_hash = plan.verification.observed.get("content_sha256")
+        if not isinstance(applied_hash, str):
+            return self.store.update(
+                plan.with_updates(
+                    status="rollback_failed",
+                    rollback={
+                        "verified": False,
+                        "reason": "applied_state_unavailable",
+                    },
+                )
+            )
+        if current.content_sha256 != applied_hash:
             return self.store.update(
                 plan.with_updates(
                     status="rollback_failed",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tomllib
 from pathlib import Path
@@ -138,6 +139,51 @@ def test_apply_persists_backup_reference_before_post_write_store_failure(
 
     assert rolled_back.status == "rolled_back"
     assert target.read_bytes() == before_bytes
+
+
+def test_interrupted_apply_rollback_refuses_later_manual_edit(
+    service: ChangeService,
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = home / ".codex" / "config.toml"
+    plan = service.preview(sample_copy_request())
+    original_update = service.store.update
+    update_count = 0
+
+    def fail_second_update(candidate):
+        nonlocal update_count
+        update_count += 1
+        if update_count == 2:
+            raise RuntimeError("simulated post-write database failure")
+        return original_update(candidate)
+
+    monkeypatch.setattr(service.store, "update", fail_second_update)
+
+    with pytest.raises(RuntimeError, match="post-write database failure"):
+        service.apply(plan.id)
+
+    applied_bytes = target.read_bytes()
+    persisted = service.get(plan.id)
+    assert persisted.apply_result is not None
+    assert persisted.apply_result["expected_content_sha256"] == hashlib.sha256(
+        applied_bytes
+    ).hexdigest()
+
+    target.write_text(
+        target.read_text(encoding="utf-8") + "\n[features]\nmanual_edit = true\n",
+        encoding="utf-8",
+    )
+    manually_edited_bytes = target.read_bytes()
+
+    rollback = service.rollback(plan.id)
+
+    assert rollback.status == "rollback_failed"
+    assert rollback.rollback == {
+        "verified": False,
+        "reason": "target_changed_since_apply",
+    }
+    assert target.read_bytes() == manually_edited_bytes
 
 
 def test_post_apply_verification_failure_stays_rollbackable(
