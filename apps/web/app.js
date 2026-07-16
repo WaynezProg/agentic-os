@@ -41,6 +41,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Ao.RunTemplateLauncher?.init?.();
   Ao.DailyDashboard?.init?.();
   Ao.DashboardV2?.init?.();
+  Ao.EnvironmentManager?.init?.();
   Ao.ControlPlaneEditor.bindEvents?.();
   Ao.ControlPlaneEditor.toggleEditorChrome();
   bindNavigation();
@@ -166,7 +167,9 @@ function showTab(tabName, options = {}) {
 Ao.showTab = showTab;
 
 function loadActiveTab() {
-  if (state.activeTab === "agents") {
+  if (state.activeTab === "environment-list") {
+    Ao.EnvironmentManager?.load?.();
+  } else if (state.activeTab === "agents") {
     loadAgents();
     Ao.ProviderSwitchboard?.refresh?.();
   } else if (state.activeTab === "sessions") {
@@ -207,7 +210,15 @@ function loadActiveTab() {
 
 async function refreshAll() {
   await loadHealth();
-  await Promise.allSettled([loadAgents(), loadSessions(), loadMemory(), loadSkillsMcp(), loadFleet(), loadHarnesses()]);
+  await Promise.allSettled([
+    loadAgents(),
+    loadSessions(),
+    loadMemory(),
+    loadSkillsMcp(),
+    loadFleet(),
+    loadHarnesses(),
+    Ao.EnvironmentManager?.load?.({ force: true }),
+  ]);
   if (state.activeTab === "logs" && byId("log-session-id").value.trim()) {
     await loadLogs();
   }

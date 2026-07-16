@@ -8,6 +8,7 @@
     <script src="i18n.js"></script>
     <script src="api.js"></script>
     <script src="ui/data-cache.js"></script>
+    <script src="ui/environment-manager.js"></script>
     <script src="ui/rollback.js"></script>
     <script src="ui/catalog-editor.js"></script>
     <script src="ui/config-editor.js"></script>
@@ -148,8 +149,19 @@
             <p class="eyebrow">Environment Manager</p>
             <h2>環境總覽</h2>
           </div>
+          <button id="environment-refresh-all" type="button">重新偵測全部</button>
         </div>
-        <p class="message">環境盤點介面準備中。</p>
+        <p id="environment-message" class="message" aria-live="polite"></p>
+        <div class="environment-layout">
+          <section class="environment-list-pane" aria-label="Agent 環境清單">
+            <div id="environment-list" class="environment-list">
+              <p class="empty-state">尚未載入環境。</p>
+            </div>
+          </section>
+          <section id="environment-detail" class="environment-detail" aria-label="Agent 環境明細">
+            <p class="empty-state">從清單選擇一個環境。</p>
+          </section>
+        </div>
       </section>
 
       <section id="panel-agents" class="panel" role="region" aria-label="Harness 實例" data-view="agents" hidden>

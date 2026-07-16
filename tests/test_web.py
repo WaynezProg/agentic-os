@@ -25,6 +25,7 @@ WORKSPACE_MANAGER_JS = WEB_DIR / "ui" / "workspace-manager.js"
 PROVIDER_SWITCHBOARD_JS = WEB_DIR / "ui" / "provider-switchboard.js"
 RUN_TEMPLATE_LAUNCHER_JS = WEB_DIR / "ui" / "run-template-launcher.js"
 DAILY_DASHBOARD_JS = WEB_DIR / "ui" / "daily-dashboard.js"
+ENVIRONMENT_MANAGER_JS = WEB_DIR / "ui" / "environment-manager.js"
 
 
 def _web_javascript_paths() -> list[Path]:
@@ -88,6 +89,30 @@ def test_shared_data_cache_deduplicates_dashboard_reads() -> None:
     assert re.search(r'Ao\.DataCache\.get\(\s*"workspace-dashboard"', switchboard)
     assert re.search(r'Ao\.DataCache\.get\(\s*"sessions"', switchboard)
     assert "Ao.DataCache?.invalidate" in api_js
+
+
+def test_environment_manager_contract_exists_and_escapes_observations() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    api_js = API_JS.read_text(encoding="utf-8")
+
+    assert ENVIRONMENT_MANAGER_JS.is_file()
+    manager = ENVIRONMENT_MANAGER_JS.read_text(encoding="utf-8")
+
+    assert html.index('src="ui/environment-manager.js"') < html.index('src="app.js"')
+    assert 'id="environment-list"' in html
+    assert 'id="environment-detail"' in html
+    for label in ["CLI", "設定", "Runtime", "建議動作"]:
+        assert label in manager
+    for endpoint in [
+        'environments: "/environments"',
+        'environmentDetail: "/environments/{environment_id}"',
+        'environmentsRefresh: "/environments/refresh"',
+        'environmentRefresh: "/environments/{environment_id}/refresh"',
+    ]:
+        assert endpoint in api_js
+    assert "Ao.escapeHtml" in manager
+    assert "${evidence.detail}" not in manager
+    assert "${evidence.source}" not in manager
 
 
 def test_daemon_api_override_input_exists() -> None:

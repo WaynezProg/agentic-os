@@ -7,6 +7,10 @@ window.AgenticOs = window.AgenticOs || {};
 
   Ao.ENDPOINTS = Object.freeze({
     health: "/health",
+    environments: "/environments",
+    environmentDetail: "/environments/{environment_id}",
+    environmentsRefresh: "/environments/refresh",
+    environmentRefresh: "/environments/{environment_id}/refresh",
     agents: "/agents",
     sessions: "/sessions",
     liveSessions: "/sessions/live",
@@ -99,6 +103,18 @@ window.AgenticOs = window.AgenticOs || {};
     agenticInventory: "/agentic/inventory",
     agenticInventoryDetail: "/agentic/inventory/{agent_id}",
   });
+
+  const HTML_ENTITIES = Object.freeze({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  });
+
+  Ao.escapeHtml = function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => HTML_ENTITIES[character]);
+  };
 
   let connectionProfile = null;
 

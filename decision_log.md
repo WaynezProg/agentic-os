@@ -208,3 +208,29 @@ This evidence is credential-independent and covers source behavior, the local
 TLS gateway, and Desktop transport. Apple Developer ID signing, notarization,
 and updater publication require external credentials and are not claimed by
 this entry.
+
+## 2026-07-17 — Make environment observations the primary Desktop surface
+
+### Purpose
+
+Turn the normalized `/environments` model into the operator's main cross-agent
+view without duplicating the older discovery, inventory, and fleet modules.
+
+### Decision and rationale
+
+- Render the seven built-in environments as a master-detail view with separate
+  CLI, config, capability, runtime, Desktop, and IDE surface observations.
+- Keep every proof value and action string escaped through the shared
+  `Ao.escapeHtml` boundary before inserting rendered markup.
+- Use the shared short-lived `Ao.DataCache` for the list, while detail selection
+  and manual refresh call their dedicated environment endpoints.
+- Preserve mature tool, inventory, harness, and fleet panels as Environments
+  subviews instead of rewriting or removing them.
+
+### Verification
+
+- `node --check apps/web/api.js`
+- `node --check apps/web/ui/environment-manager.js`
+- `node --check apps/web/app.js`
+- `rtk uv run pytest tests/test_web.py tests/test_api.py -k "environment or web" -q`
+  — 85 passed.
