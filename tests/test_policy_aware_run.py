@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from agentic_os.api import create_app
+from agentic_os.launch_decision import LaunchDecision, LaunchDecisionService
 
 
 def _write_registry(path: Path) -> None:
@@ -55,6 +56,30 @@ def test_session_allowed_when_no_policy_configured(tmp_path: Path) -> None:
 
     assert run.status_code == 200
     assert run.json()["status"] in ("succeeded", "running", "queued")
+
+
+def test_session_launch_uses_shared_decision_service(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def deny(self, context):
+        return LaunchDecision(
+            agent_id=context.agent_id,
+            decision="deny",
+            reason="policy_denied",
+            detail="shared-decision-marker",
+            policy_present=True,
+        )
+
+    monkeypatch.setattr(LaunchDecisionService, "evaluate", deny)
+    client = _make_client(tmp_path)
+
+    run = client.post(
+        "/sessions",
+        json={"agent_id": "shell", "cwd": str(tmp_path), "message": "hello"},
+    )
+
+    assert run.status_code == 403
+    assert run.json()["detail"] == "shared-decision-marker"
 
 
 def test_session_allowed_when_policy_allows(tmp_path: Path) -> None:

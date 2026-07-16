@@ -688,7 +688,7 @@ git commit -m "feat: add normalized environment APIs"
 - Produces: `LaunchContext`, `LaunchDecision`, `LaunchDecisionService.evaluate()`.
 - Consumed by: new launch, retry, approval execution, explicit policy evaluate.
 
-- [ ] **Step 1: Write semantic tests**
+- [x] **Step 1: Write semantic tests**
 
 Create `tests/test_launch_decision.py`:
 
@@ -711,7 +711,7 @@ def test_approval_requirement_is_preserved(service, approval_context) -> None:
     assert decision.decision == "approval_required"
 ```
 
-- [ ] **Step 2: Implement service**
+- [x] **Step 2: Implement service**
 
 Create `src/agentic_os/launch_decision.py` with Pydantic models:
 
@@ -738,7 +738,7 @@ class LaunchDecision(BaseModel):
 returns allow with warning. Existing policy deny and approval results retain
 their metadata.
 
-- [ ] **Step 3: Rewire all decision call sites**
+- [x] **Step 3: Rewire all decision call sites**
 
 Use one helper in `api.py` to construct `LaunchContext` for:
 
@@ -749,14 +749,14 @@ Use one helper in `api.py` to construct `LaunchContext` for:
 
 All four paths record the same redacted decision metadata in audit.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 ```bash
 rtk uv run pytest tests/test_launch_decision.py tests/test_policy_aware_run.py tests/test_approvals.py tests/test_remote_approval_loop.py tests/test_api.py -q
 rtk uv run ruff check src/agentic_os/launch_decision.py src/agentic_os/api.py
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agentic_os/launch_decision.py src/agentic_os/api.py tests/test_launch_decision.py tests/test_policy_aware_run.py tests/test_approvals.py tests/test_remote_approval_loop.py tests/test_api.py

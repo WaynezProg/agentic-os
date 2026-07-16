@@ -25,12 +25,15 @@ from agentic_os.audit import AuditEvent, AuditStore
 from agentic_os.control_plane import (
     ControlPlaneStore,
     McpServerUpsert,
-    PolicyEvaluationRequest,
-    PolicyEvaluationResult,
     PolicyUpsert,
     SkillUpsert,
     SunsetChange,
     _redact_value,
+)
+from agentic_os.launch_decision import (
+    LaunchContext,
+    LaunchDecision,
+    LaunchDecisionService,
 )
 from agentic_os.control_plane_history import (
     ControlPlaneMutationResult,
@@ -137,9 +140,6 @@ from agentic_os.supervisor import ProcessSupervisor
 from agentic_os.surface_ops import compile_semantic_ops
 from agentic_os.profiles import ResolvedRunProfile
 from agentic_os.usage import UsageStore, usage_record_to_dict
-
-
-SESSION_START_APPROVAL_TOOL = "session.start"
 
 
 def _require_contract_version(version: str) -> None:
@@ -322,6 +322,7 @@ def create_app(
         native_sessions=native_session_service,
         fleet_store=fleet_store,
     )
+    launch_decision_service = LaunchDecisionService(control_plane)
     logs = JsonlLogStore()
     evidence_store = EvidenceStore(state_dir)
     remote_access = RemoteAccessService(state_dir)
@@ -345,6 +346,7 @@ def create_app(
     app.state.usage_store = usage_store
     app.state.native_session_service = native_session_service
     app.state.environment_service = environment_service
+    app.state.launch_decision_service = launch_decision_service
     # tauri://localhost (macOS/Linux webview) and https://tauri.localhost
     # (Windows webview) are the packaged desktop app's origins — without
     # them every fetch from the app window is CORS-blocked and the
@@ -369,30 +371,55 @@ def create_app(
             return JSONResponse(status_code=400, content={"detail": exc.errors()})
         return await request_validation_exception_handler(request, exc)
 
-    def _check_capacity(agent_id: str = "_fleet") -> None:
+    def _running_session_count() -> int:
         running = [
             s
             for s in store.list_sessions()
             if s.status in {SessionStatus.RUNNING, SessionStatus.QUEUED, SessionStatus.STOPPING}
         ]
-        if len(running) >= fleet_store.MAX_RUNNING_SESSIONS:
-            detail = (
-                f"Capacity limit reached: {len(running)}/"
-                f"{fleet_store.MAX_RUNNING_SESSIONS} concurrent sessions"
+        return len(running)
+
+    def _evaluate_launch_decision(
+        agent_id: str,
+        cwd: str | None,
+        *,
+        model_id: str | None = None,
+        skill_id: str | None = None,
+        mcp_server_id: str | None = None,
+        tool_name: str | None = None,
+        check_capacity: bool = True,
+        for_session_start: bool = True,
+        require_policy: bool = False,
+        approval_granted: bool = False,
+    ) -> LaunchDecision:
+        decision = launch_decision_service.evaluate(
+            LaunchContext(
+                agent_id=agent_id,
+                cwd=cwd,
+                model_id=model_id,
+                skill_id=skill_id,
+                mcp_server_id=mcp_server_id,
+                tool_name=tool_name,
+                running_sessions=_running_session_count(),
+                max_running_sessions=fleet_store.MAX_RUNNING_SESSIONS,
+                check_capacity=check_capacity,
+                for_session_start=for_session_start,
+                require_policy=require_policy,
+                approval_granted=approval_granted,
             )
+        )
+        if decision.reason == "capacity_limit_reached":
             fleet_store.record_event(
                 agent_id,
                 "capacity_limit_reached",
-                detail,
+                decision.detail,
                 {
-                    "running_sessions": len(running),
+                    "running_sessions": _running_session_count(),
                     "max_running_sessions": fleet_store.MAX_RUNNING_SESSIONS,
                 },
             )
-            raise HTTPException(
-                status_code=429,
-                detail=detail,
-            )
+            raise HTTPException(status_code=429, detail=decision.detail)
+        return decision
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -1024,28 +1051,27 @@ def create_app(
     def run_session(request: SessionRunRequest) -> dict[str, object]:
         run_request, source_template_id = _resolve_session_run_request(request)
         rendered, resolved = _prepare_session_run(run_request)
-        _check_capacity(rendered.agent.id)
 
-        policy_result = _evaluate_session_policy(
+        decision = _evaluate_launch_decision(
             rendered.agent.id,
             rendered.cwd,
             model_id=resolved.model if resolved is not None else None,
         )
-        if policy_result is not None:
-            if policy_result.decision != "allow":
-                return _reject_session(
-                    rendered,
-                    policy_result,
-                    source_template_id=source_template_id,
-                    **_resolved_profile_kwargs(resolved),
-                )
+        if decision.decision != "allow":
+            return _reject_session(
+                rendered,
+                decision,
+                source_template_id=source_template_id,
+                **_resolved_profile_kwargs(resolved),
+            )
+        if decision.policy_present:
             session = _supervisor_start(rendered, resolved, source_template_id=source_template_id)
             audit_store.record(
                 "governance",
                 rendered.agent.id,
                 "policy_evaluated",
-                f"allow: {policy_result.reason}",
-                metadata=_policy_evaluation_metadata(session.id, policy_result),
+                f"allow: {decision.detail}",
+                metadata=_policy_evaluation_metadata(session.id, decision),
             )
             audit_store.record(
                 "governance",
@@ -1056,23 +1082,22 @@ def create_app(
             )
             _wait_for_short_command(supervisor, session.id)
             return supervisor.store.get_session(session.id).model_dump()
-        else:
-            audit_store.record(
-                "governance",
-                rendered.agent.id,
-                "policy_missing_at_run_start",
-                f"no policy configured for {rendered.agent.id}",
-            )
-            session = _supervisor_start(rendered, resolved, source_template_id=source_template_id)
-            audit_store.record(
-                "governance",
-                rendered.agent.id,
-                "run_started_without_policy",
-                f"session {session.id} started without policy",
-                metadata={"session_id": session.id},
-            )
-            _wait_for_short_command(supervisor, session.id)
-            return supervisor.store.get_session(session.id).model_dump()
+        audit_store.record(
+            "governance",
+            rendered.agent.id,
+            "policy_missing_at_run_start",
+            decision.detail,
+        )
+        session = _supervisor_start(rendered, resolved, source_template_id=source_template_id)
+        audit_store.record(
+            "governance",
+            rendered.agent.id,
+            "run_started_without_policy",
+            f"session {session.id} started without policy",
+            metadata={"session_id": session.id},
+        )
+        _wait_for_short_command(supervisor, session.id)
+        return supervisor.store.get_session(session.id).model_dump()
 
     @app.get("/sessions")
     def list_sessions() -> dict[str, object]:
@@ -1443,8 +1468,6 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        _check_capacity(previous.agent_id)
-
         store.record_event(
             session_id,
             "retry_requested",
@@ -1452,26 +1475,26 @@ def create_app(
             {"source_session_id": session_id},
         )
 
-        policy_result = _evaluate_session_policy(
+        decision = _evaluate_launch_decision(
             previous.agent_id,
             previous.cwd,
             model_id=previous.resolved_model,
         )
-        if policy_result is not None:
-            if policy_result.decision != "allow":
-                rendered = RenderedRun(
-                    agent=registry.get(previous.agent_id),
-                    cwd=previous.cwd,
-                    argv=previous.argv,
-                    env=previous.env,
-                )
-                return _reject_session(
-                    rendered,
-                    policy_result,
-                    resolved_profile=previous.resolved_profile,
-                    resolved_provider=previous.resolved_provider,
-                    resolved_model=previous.resolved_model,
-                )
+        if decision.decision != "allow":
+            rendered = RenderedRun(
+                agent=registry.get(previous.agent_id),
+                cwd=previous.cwd,
+                argv=previous.argv,
+                env=previous.env,
+            )
+            return _reject_session(
+                rendered,
+                decision,
+                resolved_profile=previous.resolved_profile,
+                resolved_provider=previous.resolved_provider,
+                resolved_model=previous.resolved_model,
+            )
+        if decision.policy_present:
             session = supervisor.start(
                 previous.agent_id,
                 previous.cwd,
@@ -1485,8 +1508,8 @@ def create_app(
                 "governance",
                 previous.agent_id,
                 "policy_evaluated",
-                f"allow: {policy_result.reason}",
-                metadata=_policy_evaluation_metadata(session.id, policy_result),
+                f"allow: {decision.detail}",
+                metadata=_policy_evaluation_metadata(session.id, decision),
             )
             audit_store.record(
                 "governance",
@@ -1497,31 +1520,30 @@ def create_app(
             )
             _wait_for_short_command(supervisor, session.id)
             return supervisor.store.get_session(session.id).model_dump()
-        else:
-            audit_store.record(
-                "governance",
-                previous.agent_id,
-                "policy_missing_at_run_start",
-                f"no policy configured for {previous.agent_id}",
-            )
-            session = supervisor.start(
-                previous.agent_id,
-                previous.cwd,
-                previous.argv,
-                env=previous.env,
-                resolved_profile=previous.resolved_profile,
-                resolved_provider=previous.resolved_provider,
-                resolved_model=previous.resolved_model,
-            )
-            audit_store.record(
-                "governance",
-                previous.agent_id,
-                "run_started_without_policy",
-                f"session {session.id} started without policy",
-                metadata={"session_id": session.id},
-            )
-            _wait_for_short_command(supervisor, session.id)
-            return supervisor.store.get_session(session.id).model_dump()
+        audit_store.record(
+            "governance",
+            previous.agent_id,
+            "policy_missing_at_run_start",
+            decision.detail,
+        )
+        session = supervisor.start(
+            previous.agent_id,
+            previous.cwd,
+            previous.argv,
+            env=previous.env,
+            resolved_profile=previous.resolved_profile,
+            resolved_provider=previous.resolved_provider,
+            resolved_model=previous.resolved_model,
+        )
+        audit_store.record(
+            "governance",
+            previous.agent_id,
+            "run_started_without_policy",
+            f"session {session.id} started without policy",
+            metadata={"session_id": session.id},
+        )
+        _wait_for_short_command(supervisor, session.id)
+        return supervisor.store.get_session(session.id).model_dump()
 
     @app.post("/sessions/{session_id}/attach")
     def attach_session(
@@ -1559,18 +1581,19 @@ def create_app(
         if body.mode == "preview":
             return response
 
-        policy_result = _evaluate_session_policy(
+        decision = _evaluate_launch_decision(
             agent.id,
             session.cwd,
             model_id=session.resolved_model,
+            check_capacity=False,
         )
-        if policy_result is not None and policy_result.decision != "allow":
-            status_code = 403 if policy_result.decision == "deny" else 409
+        if decision.decision != "allow":
+            status_code = 403 if decision.decision == "deny" else 409
             raise HTTPException(
                 status_code=status_code,
                 detail={
-                    "decision": policy_result.decision,
-                    "reason": policy_result.reason,
+                    "decision": decision.decision,
+                    "reason": decision.detail,
                     "session_id": session_id,
                 },
             )
@@ -1619,19 +1642,16 @@ def create_app(
             approval = approval_store.get(approval_id)
             if approval.status != ApprovalStatus.PENDING:
                 raise ValueError(f"approval {approval_id} is not pending")
-            _check_capacity(approval.agent_id)
             source_session = _get_session_or_none(approval.source_session_id)
-            policy_result = _evaluate_session_policy(
+            decision = _evaluate_launch_decision(
                 approval.agent_id,
                 approval.cwd,
                 model_id=source_session.resolved_model if source_session is not None else None,
+                require_policy=True,
+                approval_granted=True,
             )
-            if policy_result is None or policy_result.decision == "deny":
-                reason = (
-                    policy_result.reason
-                    if policy_result is not None
-                    else f"no policy configured for {approval.agent_id}"
-                )
+            if decision.decision != "allow":
+                reason = decision.detail
                 approval_store.expire(approval_id, reason)
                 _append_approval_resolution_event(
                     approval.source_session_id,
@@ -1672,8 +1692,8 @@ def create_app(
                 "governance",
                 claimed.agent_id,
                 "policy_evaluated",
-                f"approved launch: {policy_result.reason}",
-                metadata=_policy_evaluation_metadata(session.id, policy_result),
+                f"approved launch: {decision.detail}",
+                metadata=_policy_evaluation_metadata(session.id, decision),
             )
             approved = approval_store.link_approved_session(
                 approval_id,
@@ -2085,18 +2105,18 @@ def create_app(
     def evaluate_policy(request: PolicyEvaluateRequest) -> dict[str, Any]:
         try:
             _apply_sunset_with_audit()
-            return _asdict(
-                control_plane.evaluate_policy(
-                    PolicyEvaluationRequest(
-                        agent_id=request.agent_id,
-                        skill_id=request.skill_id,
-                        mcp_server_id=request.mcp_server_id,
-                        tool_name=request.tool_name,
-                        model_id=request.model_id,
-                        cwd=request.cwd,
-                    )
-                )
+            decision = _evaluate_launch_decision(
+                request.agent_id,
+                request.cwd,
+                model_id=request.model_id,
+                skill_id=request.skill_id,
+                mcp_server_id=request.mcp_server_id,
+                tool_name=request.tool_name,
+                check_capacity=False,
+                for_session_start=False,
+                require_policy=True,
             )
+            return _asdict(decision.to_policy_result())
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2903,33 +2923,6 @@ def create_app(
             "resolved_model": resolved.model,
         }
 
-    def _evaluate_session_policy(
-        agent_id: str,
-        cwd: str,
-        model_id: str | None = None,
-    ) -> PolicyEvaluationResult | None:
-        try:
-            policy = control_plane.get_policy(agent_id)
-        except (KeyError, ValueError):
-            return None
-        result = control_plane.evaluate_policy(
-            PolicyEvaluationRequest(agent_id=agent_id, cwd=cwd, model_id=model_id)
-        )
-        if result.decision == "allow" and _requires_session_start_approval(
-            policy.approval_required_tool_names
-        ):
-            return PolicyEvaluationResult(
-                agent_id=agent_id,
-                decision="approval_required",
-                reason=f"{SESSION_START_APPROVAL_TOOL} requires approval for {agent_id}",
-                readonly=result.readonly,
-                rate_limit_per_minute=result.rate_limit_per_minute,
-            )
-        return result
-
-    def _requires_session_start_approval(tool_names: list[str]) -> bool:
-        return "*" in tool_names or SESSION_START_APPROVAL_TOOL in tool_names
-
     def _record_sunset_changes(changes: list[SunsetChange]) -> None:
         event_names = {
             "skill": "skill_auto_disabled_after_sunset",
@@ -3005,18 +2998,17 @@ def create_app(
         if approval.status != ApprovalStatus.PENDING:
             return approval
         source_session = _get_session_or_none(approval.source_session_id)
-        policy_result = _evaluate_session_policy(
+        decision = _evaluate_launch_decision(
             approval.agent_id,
             approval.cwd,
             model_id=source_session.resolved_model if source_session is not None else None,
+            check_capacity=False,
+            require_policy=True,
+            approval_granted=True,
         )
-        if policy_result is not None and policy_result.decision != "deny":
+        if decision.decision == "allow":
             return approval
-        reason = (
-            policy_result.reason
-            if policy_result is not None
-            else f"no policy configured for {approval.agent_id}"
-        )
+        reason = decision.detail
         expired = approval_store.expire(approval.id, reason)
         _append_approval_resolution_event(
             approval.source_session_id,
@@ -3045,7 +3037,7 @@ def create_app(
 
     def _reject_session(
         rendered: RenderedRun,
-        result: PolicyEvaluationResult,
+        result: LaunchDecision,
         *,
         resolved_profile: str | None = None,
         resolved_provider: str | None = None,
@@ -3072,7 +3064,7 @@ def create_app(
                     cwd=rendered.cwd,
                     argv=rendered.argv,
                     env=rendered.env,
-                    reason=result.reason,
+                    reason=result.detail,
                 )
             )
             approval_id = approval.id
@@ -3080,7 +3072,7 @@ def create_app(
             _append_session_evidence_event(
                 session.id,
                 "approval_required",
-                result.reason,
+                result.detail,
                 {
                     "decision": result.decision,
                     "approval_id": approval.id,
@@ -3096,21 +3088,21 @@ def create_app(
                 metadata={
                     "approval_id": approval.id,
                     "source_session_id": session.id,
-                    "reason": result.reason,
+                    "reason": result.detail,
                 },
             )
         audit_store.record(
             "governance",
             rendered.agent.id,
             "policy_evaluated",
-            f"{result.decision}: {result.reason}",
+            f"{result.decision}: {result.detail}",
             metadata=metadata,
         )
         event_type = "policy_denied" if result.decision == "deny" else "policy_approval_required"
         store.record_event(
             session.id,
             event_type,
-            result.reason,
+            result.detail,
             {
                 "decision": result.decision,
                 "agent_id": result.agent_id,
@@ -3119,7 +3111,7 @@ def create_app(
         )
         status_code = 403 if result.decision == "deny" else 409
         content: dict[str, object] = {
-            "detail": result.reason,
+            "detail": result.detail,
             "decision": result.decision,
             "session_id": session.id,
         }
@@ -3399,12 +3391,12 @@ def _lifecycle_metadata(previous: object, current: object) -> dict[str, object]:
 
 def _policy_evaluation_metadata(
     session_id: str,
-    result: PolicyEvaluationResult,
+    result: LaunchDecision,
 ) -> dict[str, object]:
     return {
         "session_id": session_id,
         "decision": result.decision,
-        "reason": result.reason,
+        "reason": result.detail,
         "warnings": result.warnings,
     }
 

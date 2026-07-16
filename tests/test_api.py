@@ -657,6 +657,32 @@ def test_api_upserts_reads_lists_and_evaluates_policy(tmp_path: Path) -> None:
     assert approval.json()["decision"] == "approval_required"
 
 
+def test_policy_evaluate_uses_shared_decision_service(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from agentic_os.launch_decision import LaunchDecision, LaunchDecisionService
+
+    def allow(self, context):
+        return LaunchDecision(
+            agent_id=context.agent_id,
+            decision="allow",
+            reason="policy_allowed",
+            detail="shared-policy-marker",
+            policy_present=True,
+        )
+
+    monkeypatch.setattr(LaunchDecisionService, "evaluate", allow)
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/policy/evaluate",
+        json={"agent_id": "shell", "cwd": str(tmp_path)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason"] == "shared-policy-marker"
+
+
 def test_api_returns_404_for_unknown_control_plane_reads(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
