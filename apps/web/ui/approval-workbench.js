@@ -11,7 +11,14 @@ window.AgenticOs = window.AgenticOs || {};
     "'": "&#39;",
   });
 
-  let eventSource = null;
+  const POLL_INTERVAL_MS = 1500;
+  const MAX_POLL_BACKOFF_MS = 15000;
+
+  let eventCursor = 0;
+  let pollTimer = null;
+  let pollBackoffMs = POLL_INTERVAL_MS;
+  let pollGeneration = 0;
+  let pollInFlight = false;
 
   function escapeHtml(value) {
     const text = value === null || value === undefined || value === "" ? "-" : String(value);
@@ -118,35 +125,65 @@ window.AgenticOs = window.AgenticOs || {};
     }
   }
 
-  function connectApprovalStream() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    if (Ao.getConnectionProfile()?.mode !== "remote") {
+  function scheduleRemotePoll(generation) {
+    if (generation !== pollGeneration || Ao.getConnectionProfile()?.mode !== "remote") {
       return;
     }
-    const base = Ao.apiBase();
+    pollTimer = window.setTimeout(() => {
+      pollTimer = null;
+      pollRemoteEvents(generation);
+    }, pollBackoffMs);
+  }
+
+  async function pollRemoteEvents(generation) {
+    if (generation !== pollGeneration || Ao.getConnectionProfile()?.mode !== "remote") {
+      disconnectStream();
+      return;
+    }
+    pollInFlight = true;
     try {
-      eventSource = new EventSource(`${base}${Ao.buildEndpoint("events")}`);
-      eventSource.onmessage = () => {
-        loadWorkbench();
-      };
-      eventSource.onerror = () => {
-        if (eventSource) {
-          eventSource.close();
-          eventSource = null;
-        }
-      };
+      const data = await Ao.apiFetch(
+        `${Ao.buildEndpoint("eventsPoll")}?after_id=${eventCursor}&limit=50`,
+      );
+      const events = asArray(data.events);
+      const nextCursor = Number(data.after_id);
+      if (Number.isSafeInteger(nextCursor) && nextCursor >= eventCursor) {
+        eventCursor = nextCursor;
+      }
+      pollBackoffMs = POLL_INTERVAL_MS;
+      if (events.length) {
+        await loadWorkbench();
+      }
     } catch (error) {
-      console.warn("approval stream unavailable", error);
+      console.warn("approval event poll unavailable", error);
+      pollBackoffMs = Math.min(pollBackoffMs * 2, MAX_POLL_BACKOFF_MS);
+    } finally {
+      if (generation === pollGeneration) {
+        pollInFlight = false;
+      }
+      scheduleRemotePoll(generation);
     }
   }
 
+  function connectApprovalStream() {
+    if (Ao.getConnectionProfile()?.mode !== "remote") {
+      disconnectStream();
+      return;
+    }
+    if (pollTimer || pollInFlight) {
+      return;
+    }
+    pollBackoffMs = POLL_INTERVAL_MS;
+    const generation = ++pollGeneration;
+    pollRemoteEvents(generation);
+  }
+
   function disconnectStream() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
+    pollGeneration += 1;
+    pollInFlight = false;
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = null;
     }
   }
 

@@ -21,6 +21,7 @@ window.AgenticOs = window.AgenticOs || {};
     sessionStop: "/sessions/{session_id}/stop",
     sessionRetry: "/sessions/{session_id}/retry",
     events: "/events",
+    eventsPoll: "/events/poll",
     sessionEvents: "/sessions/{session_id}/events",
     sessionTimeline: "/sessions/{session_id}/timeline",
     sessionAttach: "/sessions/{session_id}/attach",

@@ -750,6 +750,17 @@ def test_approval_workbench_renders_context_fields() -> None:
         assert token in workbench or token in html
 
 
+def test_remote_approval_events_use_authenticated_bridge() -> None:
+    api_js = API_JS.read_text(encoding="utf-8")
+    workbench = APPROVAL_WORKBENCH_JS.read_text(encoding="utf-8")
+
+    assert 'eventsPoll: "/events/poll"' in api_js
+    assert "EventSource" not in workbench
+    assert 'Ao.buildEndpoint("eventsPoll")' in workbench
+    assert "after_id" in workbench
+    assert "setTimeout" in workbench
+
+
 def test_remote_console_modules_exist() -> None:
     assert REMOTE_CONSOLE_JS.is_file()
     html = INDEX_HTML.read_text(encoding="utf-8")

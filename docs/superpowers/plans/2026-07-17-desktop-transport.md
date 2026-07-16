@@ -199,7 +199,7 @@ git commit -m "feat: add authenticated event polling"
 - Produces: polling lifecycle in `ApprovalWorkbench`.
 - Consumes: `/events/poll` through `Ao.apiFetch`.
 
-- [ ] **Step 1: Add static Web contract tests**
+- [x] **Step 1: Add static Web contract tests**
 
 In `tests/test_web.py` assert:
 
@@ -214,13 +214,13 @@ def test_remote_approval_events_use_authenticated_bridge() -> None:
 
 Add `eventsPoll: "/events/poll"` to the endpoint-map assertion.
 
-- [ ] **Step 2: Verify current failure**
+- [x] **Step 2: Verify current failure**
 
 ```bash
 rtk uv run pytest tests/test_web.py -k remote_approval_events -q
 ```
 
-- [ ] **Step 3: Replace EventSource**
+- [x] **Step 3: Replace EventSource**
 
 In `approval-workbench.js`, maintain:
 
@@ -242,14 +242,14 @@ Process events using the existing event handler, advance `eventCursor`, reset
 backoff on success, and retry with a capped 15-second delay on failure. Stop the
 timer when connection mode leaves remote.
 
-- [ ] **Step 4: Verify JavaScript**
+- [x] **Step 4: Verify JavaScript**
 
 ```bash
 node --check apps/web/ui/approval-workbench.js
 rtk uv run pytest tests/test_web.py tests/test_remote_approval_loop.py -q
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/api.js apps/web/ui/approval-workbench.js tests/test_web.py
