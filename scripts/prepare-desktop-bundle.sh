@@ -86,8 +86,23 @@ if [[ ! -f "$RELOC_PY" || -L "$RELOC_PY" || ! -f "$RELOC_LIB" ]]; then
   echo "prepare-desktop-bundle: relocated runtime is incomplete" >&2
   exit 1
 fi
-RELOC_VERSION="$("$RELOC_PY" -c 'from agentic_os import __version__; print(__version__)')"
+RELOC_VERSION="$(
+  PYTHONDONTWRITEBYTECODE=1 "$RELOC_PY" -B \
+    -c 'from agentic_os import __version__; print(__version__)'
+)"
 rm -rf "$RELOC_DIR"
 echo "prepare-desktop-bundle: relocation smoke ok (agentic_os ${RELOC_VERSION})"
+
+# Python bytecode inside a signed app bundle is immutable release content.
+# Ship source-only runtime files and prevent the packaged daemon from creating
+# or updating __pycache__ after launch.
+find "$STAGING/runtime/python" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+find "$STAGING/runtime/python" -type d -name __pycache__ -prune -exec rm -rf {} +
+if find "$STAGING/runtime/python" \
+  \( -type d -name __pycache__ -o -type f \( -name '*.pyc' -o -name '*.pyo' \) \) \
+  -print -quit | grep -q .; then
+  echo "prepare-desktop-bundle: bytecode cache remains in staged runtime" >&2
+  exit 1
+fi
 
 echo "prepare-desktop-bundle: ok"

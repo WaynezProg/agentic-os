@@ -20,6 +20,12 @@ def test_desktop_build_script_targets_app_bundle() -> None:
     assert package["scripts"]["desktop:build"].endswith("tauri build --bundles app")
 
 
+def test_packaged_daemon_disables_bytecode_writes() -> None:
+    script = (ROOT / "scripts/desktop-daemon.sh").read_text(encoding="utf-8")
+
+    assert 'PYTHONDONTWRITEBYTECODE=1 nohup "$AGENTD_PY" -B "$AGENTD_BIN" serve' in script
+
+
 def test_tauri_window_and_csp_are_production_safe() -> None:
     config = json.loads(
         (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
@@ -75,17 +81,24 @@ def test_prepare_desktop_bundle_layout() -> None:
     assert (site / "agentic_os/api.py").is_file()
     for pth in site.glob("*.pth"):
         assert "src" not in pth.read_text(), f"repo reference leaked via {pth.name}"
+    assert not list((STAGING / "runtime/python").rglob("*.pyc"))
+    assert not list((STAGING / "runtime/python").rglob("__pycache__"))
+    bytecode_env = env | {"PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run(
         [
             str(python),
+            "-B",
             "-c",
             "from agentic_os import __version__; print(__version__)",
         ],
+        env=bytecode_env,
         capture_output=True,
         text=True,
         check=True,
     )
     assert result.stdout.strip() == "1.0.1"
+    assert not list((STAGING / "runtime/python").rglob("*.pyc"))
+    assert not list((STAGING / "runtime/python").rglob("__pycache__"))
 
 
 def test_desktop_ui_start_is_noop_in_bundle_mode(tmp_path: Path) -> None:

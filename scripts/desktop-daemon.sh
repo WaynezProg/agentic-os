@@ -106,7 +106,7 @@ cmd_start() {
   (
     cd "$ROOT"
     if [[ -n "$AGENTD_BIN" ]]; then
-      nohup "$AGENTD_PY" "$AGENTD_BIN" serve \
+      PYTHONDONTWRITEBYTECODE=1 nohup "$AGENTD_PY" -B "$AGENTD_BIN" serve \
         --host "$API_HOST" \
         --port "$API_PORT" \
         --state-dir "$STATE_DIR" \
