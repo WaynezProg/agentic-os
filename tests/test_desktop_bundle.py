@@ -14,6 +14,12 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGING = ROOT / "apps/desktop/src-tauri/bundle-resources/agentic-os"
 
 
+def test_desktop_build_script_targets_app_bundle() -> None:
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+
+    assert package["scripts"]["desktop:build"].endswith("tauri build --bundles app")
+
+
 def test_tauri_window_and_csp_are_production_safe() -> None:
     config = json.loads(
         (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
@@ -32,6 +38,7 @@ def test_tauri_window_and_csp_are_production_safe() -> None:
     assert "ipc:" in csp
     assert "http://127.0.0.1:*" in csp
     assert "https:" in csp
+    assert config["bundle"]["macOS"]["signingIdentity"] == "-"
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="stages a macOS app bundle")
@@ -54,12 +61,31 @@ def test_prepare_desktop_bundle_layout() -> None:
     agentd = STAGING / "runtime/python/bin/agentd"
     assert agentd.is_file()
     assert os.access(agentd, os.X_OK)
+    python = STAGING / "runtime/python/bin/python3.12"
+    libpython = STAGING / "runtime/python/lib/libpython3.12.dylib"
+    assert python.is_file()
+    assert not python.is_symlink()
+    assert libpython.is_file()
+    for link in (STAGING / "runtime/python").rglob("*"):
+        if link.is_symlink():
+            assert not os.readlink(link).startswith("/"), f"absolute runtime symlink: {link}"
     # Relocatable runtime: package materialized inside the bundled
     # python, and nothing points back at the repo checkout.
     site = STAGING / "runtime/python/lib/python3.12/site-packages"
     assert (site / "agentic_os/api.py").is_file()
     for pth in site.glob("*.pth"):
         assert "src" not in pth.read_text(), f"repo reference leaked via {pth.name}"
+    result = subprocess.run(
+        [
+            str(python),
+            "-c",
+            "from agentic_os import __version__; print(__version__)",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "1.0.1"
 
 
 def test_desktop_ui_start_is_noop_in_bundle_mode(tmp_path: Path) -> None:

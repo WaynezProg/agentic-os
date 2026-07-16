@@ -37,13 +37,25 @@ fi
 # then misses. A standalone CPython resolves everything relative to its
 # own binary, so the copied app needs nothing from the build machine.
 uv python install "$PYTHON_BUILD" >/dev/null 2>&1 || true
-PY_SOURCE="$(uv python find "$PYTHON_BUILD")"
+PY_SOURCE="$(uv python find --managed-python --no-project --resolve-links "$PYTHON_BUILD")"
 PY_INSTALL="$(cd "$(dirname "$PY_SOURCE")/.." && pwd)"
 cp -R "$PY_INSTALL/." "$STAGING/runtime/python/"
 BUNDLED_PY="$STAGING/runtime/python/bin/python3.12"
+BUNDLED_LIB="$STAGING/runtime/python/lib/libpython3.12.dylib"
 # This copy is ours to mutate; drop uv's PEP 668 guard so packages can
 # be installed straight into its site-packages.
 rm -f "$STAGING/runtime/python/lib/python3.12/EXTERNALLY-MANAGED"
+
+if [[ ! -f "$BUNDLED_PY" || -L "$BUNDLED_PY" || ! -f "$BUNDLED_LIB" ]]; then
+  echo "prepare-desktop-bundle: managed Python runtime is incomplete" >&2
+  exit 1
+fi
+while IFS= read -r link; do
+  if [[ "$(readlink "$link")" == /* ]]; then
+    echo "prepare-desktop-bundle: absolute runtime symlink: $link" >&2
+    exit 1
+  fi
+done < <(find "$STAGING/runtime/python" -type l)
 
 DIST_DIR="$(mktemp -d)"
 trap 'rm -rf "$DIST_DIR"' EXIT
@@ -68,7 +80,13 @@ fi
 # package with the copied interpreter — proves no build-path coupling.
 RELOC_DIR="$(mktemp -d)"
 cp -R "$STAGING/runtime/python/." "$RELOC_DIR/python/"
-RELOC_VERSION="$("$RELOC_DIR/python/bin/python3.12" -c 'from agentic_os import __version__; print(__version__)')"
+RELOC_PY="$RELOC_DIR/python/bin/python3.12"
+RELOC_LIB="$RELOC_DIR/python/lib/libpython3.12.dylib"
+if [[ ! -f "$RELOC_PY" || -L "$RELOC_PY" || ! -f "$RELOC_LIB" ]]; then
+  echo "prepare-desktop-bundle: relocated runtime is incomplete" >&2
+  exit 1
+fi
+RELOC_VERSION="$("$RELOC_PY" -c 'from agentic_os import __version__; print(__version__)')"
 rm -rf "$RELOC_DIR"
 echo "prepare-desktop-bundle: relocation smoke ok (agentic_os ${RELOC_VERSION})"
 

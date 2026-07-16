@@ -336,3 +336,84 @@ surfaces from clipping at the minimum supported Desktop width.
   links were clicked and reached their expected owner surface.
 - QA services and Chrome were stopped; ports 8767, 5173, and 9223 had no
   listeners afterward.
+
+## 2026-07-17 — Make the packaged Desktop release reproducible and verifiable
+
+### Purpose
+
+Turn a successful Rust compile into a macOS `.app` whose bundled daemon can
+actually run, whose resources are sealed, and whose clean/crash lifecycle is
+proved from the packaged artifact.
+
+### Decision and rationale
+
+- Make the documented `pnpm desktop:build` command request only the macOS app
+  bundle. Tauri's DMG helper drives Finder through AppleScript and blocked
+  indefinitely in the non-interactive release check after the `.app` was
+  already complete; DMG layout is distribution work, not an app correctness
+  gate.
+- Resolve the Python source with
+  `uv python find --managed-python --no-project --resolve-links`. The previous
+  command discovered the repository `.venv`, copied absolute interpreter
+  symlinks, omitted `libpython3.12.dylib`, and let its relocation smoke escape
+  back to the host interpreter.
+- Reject incomplete runtime staging before bundle creation: `python3.12` must
+  be a real file, `libpython3.12.dylib` must exist, no runtime symlink may be
+  absolute, the copied interpreter must import the packaged project, and no
+  `.pth` file may point at the source checkout.
+- Configure Tauri's documented ad-hoc signing identity `-` for local builds.
+  This creates a valid hardened-runtime resource seal without claiming a
+  publisher identity or notarization.
+- Serialize the two Rust tests that mutate `AGENTIC_OS_BUNDLE_ROOT`. The
+  process-global environment made the parallel test suite nondeterministic even
+  though production runtime behavior was correct.
+
+### Alternatives considered
+
+- Keep all Tauri bundle targets in the merge gate: rejected because a
+  Finder/AppleScript DMG hang can fail or stall an otherwise valid `.app`.
+- Copy the current project venv and rewrite selected shebangs: rejected because
+  the interpreter and shared library remain build-machine coupled.
+- Accept the linker-generated ad-hoc executable signature: rejected because
+  `codesign --verify --deep --strict` reported unsealed resources.
+- Claim public macOS distribution from an ad-hoc signature: rejected because
+  Gatekeeper publisher trust and notarization require Apple credentials.
+
+### Verification
+
+- Automated gates: `869 passed`, Ruff passed, every Web JavaScript file parsed,
+  and Rust reported `32 passed; 0 failed`.
+- The Rust environment race failed 3 of 20 repeated runs before the test lock
+  and 0 of 50 afterward.
+- Product smoke passed 11 steps, including 7 Environment adapters, all 6 Claude
+  evidence surfaces, non-mutating Change preview, verified apply, exact
+  rollback, session execution, and approval execution.
+- `pnpm desktop:build` produced
+  `apps/desktop/src-tauri/target/release/bundle/macos/agentic-os.app`.
+  Its bundled Python imported `agentic_os 1.0.1`, executed `agentd --help`, and
+  contained `lib/libpython3.12.dylib` with no source-checkout path leak.
+- `codesign --verify --deep --strict --verbose=4` passed. The arm64 app used an
+  ad-hoc hardened-runtime signature and sealed 3,505 resources.
+- Two packaged-app launch cycles reached `/health`, returned all 7 adapters,
+  exposed tray title `agentic-os · agentd: ok`, and exited through the actual
+  tray Quit item. Each exit removed the app, daemon, PID file, and listeners on
+  8767/5173.
+- A forced app `SIGKILL` caused the parent-watch daemon to exit. Relaunch
+  reconciled the stale state, started a new daemon, and then shut down cleanly
+  from tray Quit.
+- The packaged daemon passed the live Caddy internal-TLS remote client smoke:
+  GET/POST transport, PUT/PATCH/DELETE policy boundaries, authenticated event
+  poll/SSE, token revoke, and post-revoke `401`. Ports 8767 and 8443 were clear
+  afterward.
+
+### External release boundary
+
+- `security find-identity -v -p codesigning` found 0 valid identities.
+- `xcrun notarytool history --keychain-profile agentic-os` found no Keychain
+  profile.
+- `spctl` rejects the ad-hoc app as an unidentified distribution, as expected.
+- No updater plugin, manifest, signing key, or publication endpoint exists.
+
+Developer ID signing, notarization, DMG publication, and updater delivery must
+remain unclaimed until those credentials and endpoints are supplied and
+exercised.

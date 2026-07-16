@@ -39,6 +39,9 @@
     "resources": {
       "bundle-resources/agentic-os": "agentic-os"
     },
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }
