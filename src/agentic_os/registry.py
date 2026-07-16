@@ -175,6 +175,33 @@ def disable_agent_instance(current: list[AgentDefinition], agent_id: str) -> lis
     return updated
 
 
+def build_registry_patch(
+    registry_path: Path,
+    request: dict[str, object],
+) -> tuple[PatchTarget, list[PatchOp], dict[str, object]]:
+    registry = Registry(registry_path)
+    action = str(request.get("action", ""))
+    if action == "upsert":
+        raw_agent = request.get("agent")
+        if not isinstance(raw_agent, dict):
+            raise ValueError("agent is required")
+        agent = AgentDefinition.model_validate(raw_agent)
+        merged = merge_agent_instance(registry.list_agents(), agent)
+        summary = {"action": action, "agent_id": agent.id}
+    elif action == "disable":
+        agent_id = str(request.get("agent_id", ""))
+        merged = disable_agent_instance(registry.list_agents(), agent_id)
+        summary = {"action": action, "agent_id": agent_id}
+    else:
+        raise ValueError(f"unsupported registry action: {action}")
+    payloads = agents_document(merged)
+    return (
+        registry_patch_target(registry_path, registry_path.parent),
+        replace_agents_ops(payloads),
+        summary,
+    )
+
+
 def validate_registry_document(doc: dict[str, object]) -> tuple[list[str], list[str]]:
     raw_agents = doc.get("agents", [])
     if not isinstance(raw_agents, list):

@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agentic_os.patch_engine import PatchOp
+from agentic_os.safe_edit import PatchTarget
+
 SCOPES = ("managed", "user", "project", "local")
 CONFIG_PATCH_SCOPES = ("user", "project", "local")
 SCOPE_PRIORITY = {"local": 4, "project": 3, "user": 2, "managed": 1}
@@ -50,6 +53,38 @@ def resolve_write_path(
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def config_patch_target(
+    scope: str,
+    cwd: Path,
+    *,
+    home_dir: Path | None = None,
+) -> PatchTarget:
+    return PatchTarget(
+        harness_id=AGENTIC_CONFIG_SCHEMA_HARNESS,
+        cwd=cwd,
+        scope=scope,
+        target_kind="agentic_config",
+        kind="config",
+        file_path=resolve_write_path(scope, cwd=str(cwd), home_dir=home_dir),
+        file_format="toml",
+    )
+
+
+def build_config_patch(
+    scope: str,
+    cwd: Path,
+    raw_ops: list[dict[str, object]],
+    *,
+    home_dir: Path | None = None,
+) -> tuple[PatchTarget, list[PatchOp], dict[str, object]]:
+    target = config_patch_target(scope, cwd, home_dir=home_dir)
+    ops = _coerce_patch_ops(raw_ops)
+    return target, ops, {
+        "scope": scope,
+        "ops": [{"op": op.op, "path": op.path} for op in ops],
+    }
 
 
 def resolve_paths(
@@ -191,3 +226,16 @@ def explain(
         }
         for e in view.entries
     ]
+
+
+def _coerce_patch_ops(raw_ops: list[dict[str, object]]) -> list[PatchOp]:
+    if not raw_ops:
+        raise ValueError("ops must not be empty")
+    ops: list[PatchOp] = []
+    for raw in raw_ops:
+        op = raw.get("op")
+        path = raw.get("path")
+        if not isinstance(op, str) or not isinstance(path, str):
+            raise ValueError("patch op and path must be strings")
+        ops.append(PatchOp(op=op, path=path, value=raw.get("value")))
+    return ops

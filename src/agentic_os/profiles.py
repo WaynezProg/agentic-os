@@ -194,6 +194,52 @@ def delete_profile_ops(
     return ops
 
 
+def build_profile_patch(
+    request: dict[str, object],
+    cwd: Path,
+) -> tuple[PatchTarget, list[PatchOp], dict[str, object]]:
+    scope = str(request.get("scope", "local"))
+    action = str(request.get("action", ""))
+    target = profile_patch_target(scope, cwd)
+    if action == "upsert":
+        raw_profile = request.get("profile")
+        if not isinstance(raw_profile, dict):
+            raise ValueError("profile is required")
+        profile = RunProfileInput.model_validate(raw_profile)
+        return target, upsert_profile_ops(profile), {
+            "action": action,
+            "scope": scope,
+            "name": profile.name,
+        }
+    bundle = _read_bundle(target.file_path)
+    if action == "delete":
+        name = str(request.get("name", ""))
+        if name not in bundle.run_profiles:
+            raise KeyError(f"unknown profile: {name}")
+        cascade = bool(request.get("cascade", False))
+        bound = bound_projects_for_profile(bundle, name)
+        if bound and not cascade:
+            raise ValueError(f"profile is bound to projects: {', '.join(bound)}")
+        return target, delete_profile_ops(name, bundle, cascade=cascade), {
+            "action": action,
+            "scope": scope,
+            "name": name,
+            "cascade": cascade,
+        }
+    if action == "bind":
+        project_path = str(request.get("project_path", ""))
+        run_profile = str(request.get("run_profile", ""))
+        if not project_path or not run_profile:
+            raise ValueError("project_path and run_profile are required")
+        return target, bind_project_profile_ops(bundle, project_path, run_profile), {
+            "action": action,
+            "scope": scope,
+            "project_path": str(Path(project_path).resolve()),
+            "run_profile": run_profile,
+        }
+    raise ValueError(f"unsupported profile action: {action}")
+
+
 def bound_projects_for_profile(bundle: ProfileFileBundle, name: str) -> list[str]:
     return [project_path for project_path, profile_name in bundle.project_bindings if profile_name == name]
 
@@ -371,5 +417,4 @@ def _parse_profile(profile_name: str, payload: dict[str, Any]) -> RunProfileInpu
         cwd_prefix=cwd_prefix,
         repo_glob=repo_glob,
     )
-
 

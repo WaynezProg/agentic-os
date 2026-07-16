@@ -13,6 +13,8 @@ from typing import Any
 
 from agentic_os.catalog import SUPPORTED_HARNESSES
 from agentic_os.control_plane import _redact_value
+from agentic_os.patch_engine import PatchOp
+from agentic_os.safe_edit import PatchTarget
 
 HARNESS_CONFIG_SCOPES = ("user", "project", "local")
 SCOPE_PRIORITY = {"local": 3, "project": 2, "user": 1}
@@ -268,6 +270,64 @@ def resolve_write_path(
         path.parent.mkdir(parents=True, exist_ok=True)
     fmt = "toml" if path.suffix == ".toml" else "json"
     return path, fmt
+
+
+def harness_config_patch_target(
+    harness: str,
+    scope: str,
+    cwd: Path,
+    *,
+    home: Path | None = None,
+    file_name: str | None = None,
+) -> PatchTarget:
+    file_path, file_format = resolve_write_path(
+        harness,
+        scope,
+        cwd,
+        home=home,
+        file_name=file_name,
+    )
+    return PatchTarget(
+        harness_id=harness,
+        cwd=cwd,
+        scope=scope,
+        target_kind="harness_config",
+        kind=infer_patch_kind(harness, file_path),
+        file_path=file_path,
+        file_format=file_format,
+    )
+
+
+def build_harness_config_patch(
+    harness: str,
+    scope: str,
+    cwd: Path,
+    raw_ops: list[dict[str, object]],
+    *,
+    home: Path | None = None,
+    file_name: str | None = None,
+) -> tuple[PatchTarget, list[PatchOp], dict[str, object]]:
+    if not raw_ops:
+        raise ValueError("ops must not be empty")
+    target = harness_config_patch_target(
+        harness,
+        scope,
+        cwd,
+        home=home,
+        file_name=file_name,
+    )
+    ops: list[PatchOp] = []
+    for raw in raw_ops:
+        op = raw.get("op")
+        path = raw.get("path")
+        if not isinstance(op, str) or not isinstance(path, str):
+            raise ValueError("patch op and path must be strings")
+        ops.append(PatchOp(op=op, path=path, value=raw.get("value")))
+    return target, ops, {
+        "scope": scope,
+        "file": target.file_path.name,
+        "ops": [{"op": op.op, "path": op.path} for op in ops],
+    }
 
 
 def infer_patch_kind(harness: str, file_path: Path) -> str:

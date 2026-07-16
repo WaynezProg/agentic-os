@@ -364,7 +364,7 @@ git commit -m "feat: add verified MCP change plans"
   `catalog.patch`, `config.patch`, `harness_config.patch`, `profile.patch`,
   `registry.patch`.
 
-- [ ] **Step 1: Add parametrized operation tests**
+- [x] **Step 1: Add parametrized operation tests**
 
 For every operation, create a real temporary target, preview, apply, assert
 verified state, and roll back to byte-equivalent content.
@@ -387,7 +387,7 @@ def test_supported_operation_round_trip(service, operation, operation_request) -
     assert service.rollback(plan.id).status == "rolled_back"
 ```
 
-- [ ] **Step 2: Extract existing target builders**
+- [x] **Step 2: Extract existing target builders**
 
 Move route-local target/operation construction into named functions in the
 existing owner modules:
@@ -400,19 +400,19 @@ existing owner modules:
 
 Each returns `PatchTarget`, `list[PatchOp]`, and a redacted summary.
 
-- [ ] **Step 3: Extend explicit dispatch**
+- [x] **Step 3: Extend explicit dispatch**
 
 Add one `elif` branch per operation in `ChangeService._build()`. Do not add a
 dynamic registry or reflection.
 
-- [ ] **Step 4: Verify all mutation suites**
+- [x] **Step 4: Verify all mutation suites**
 
 ```bash
 rtk uv run pytest tests/test_change_service.py tests/test_catalog.py tests/test_harness_config_patch.py tests/test_profile_patch.py tests/test_registry.py tests/test_safe_edit.py -q
 rtk uv run ruff check src/agentic_os
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agentic_os/catalog.py src/agentic_os/config_scope.py src/agentic_os/harness_config.py src/agentic_os/profiles.py src/agentic_os/registry.py src/agentic_os/change_service.py tests/test_change_service.py

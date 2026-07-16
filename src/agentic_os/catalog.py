@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any
 
 from agentic_os.control_plane import _redact_value
+from agentic_os.patch_engine import PatchOp
+from agentic_os.safe_edit import PatchTarget
+from agentic_os.surface_ops import compile_semantic_ops
 
 # Scope paths by harness type
 _HARNESS_SCOPES = {
@@ -78,6 +81,16 @@ class SurfaceRecord:
     metadata: dict[str, Any] = field(default_factory=dict)
     overridden_by: str | None = None
     overrides: str | None = None
+
+
+@dataclass(frozen=True)
+class SurfacePatchBuild:
+    target: PatchTarget | None
+    ops: list[PatchOp]
+    standalone_path: Path | None
+    standalone_content: str | None
+    surface_id: str | None
+    summary: dict[str, object]
 
 
 def scan(harness: str, cwd: str | None = None, home_dir: Path | None = None) -> list[SurfaceRecord]:
@@ -565,6 +578,79 @@ def resolve_surface_write_target(
     if harness in _JSON_SETTINGS_FILES:
         return scope_dir / _JSON_SETTINGS_FILES[harness], "json"
     return scope_dir / "config.toml", "toml"
+
+
+def build_surface_patch(
+    harness: str,
+    cwd: Path,
+    raw_ops: list[dict[str, object]],
+    *,
+    home_dir: Path | None = None,
+) -> SurfacePatchBuild:
+    if len(raw_ops) != 1:
+        raise ValueError("catalog change plans require exactly one semantic op")
+    raw = raw_ops[0]
+    compiled = compile_semantic_ops(harness, raw_ops)
+    op_name = str(raw.get("op", ""))
+    scope = str(raw.get("scope", "project"))
+    name = str(raw.get("name", ""))
+    summary = {
+        "harness_id": harness,
+        "cwd": str(cwd.resolve()),
+        "op": op_name,
+        "scope": scope,
+        "name": name,
+    }
+    if compiled.patch_ops:
+        kind = _surface_kind_for_op(op_name)
+        file_path, file_format = resolve_surface_write_target(
+            harness,
+            scope,
+            kind,
+            cwd,
+            home_dir,
+        )
+        return SurfacePatchBuild(
+            target=PatchTarget(
+                harness_id=harness,
+                cwd=cwd,
+                scope=scope,
+                target_kind="surface",
+                kind=kind,
+                file_path=file_path,
+                file_format=file_format,
+            ),
+            ops=compiled.patch_ops,
+            standalone_path=None,
+            standalone_content=None,
+            surface_id=None,
+            summary=summary,
+        )
+    standalone = compiled.standalone_files[0]
+    path = resolve_standalone_surface_path(
+        harness,
+        standalone.scope,
+        standalone.kind,
+        standalone.name,
+        cwd,
+        home_dir,
+    )
+    return SurfacePatchBuild(
+        target=None,
+        ops=[],
+        standalone_path=path,
+        standalone_content=standalone.content,
+        surface_id=f"{standalone.kind}:{standalone.name}@{standalone.scope}",
+        summary=summary,
+    )
+
+
+def _surface_kind_for_op(op_name: str) -> str:
+    if op_name in {"enable_mcp_server", "disable_mcp_server"}:
+        return "mcp_server"
+    if op_name == "upsert_hook":
+        return "hook"
+    raise ValueError(f"unsupported structured semantic op: {op_name}")
 
 
 def _extract_skill_description(path: Path) -> str:
